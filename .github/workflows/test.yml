@@ -99,6 +99,20 @@ jobs:
             grep -nE "error:|^e: |Execution failed for task" gradle.log | tail -n 60 || true
             exit "$rc"
           fi
+      - name: 诊断 R 资源（仅构建失败时）
+        if: failure()
+        run: |
+          echo "===== 0. 检出的提交 ====="
+          git log --oneline -1
+          echo "===== 1. 源文件中的 id 声明 ====="
+          grep -n 'RcLauncher' app/src/main/res/layout/fragment_model.xml || echo "layout 无 RcLauncher"
+          grep -n 'RcLauncher' app/src/main/res/layout-v21/fragment_model.xml || echo "layout-v21 无 RcLauncher"
+          echo "===== 2. 合并后的 fragment_model.xml（各配置）中的 RcLauncher 计数 ====="
+          find app/build/intermediates -name 'fragment_model.xml' -print 2>/dev/null | head -n 60 | while read f; do printf '%s : ' "$f"; grep -c 'RcLauncher' "$f" 2>/dev/null || true; done
+          echo "===== 3. 符号表 R.txt 中是否含 llRcLauncher ====="
+          find app/build/intermediates -name 'R.txt' -print 2>/dev/null | head -n 40 | while read f; do printf '%s : ' "$f"; grep -c 'llRcLauncher' "$f" || true; done
+          echo "===== 4. R.jar 的 R\$id 中是否含 llRcLauncher ====="
+          find app/build/intermediates -name '*.jar' -print 2>/dev/null | head -n 40 | while read f; do e=$(unzip -Z1 "$f" 2>/dev/null | grep -E 'R\$id\.class$' | head -n1); if [ -n "$e" ]; then echo "--- $f"; echo "    entry=$e"; unzip -p "$f" "$e" | strings | grep -i 'RcLauncher' || echo "    (R\$id 无 RcLauncher)"; fi; done
       - name: Prepare App
         run: |
           rm -rf apk/
