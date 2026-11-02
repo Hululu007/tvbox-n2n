@@ -90,7 +90,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
     private TextView tvDns;
     private TextView tvFastSearchText;
 
-    // 内置配置区（远程地址配置已移除，仅保留 TVBox 开机启动 / 设为桌面开关）
+    // 内置配置区（远程地址配置已移除，仅保留 TVBox 开机启动 / 选择桌面入口）
     private TextView tvRcBoot;
     private TextView tvRcLauncher;
 
@@ -825,7 +825,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
 
     /**
      * 内置配置区：远程地址配置已移除（所有配置在 APK 内置 assets/tvbox-config.json 修改），
-     * 这里仅保留 TVBox「开机启动」开关；hin2n 的开机自动连 VPN 在组网引导页内单独设置。
+     * 这里仅保留 TVBox「开机启动」开关和「选择桌面」入口；hin2n 的开机自动连 VPN 在组网引导页内单独设置。
      */
     private void initRemoteConfig() {
         tvRcBoot = findViewById(R.id.tvRcBoot);
@@ -842,29 +842,28 @@ public class ModelSettingFragment extends BaseLazyFragment {
             }
         });
 
-        // 设为系统桌面：开启后（有 root 时）调用系统服务禁用原桌面并把 TVBox 设为默认桌面，
-        // 无 root 时退回系统桌面选择器；关闭后恢复原来的系统桌面
+        // 选择桌面：点击弹出设备上全部桌面应用列表（含 TVBox 自身），
+        // 选哪个就把哪个设为默认桌面（沙发桌面同款交互）；右侧显示当前默认桌面名
         tvRcLauncher = findViewById(R.id.tvRcLauncher);
-        tvRcLauncher.setText(RemoteConfig.launcherEnabled() ? "开" : "关");
+        refreshLauncherName();
         findViewById(R.id.llRcLauncher).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 FastClickCheckUtil.check(v);
-                boolean now = !RemoteConfig.launcherEnabled();
-                if (now) {
-                    // 先写开关：LauncherHelper 内部按开关状态启用 HOME 别名
-                    Hawk.put(RemoteConfig.K_LAUNCHER, true);
-                    tvRcLauncher.setText("开");
-                    // 有 root 时后台调用系统服务禁用原桌面并设为默认桌面，无 root 时唤起系统弹窗
-                    LauncherHelper.setAsDefaultLauncher(mActivity);
-                } else {
-                    Hawk.put(RemoteConfig.K_LAUNCHER, false);
-                    tvRcLauncher.setText("关");
-                    // 恢复原来被禁用的系统桌面并设回默认
-                    LauncherHelper.restoreStockLauncher(mActivity);
-                }
+                LauncherHelper.showLauncherChooser(mActivity, new LauncherHelper.LauncherChosenCallback() {
+                    @Override
+                    public void onChosen() {
+                        refreshLauncherName();
+                    }
+                });
             }
         });
+    }
+
+    /** 刷新「选择桌面」右侧的当前默认桌面名显示 */
+    private void refreshLauncherName() {
+        String name = LauncherHelper.currentLauncherName(mContext);
+        tvRcLauncher.setText(name.isEmpty() ? "未设置" : name);
     }
 
     @Override

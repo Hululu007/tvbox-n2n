@@ -194,7 +194,8 @@ public class LauncherHelper {
     }
 
     /**
-     * UI 线程调用（设置页开关打开）：后台完成 root 替换；无 root 或未生效时唤起系统默认桌面弹窗。
+     * UI 线程调用（设置页选择 TVBox 作为桌面 / 主界面确保默认桌面）：
+     * 后台完成 root 替换；无 root 或未生效时唤起系统默认桌面弹窗。
      */
     public static void setAsDefaultLauncher(final Activity act) {
         if (act == null) {
@@ -223,38 +224,70 @@ public class LauncherHelper {
         }, "set-default-launcher").start();
     }
 
+    // ==================== 选择桌面（沙发桌面同款交互） ====================
+
+    /** 选择桌面完成回调（主线程），用于设置页刷新当前桌面名显示 */
+    public interface LauncherChosenCallback {
+        void onChosen();
+    }
+
+    /** 当前默认桌面包名（无默认或系统占位返回 null） */
+    public static String currentDefaultLauncherPackage(Context ctx) {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            ResolveInfo ri = ctx.getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri != null && ri.activityInfo != null
+                    && !"android".equals(ri.activityInfo.packageName)) {
+                return ri.activityInfo.packageName;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /** 当前默认桌面应用名（无默认返回空串） */
+    public static String currentLauncherName(Context ctx) {
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            PackageManager pm = ctx.getPackageManager();
+            ResolveInfo ri = pm.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
+            if (ri != null && ri.activityInfo != null
+                    && !"android".equals(ri.activityInfo.packageName)) {
+                CharSequence label = ri.loadLabel(pm);
+                return label != null && label.length() > 0
+                        ? label.toString() : ri.activityInfo.packageName;
+            }
+        } catch (Throwable ignored) {
+        }
+        return "";
+    }
+
     /**
-     * UI 线程调用（设置页开关关闭）：弹出设备上所有可用桌面列表让用户选择，
-     * 选中的桌面被启用并设为默认桌面（有 root 时直接调用系统服务完成；
-     * 无 root 时拉起该桌面并跳系统「默认桌面」设置页引导选「始终」）。
-     * 选中的桌面即恢复为开机自动启动的系统桌面（系统开机自动拉起默认桌面）。
+     * 「选择桌面」入口：弹出设备上全部桌面应用列表（TVBox 固定排第一项，其余为系统
+     * 检测到的 HOME 桌面），当前默认桌面为选中项；选择哪个就把哪个设为默认桌面：
+     * 选 TVBox → 启用 HOME 别名并接管默认桌面（等同原「设为桌面」开关打开）；
+     * 选其他桌面 → 停用别名、启用并恢复所选桌面为默认（等同原开关关闭并恢复）。
      */
-    public static void restoreStockLauncher(final Activity act) {
+    public static void showLauncherChooser(final Activity act, final LauncherChosenCallback cb) {
         if (act == null) {
             return;
         }
         final Context ctx = act.getApplicationContext();
-        // 后台枚举全部 HOME 候选桌面（排除自身），主线程弹选择列表
         new Thread(new Runnable() {
             @Override
             public void run() {
-                final List<ResolveInfo> candidates = queryStockLaunchers(ctx);
-                final String saved = Hawk.get(K_STOCK_LAUNCHER, "");
+                final List<ResolveInfo> others = queryStockLaunchers(ctx);
+                final String current = currentDefaultLauncherPackage(ctx);
                 post(act, new Runnable() {
                     @Override
                     public void run() {
-                        if (candidates.isEmpty()) {
-                            // 没有其他桌面可选：仅停用本应用别名，交给系统处理
-                            RemoteConfig.applyLauncherComponent(ctx);
-                            Toast.makeText(ctx, "未检测到其他桌面应用，请先安装一个桌面",
-                                    Toast.LENGTH_LONG).show();
-                            return;
-                        }
-                        showLauncherPicker(act, ctx, candidates, saved);
+                        showChooserDialog(act, ctx, others, current, cb);
                     }
                 });
             }
-        }, "restore-launcher-scan").start();
+        }, "launcher-chooser-scan").start();
     }
 
     /** 枚举设备上所有 CATEGORY_HOME 候选桌面（排除本应用），按应用名排序 */
@@ -281,14 +314,25 @@ public class LauncherHelper {
         return result;
     }
 
-    /** 弹出桌面选择列表：显示应用名，默认选中之前保存的原桌面 */
-    private static void showLauncherPicker(final Activity act, final Context ctx,
-                                           final List<ResolveInfo> candidates, String savedPkg) {
+    /**
+     * 弹出桌面选择列表：TVBox 固定第一项，其后为设备上其他桌面（显示应用名），
+     * 默认选中当前系统默认桌面；选择后立即生效并回调通知刷新。
+     */
+    private static void showChooserDialog(final Activity act, final Context ctx,
+                                          final List<ResolveInfo> others, String currentPkg,
+                                          final LauncherChosenCallback cb) {
         final PackageManager pm = ctx.getPackageManager();
+        final String self = ctx.getPackageName();
         final List<String> names = new java.util.ArrayList<>();
-        int select = 0;
-        for (int i = 0; i < candidates.size(); i++) {
-            ResolveInfo ri = candidates.get(i);
+        String selfLabel;
+        try {
+            CharSequence label = pm.getApplicationLabel(ctx.getApplicationInfo());
+            selfLabel = label != null && label.length() > 0 ? label.toString() : "TVBox";
+        } catch (Throwable th) {
+            selfLabel = "TVBox";
+        }
+        names.add(selfLabel);
+        for (ResolveInfo ri : others) {
             CharSequence label;
             try {
                 label = ri.loadLabel(pm);
@@ -297,20 +341,42 @@ public class LauncherHelper {
             }
             names.add(label != null && label.length() > 0
                     ? label.toString() : ri.activityInfo.packageName);
-            if (savedPkg != null && savedPkg.equals(ri.activityInfo.packageName)) {
-                select = i;
+        }
+        int select = 0;
+        if (currentPkg != null && !self.equals(currentPkg)) {
+            for (int i = 0; i < others.size(); i++) {
+                if (currentPkg.equals(others.get(i).activityInfo.packageName)) {
+                    select = i + 1;
+                    break;
+                }
             }
         }
         final com.github.tvbox.osc.ui.dialog.SelectDialog<String> dialog =
                 new com.github.tvbox.osc.ui.dialog.SelectDialog<>(act);
-        dialog.setTip("选择要恢复的系统桌面");
+        dialog.setTip("选择桌面");
         dialog.setAdapter(null,
                 new com.github.tvbox.osc.ui.adapter.SelectDialogAdapter.SelectDialogInterface<String>() {
                     @Override
                     public void click(String value, int pos) {
                         dialog.dismiss();
-                        final String pkg = candidates.get(pos).activityInfo.packageName;
-                        applyChosenLauncher(act, ctx, pkg);
+                        final String pkg = pos == 0 ? self : others.get(pos - 1).activityInfo.packageName;
+                        if (pkg.equals(currentDefaultLauncherPackage(ctx))) {
+                            Toast.makeText(ctx, "「" + value + "」已是当前桌面", Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        if (pos == 0) {
+                            // 选择 TVBox：等同原「设为桌面」开关打开
+                            Hawk.put(RemoteConfig.K_LAUNCHER, true);
+                            setAsDefaultLauncher(act);
+                        } else {
+                            // 选择其他桌面：等同原开关关闭并恢复该桌面
+                            Hawk.put(RemoteConfig.K_LAUNCHER, false);
+                            RemoteConfig.applyLauncherComponent(ctx);
+                            applyChosenLauncher(act, ctx, pkg);
+                        }
+                        if (cb != null) {
+                            cb.onChosen();
+                        }
                     }
 
                     @Override
