@@ -31,7 +31,7 @@ tvbox-n2n/
 | brand | `generic` / `hisense` | 通用包 / 海信定制 applicationId |
 | mode | `normal` / `python` | normal=Java 源（**minSdk19，Android 4.4 起可用**，appcompat1.6.1）；python=Chaquopy（minSdk21） |
 
-**32/64 位已合并**：不再有 `abi` flavor 维度拆包；`defaultConfig` 用 `abiFilters 'armeabi-v7a','arm64-v8a'` 只限定**打包** ABI（不是拆分变体），`app/src/main/jniLibs/{armeabi-v7a,arm64-v8a}`（以及 `quickjs` 模块的两套 so）一起打进同一个 APK；安装时由 Android 按设备 CPU 自动选择对应 ABI，用户无需再挑 32/64 位包。
+**32/64 位已合并**：不再有 `abi` flavor 维度拆包；`defaultConfig` 用 `abiFilters 'armeabi-v7a','arm64-v8a'` 只限定**打包** ABI（不是拆分变体），`app/src/main/jniLibs/{armeabi-v7a,arm64-v8a}`（以及 `quickjs` 的两套 so、`pyramid` 的 Python 运行库）一起打进同一个 APK；安装时由 Android 按设备 CPU 自动选择对应 ABI，用户无需再挑 32/64 位包。
 
 **Android 4.4（API19）**：`defaultConfig.minSdkVersion=19`；`nextlib-media3ext` 等声明 minSdk21 的三方库由主清单 `tools:overrideLibrary` 放行（原 `legacy` flavor 已合并进 `normal`，不再单独出包）。
 

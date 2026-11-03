@@ -23,23 +23,12 @@ android {
                 install "beautifulsoup4"
             }
         }
-    }
 
-    flavorDimensions "abi"
-
-    productFlavors {
-        armeabi {
-            dimension = "abi"
-            ndk {
-                abiFilters 'armeabi-v7a'
-            }
-        }
-
-        arm64 {
-            dimension = "abi"
-            ndk {
-                abiFilters 'arm64-v8a'
-            }
+        // 单包同时打包 32/64 位 Python 运行库，由系统安装时按 CPU 自动选择。
+        // 不再按 ABI 拆分 flavor，否则 app 侧已无 abi 维度，Gradle 无法匹配到唯一变体
+        // （AmbiguousConfigurationSelectionException: project :pyramid）。
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a'
         }
     }
 
