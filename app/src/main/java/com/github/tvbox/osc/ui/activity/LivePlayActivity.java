@@ -428,6 +428,14 @@ public class LivePlayActivity extends BaseActivity {
 
     private void exit() {
         if (System.currentTimeMillis() - mExitTime < 2000) {
+            // 直播模式（启动即进直播）：退出直播 = 退出整个 tvbox，不留首页后台
+            if (com.orhanobut.hawk.Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false)) {
+                com.github.tvbox.osc.util.AppManager.getInstance().finishAllActivity();
+                finish();
+                android.os.Process.killProcess(android.os.Process.myPid());
+                System.exit(0);
+                return;
+            }
             super.onBackPressed();
         } else {
             mExitTime = System.currentTimeMillis();

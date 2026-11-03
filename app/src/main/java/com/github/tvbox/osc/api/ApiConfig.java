@@ -224,6 +224,17 @@ public class ApiConfig {
                     @Override
                     public void onSuccess(Response<String> response) {
                         final String json = response.body();
+                        // 极端情况下 response.body() 可能返回 null（HTTP 204 / 空 body / 反序列化失败），
+                        // 此时不能再传给 parseJson 与 FileOutputStream，直接回退错误并提示用户。
+                        if (json == null || json.trim().isEmpty()) {
+                            postMain(new Runnable() {
+                                @Override
+                                public void run() {
+                                    callback.error("接口返回为空，请检查地址");
+                                }
+                            });
+                            return;
+                        }
                         // 解析 + 写缓存放工作线程，避免主线程掉帧
                         new Thread(new Runnable() {
                             @Override
@@ -495,6 +506,11 @@ public class ApiConfig {
 
     private static  String jarCache ="true";
     private void parseJson(String apiUrl, String jsonStr) {
+        // 防御：jsonStr 为空或 null 时 Gson.fromJson 会抛 NullPointerException，
+        // 调用方外层虽然有 try-catch，但这里先做显式保护让异常信息更可追踪
+        if (jsonStr == null || jsonStr.trim().isEmpty()) {
+            throw new IllegalStateException("点播接口返回内容为空，apiUrl=" + apiUrl);
+        }
 //        pyLoader.setConfig(jsonStr);
         JsonObject infoJson = new Gson().fromJson(jsonStr, JsonObject.class);
         jarCache = DefaultConfig.safeJsonString(infoJson, "jarCache", "true");

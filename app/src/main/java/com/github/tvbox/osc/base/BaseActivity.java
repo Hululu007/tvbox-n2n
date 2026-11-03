@@ -82,22 +82,48 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         }
 
         // takagen99 : Set Theme Color（主题索引与配色集中在 ThemeManager，支持 JSON 下发与一键切换）
-        com.github.tvbox.osc.n2n.ThemeManager.apply(this);
+        try {
+            com.github.tvbox.osc.n2n.ThemeManager.apply(this);
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
         // Android 4.4：把 drawable/ 里硬编码的主题蓝就地替换为当前主题色（API>=21 走 ?attr 无需处理）
-        com.github.tvbox.osc.n2n.ThemeDrawableFix.apply(this);
+        try {
+            com.github.tvbox.osc.n2n.ThemeDrawableFix.apply(this);
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
 
         super.onCreate(savedInstanceState);
-        setContentView(getLayoutResID());
+        try {
+            setContentView(getLayoutResID());
+        } catch (Throwable th) {
+            th.printStackTrace();
+            // 布局 inflate 都崩了（主题资源缺失等），退而求其次给个纯灰背景，避免「黑屏看起来像死机」
+            android.widget.FrameLayout fallback = new android.widget.FrameLayout(this);
+            fallback.setBackgroundColor(0xFF1A1A1A);
+            setContentView(fallback);
+        }
         mContext = this;
-        CutoutUtil.adaptCutoutAboveAndroidP(mContext, true);//设置刘海
-        AppManager.getInstance().addActivity(this);
-        init();
+        try {
+            CutoutUtil.adaptCutoutAboveAndroidP(mContext, true);//设置刘海
+        } catch (Throwable ignored) {}
+        try {
+            AppManager.getInstance().addActivity(this);
+        } catch (Throwable ignored) {}
+        try {
+            init();
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
         // 远程 JSON 的 home.bgImage 对所有页面统一生效（未配置时本方法内部直接跳过）
         try {
             com.github.tvbox.osc.n2n.HomeEntry.applyBackground(this);
         } catch (Throwable ignored) {
         }
-        setScreenOn();
+        try {
+            setScreenOn();
+        } catch (Throwable ignored) {}
     }
 
     @Override

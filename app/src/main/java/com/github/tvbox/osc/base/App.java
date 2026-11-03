@@ -77,7 +77,13 @@ public class App extends MultiDexApplication {
         // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）。
         // 先于 initParams()：JSON 中的「设置页默认值」仅当用户从未手动修改时写入，
         // initParams() 里的硬编码默认值只作最终兜底，不会覆盖 JSON。
-        com.github.tvbox.osc.n2n.RemoteConfig.bootstrap(this);
+        try {
+            com.github.tvbox.osc.n2n.RemoteConfig.bootstrap(this);
+        } catch (Throwable th) {
+            // bootstrap 内部有多层 try-catch，真崩了说明内置配置文件格式严重损坏，
+            // 此时跳过继续走硬编码默认值，App 仍可启动（表现为主题/远程入口丢失）
+            th.printStackTrace();
+        }
         initParams();
         // takagen99 : Initialize Locale
         initLocale();

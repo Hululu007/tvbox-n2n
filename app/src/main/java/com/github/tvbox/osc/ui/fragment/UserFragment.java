@@ -98,8 +98,54 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         }
     }
 
+    /**
+     * 把历史一行（历史/点播/直播/搜索/收藏/推送/云盘）入口图标染成远程 JSON
+     * home.iconColor（若有）；未下发则保持原样。
+     * 与 HomeEntry.applyHomeStyleToEntries 对顶栏图标做同一件事，避免首界面
+     * 「顶栏图标是主题色、历史一行图标却是白色」的配色不一致。
+     */
+    private void applyEntryIconColor() {
+        try {
+            JSONObject home = RemoteConfig.homeStyle();
+            if (home == null) return;
+            int iconColor = com.github.tvbox.osc.n2n.HomeEntry.parseColor(home.optString("iconColor", ""));
+            if (iconColor == 0) return;
+            // 固定入口布局里的 ImageView：fragment_user.xml 给每个卡片里的图标写死了 id，
+            // 直接按 id 查找；找不到（如 rebuildHomeEntriesIfConfigured 整体替换后）则跳过。
+            int[] iconIds = {
+                    R.id.hm_history, R.id.hm_vod, R.id.hm_live, R.id.hm_search,
+                    R.id.hm_fav, R.id.hm_push, R.id.hm_drive, R.id.hm_settings, R.id.hm_hin2n
+            };
+            for (int id : iconIds) {
+                View v = findViewById(id);
+                if (v instanceof android.widget.ImageView) {
+                    ((android.widget.ImageView) v).setColorFilter(iconColor);
+                }
+            }
+            // JSON 配置重建了整个 tvUserHome 时，遍历 LinearLayout 子 View 里的 ImageView
+            android.view.ViewGroup row = findViewById(R.id.tvUserHome);
+            if (row != null) {
+                for (int i = 0; i < row.getChildCount(); i++) {
+                    View child = row.getChildAt(i);
+                    if (child instanceof android.view.ViewGroup) {
+                        android.view.ViewGroup card = (android.view.ViewGroup) child;
+                        for (int j = 0; j < card.getChildCount(); j++) {
+                            View inner = card.getChildAt(j);
+                            if (inner instanceof android.widget.ImageView) {
+                                ((android.widget.ImageView) inner).setColorFilter(iconColor);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     @Override
     public void onFragmentResume() {
+        // 每次回到首页都重新应用，确保远程配置刷新后图标色同步
+        applyEntryIconColor();
 
         // takagen99: Initialize Icon Placement
         if (!Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
@@ -151,6 +197,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvPush = findViewById(R.id.tvPush);
         tvHin2nHome = findViewById(R.id.tvHin2nHome);
         tvHin2nHome.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
+        // 点播界面/设置入口已由顶栏 tvN2n 统一承载，历史一行不再重复显示
+        if (tvSetting != null) {
+            tvSetting.setVisibility(View.GONE);
+        }
         tvDrive.setOnClickListener(this);
         tvVod.setOnClickListener(this);
         tvLive.setOnClickListener(this);
@@ -171,6 +221,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvHin2nHome.setOnFocusChangeListener(focusChangeListener);
         // JSON "homeEntries" 配置存在时整体替换历史一行入口：内容/顺序/图标全部按 JSON
         rebuildHomeEntriesIfConfigured();
+        // 远程配置 iconColor 下发时，把历史一行入口图标也染成主题色
+        applyEntryIconColor();
         // 焦点在入口行与下方内容列表之间移动时，外层 ScrollView 跟随滚动，
         // 让「历史」一行入口随内容列表一起上/下滚动（D-pad 上下）。
         installScrollFollow();
