@@ -18,13 +18,13 @@ import java.io.InputStreamReader;
 import java.util.List;
 
 /**
- * 系统桌面（Launcher）切换：把 TVBox 设为系统默认桌面，并在启用时禁用原来的系统桌面。
+ * 系统桌面（Launcher）切换：把 TVBox 设为系统默认桌面，原来的系统桌面保持启用、不被禁用。
  *
  * <p>实现策略（按优先级）：</p>
  * <ol>
- *   <li>设备有 root（{@code su} 可用且返回 uid=0）时，直接调用系统服务命令完成替换：
- *       {@code pm disable-user --user 0 <原桌面包>} 禁用原桌面、
- *       {@code pm set-home-activity <本应用包>} 把 TVBox 设为默认桌面；</li>
+ *   <li>设备有 root（{@code su} 可用且返回 uid=0）时，直接调用系统服务命令
+ *       {@code pm set-home-activity <本应用包>} 把 TVBox 设为默认桌面；
+ *       原桌面只是不再是默认桌面，仍保留在系统中，可随时切回；</li>
  *   <li>无 root 时退回系统接口引导：启用 TVBox 的 HOME 组件别名后，
  *       直接以 CATEGORY_HOME 启动唤起系统「选择默认桌面」弹窗（含「始终/仅一次」），
  *       必要时再跳系统「主屏幕」设置页。</li>
@@ -37,7 +37,7 @@ public class LauncherHelper {
 
     private static final String TAG = "LauncherHelper";
 
-    /** Hawk 键：被替换（禁用）的原系统桌面包名，取消时用于恢复 */
+    /** Hawk 键：切换前使用的原系统桌面包名，取消时用于恢复选择 */
     public static final String K_STOCK_LAUNCHER = "rc_stock_launcher";
 
     private static final long TIMEOUT_ROOT_PROBE = 3000L;
@@ -167,7 +167,8 @@ public class LauncherHelper {
 
     /**
      * 后台执行「设为系统桌面」的核心逻辑（不含任何 UI 操作）：
-     * 记录原桌面 → 启用本应用 HOME 别名 → 有 root 时禁用原桌面并把本应用设为默认桌面。
+     * 记录原桌面 → 启用本应用 HOME 别名 → 有 root 时直接把本应用设为默认桌面。
+     * 原桌面保持启用，不做 {@code pm disable-user}，用户可随时在系统设置中切回。
      *
      * @return true 表示已通过 root 系统服务自动完成
      */
@@ -185,11 +186,8 @@ public class LauncherHelper {
         if (!hasRoot()) {
             return false;
         }
-        if (stock != null && !stock.isEmpty()) {
-            exec("pm disable-user --user 0 " + stock);
-        }
         exec("pm set-home-activity " + ctx.getPackageName());
-        Log.i(TAG, "root launcher switch done, stock=" + stock);
+        Log.i(TAG, "root launcher switch done, stock=" + stock + " (kept enabled)");
         return true;
     }
 
@@ -210,7 +208,7 @@ public class LauncherHelper {
                     @Override
                     public void run() {
                         if (auto) {
-                            Toast.makeText(ctx, "已禁用原来的系统桌面并把 TVBox 设为默认桌面",
+                            Toast.makeText(ctx, "已把 TVBox 设为默认桌面（原桌面保持可用）",
                                     Toast.LENGTH_LONG).show();
                         } else {
                             // 无 root：唤起系统「选择默认桌面」弹窗（需选「始终」）

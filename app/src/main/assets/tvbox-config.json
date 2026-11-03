@@ -19,9 +19,9 @@
   "useRemoteConfig": false,
 
   // 设为系统桌面：默认开启 —— 设备已 root 时直接调用系统服务
-  // （pm disable-user 禁用原来的系统桌面 + pm set-home-activity 设为默认桌面），
+  // （pm set-home-activity 把 TVBox 设为默认桌面；原来的系统桌面保持启用、不被禁用），
   // 无 root 时退回系统桌面选择器/系统「默认桌面」设置页；设置页「设为桌面」开关可改。
-  // 取消后重新启用原桌面并恢复为默认桌面。
+  // 取消后恢复原桌面为默认桌面。
   "setAsLauncher": false,
 
   // ============================ 接口加密秘钥（可选） ============================
@@ -168,7 +168,7 @@
     "homeRec": 0,                      // 首页内容：0=豆瓣热播 1=站点推荐 2=观看历史
     "homeNum": 4,                      // 首页历史条数：0=20 1=40 2=60 3=80 4=100
     "homeRecStyle": false,             // 首页默认多行显示：true=多行网格 false=单行横滑
-    "homeDefaultShow": false,          // 启动后直接进入直播：true=开启 false=关闭
+    "homeDefaultShow": false,          // 启动界面模式：false=点播模式（进入首页） true=直播模式（直接进入直播）
     // ---- 播放器选项 ----
     "showPreview": true,               // 点播窗口预览
     "playScale": 0,                    // 画面缩放：0=默认 1=16:9 2=4:3 3=填充 4=原始 5=裁剪

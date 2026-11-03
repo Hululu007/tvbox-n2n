@@ -374,6 +374,21 @@ public class HomeActivity extends BaseActivity {
     private boolean dataInitOk = false;
     private boolean jarInitOk = false;
 
+    /** 直播模式每次启动只跳转一次，避免 initData 多次回调重复打开直播页 */
+    private boolean liveModeJumped = false;
+
+    /** 启动界面=直播模式时跳到直播页（点播模式保持首页） */
+    private void jumpToLiveIfNeeded() {
+        if (liveModeJumped) {
+            return;
+        }
+        if (!Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false)) {
+            return;
+        }
+        liveModeJumped = true;
+        jumpActivity(LivePlayActivity.class);
+    }
+
     // takagen99 : Switch to show / hide source title
     boolean HomeShow = Hawk.get(HawkConfig.HOME_SHOW_SOURCE, false);
 
@@ -413,6 +428,12 @@ public class HomeActivity extends BaseActivity {
             tvStyle.setImageResource(R.drawable.hm_left_right);
         }
 
+        if (dataInitOk) {
+            // 启动界面=直播模式：点播接口配置就绪即进入直播（不等待 Spider jar 加载），
+            // 避免先停留在首页只能靠后续 jar 加载完成才跳转的延迟。
+            jumpToLiveIfNeeded();
+        }
+
         if (dataInitOk && jarInitOk) {
             boolean forceSortRefresh = getIntent() != null && getIntent().getBooleanExtra("forceSortRefresh", false);
             // 未配置点播接口（仅直播）时 homeSourceBean 为空壳、key 为 null：
@@ -428,9 +449,6 @@ public class HomeActivity extends BaseActivity {
                 LOG.e("有");
             } else {
                 LOG.e("无");
-            }
-            if (Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false)) {
-                jumpActivity(LivePlayActivity.class);
             }
             return;
         }

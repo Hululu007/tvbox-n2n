@@ -859,7 +859,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="@string/mn_live_boot"
+                            android:text="@string/mn_start_mode"
                             android:textColor="@android:color/white"
                             android:textSize="@dimen/ts_24" />
 

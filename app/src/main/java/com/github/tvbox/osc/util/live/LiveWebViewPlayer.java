@@ -3,6 +3,7 @@ package com.github.tvbox.osc.util.live;
 import android.app.Activity;
 import android.net.Uri;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.WebChromeClient;
@@ -157,6 +158,19 @@ public class LiveWebViewPlayer {
     private View customView;      // H5 全屏回调视图
     private WebChromeClient.CustomViewCallback customCb;
     private Activity owner;
+    /** 网页自带的页面 UI 是否处于显示状态（由 __tvboxToggleUI 的返回值同步） */
+    private boolean pageUiMode = false;
+    /** 触摸手势回调：轻点按屏幕横向位置分发（左=频道列表，中=信息栏，右=设置） */
+    private TouchListener touchListener;
+
+    /** 触摸设备上的轻点回调：xRatio 为点击位置占 WebView 宽度的比例（0~1） */
+    public interface TouchListener {
+        void onTap(float xRatio);
+    }
+
+    public void setTouchListener(TouchListener listener) {
+        this.touchListener = listener;
+    }
 
     /** 是否为网页型/P2P 型直播地址 */
     public static boolean isWebUrl(String url) {
@@ -173,6 +187,8 @@ public class LiveWebViewPlayer {
         }
         webView = new WebView(act);
         initWebView(webView);
+        installTouchGestures(webView);
+        pageUiMode = false;
         ViewGroup root = act.findViewById(R.id.live_root);
         if (root == null) {
             return;
@@ -219,6 +235,7 @@ public class LiveWebViewPlayer {
             webView = null;
         }
         owner = null;
+        pageUiMode = false;
     }
 
     /** 处理返回键：先退出 H5 全屏，返回 true 表示已消费 */
@@ -289,6 +306,63 @@ public class LiveWebViewPlayer {
         } catch (Throwable ignored) {
         }
         return sb.toString();
+    }
+
+    /**
+     * 触摸手势：WebView 盖在 mVideoView 上会吞掉触摸事件，手机/模拟器上无法通过轻点呼出
+     * 原生频道列表与直播设置（遥控器 OK/MENU 不受影响）。这里在 WebView 上做最小手势分发：
+     * 轻点左区=频道列表、中区=频道信息、右区=直播设置；长按=切换「网页自带 UI / 全屏视频」；
+     * 网页 UI 模式下轻点=回到全屏视频（页面内按钮建议用遥控器操作）。
+     */
+    private void installTouchGestures(final WebView wv) {
+        wv.setOnTouchListener(new View.OnTouchListener() {
+            private float downX;
+            private float downY;
+            private boolean moved;
+            private boolean longFired;
+            private final Runnable longPress = new Runnable() {
+                @Override
+                public void run() {
+                    longFired = true;
+                    togglePageUi();
+                }
+            };
+
+            @Override
+            public boolean onTouch(View v, MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downX = e.getX();
+                        downY = e.getY();
+                        moved = false;
+                        longFired = false;
+                        v.postDelayed(longPress, 600);
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        if (!moved && (Math.abs(e.getX() - downX) > 40 || Math.abs(e.getY() - downY) > 40)) {
+                            moved = true;
+                            v.removeCallbacks(longPress);
+                        }
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        v.removeCallbacks(longPress);
+                        if (!longFired && !moved) {
+                            if (pageUiMode) {
+                                togglePageUi();
+                            } else if (touchListener != null) {
+                                float ratio = v.getWidth() > 0 ? e.getX() / v.getWidth() : 0.5f;
+                                touchListener.onTap(ratio);
+                            }
+                        }
+                        return true;
+                    case MotionEvent.ACTION_CANCEL:
+                        v.removeCallbacks(longPress);
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+        });
     }
 
     private void initWebView(WebView wv) {
@@ -416,7 +490,8 @@ public class LiveWebViewPlayer {
                     new android.webkit.ValueCallback<String>() {
                         @Override
                         public void onReceiveValue(String value) {
-                            pageUi[0] = value != null && value.contains("pageui");
+                            pageUiMode = value != null && value.contains("pageui");
+                            pageUi[0] = pageUiMode;
                         }
                     });
             return true;

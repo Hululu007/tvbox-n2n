@@ -23,7 +23,7 @@
 
 1. `:hin2n` **不能引用任何 `com.github.tvbox.**` 类**（依赖方向单向，且两者无模块依赖）。它保留原 hin2n 的包名 `wang.switchy.hin2n`，资源 `R` 也走该包。
 2. `appcompat` 在模块中是 `implementation 'androidx.appcompat:appcompat:1.6.1'`（独立 App，自行携带依赖）。
-3. 模块有独立 `applicationId "wang.switchy.hin2n"` 与条件化签名配置（`project.hasProperty('RELEASE_STORE_FILE')` 时注入）；TVBox 主工程的 12 个变体不再与本模块联动。
+3. 模块有独立 `applicationId "wang.switchy.hin2n"` 与条件化签名配置（`project.hasProperty('RELEASE_STORE_FILE')` 时注入）；TVBox 主工程的 4 个变体不再与本模块联动。
 4. 原独立 App 的组件（Umeng/Bugly 统计、应用更新、dataBinding、BaseRecyclerViewAdapterHelper）已整体删除；TV 引导页 Hin2nActivity 作为唯一入口 Activity。
 
 ## 2. 目录结构
@@ -122,7 +122,7 @@ hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/
 
 - CMake 按所选版本编译对应 edge 源码 + `edge_jni.c`，链接 `src/main/jniLibs/${ANDROID_ABI}/libcrypto.so`（预编译 OpenSSL，头文件在 cpp include 路径）。
 - 工具链固定：**NDK `25.2.9519653`（r25b）+ CMake `3.22.1`**，模块 build.gradle 与 CI 都写死，不要随意升级（n2n v1 老代码对新 Clang 敏感）。
-- 产物 `libedge_v1.so / libedge_v2.so / libedge_v2s.so / libedge_v3.so` 由 `System.loadLibrary` 按配置版本加载；app 只过滤 `armeabi-v7a`、`arm64-v8a` 两个 ABI（x86/x86_64 的预编译库存档保留，便于模拟器调试时改 abiFilters）。
+- 产物 `libedge_v1.so / libedge_v2.so / libedge_v2s.so / libedge_v3.so` 由 `System.loadLibrary` 按配置版本加载；app 不再配置 `abiFilters`，`armeabi-v7a` 与 `arm64-v8a` 两套 so 随单包一起安装、由系统按设备 CPU 自动选择（x86/x86_64 的预编译库存档保留，便于模拟器调试时自行加 abiFilters）。
 
 ## 7. 本地构建
 
@@ -139,18 +139,18 @@ hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/
 # 仓库根目录执行（不是 hin2n/Hin2n_android！模块由根 settings.gradle 以 projectDir 引入）
 .\gradlew.bat :hin2n:assembleDebug                         # 只编模块（产出 aar）
 .\gradlew.bat :hin2n:assembleDebug -Phin2nOnly             # 同上且跳过 :app/:quickjs/:pyramid 配置（CI 同款）
-.\gradlew.bat assembleArm64GenericLegacyDebug              # Android 4.4 兼容版（arm64）
-.\gradlew.bat assembleArmeabiGenericNormalRelease          # 常规 armv7 release
-.\gradlew.bat assemblerelease                              # CI 同款：全部 12 个变体
+.\gradlew.bat assembleGenericNormalDebug                    # Android 4.4 兼容调试包（单包含 32/64 位 so）
+.\gradlew.bat assembleGenericNormalRelease                  # 常规 release（单包，32/64 位自适应）
+.\gradlew.bat assembleRelease                               # CI 同款：全部 4 个变体
 ```
 
-变体命名：`<abi><brand><mode>`，abi∈{armeabi, arm64}，brand∈{generic, hisense}，mode∈{normal, python, legacy}。
-APK 名 `TVBox_<buildType>-<flavors>.apk`（normal 在文件名中显示为 java）。
+变体命名：`<brand><mode>`，brand∈{generic, hisense}，mode∈{normal, python}。32/64 位已合并进单包，不再有 abi 维度。
+APK 名 `TVBox_<buildType>-<brand>-<mode>.apk`（normal 在文件名中显示为 java）。
 
 只想验证 Java/资源而不装 NDK 时可只跑资源与编译任务：
 
 ```powershell
-.\gradlew.bat :app:processArm64LegacyDebugResources :app:compileArm64LegacyDebugJavaWithJavac
+.\gradlew.bat :app:processGenericNormalDebugResources :app:compileGenericNormalDebugJavaWithJavac
 ```
 
 ### 7.3 greenDAO
@@ -168,7 +168,7 @@ hin2n 已拆分为独立 App，拥有独立工作流：
 ## 9. Android 4.4（API19）兼容要点
 
 - 模块 minSdk 19；`appcompat` 用 `implementation 1.6.1`（独立 App，自行携带运行时）。
-- app 侧所有 drawable 采用 **drawable/（固定色兜底，禁 `?attr/`、禁 ripple）+ drawable-v21/（主题色/ripple 原版）双版本**；legacy 变体还开了 `vectorDrawables.generatedDensities` 生成 PNG。详见 [tvbox-dev.md](file:///f:/tvbox-n2n/docs/tvbox-dev.md) §7。
+- app 侧所有 drawable 采用 **drawable/（固定色兜底，禁 `?attr/`、禁 ripple）+ drawable-v21/（主题色/ripple 原版）双版本**；normal 变体（minSdk19）开了 `vectorDrawables.generatedDensities` 生成 PNG。详见 [tvbox-dev.md](file:///f:/tvbox-n2n/docs/tvbox-dev.md) §7。
 - hin2n 自己的资源（shape_hin2n_* 等）在创建时就只用固定色/`@color`，不带主题属性引用。
 - 通知/PendingIntent 按版本分支，API23 才加 `FLAG_IMMUTABLE`。
 

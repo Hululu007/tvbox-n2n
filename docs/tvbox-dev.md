@@ -10,7 +10,7 @@
 
 ```
 tvbox-n2n/
-├── app/                    # TVBox 主模块（含 n2n/ 集成包、legacy 4.4 变体）
+├── app/                    # TVBox 主模块（含 n2n/ 集成包；单包内含 32/64 位 so）
 ├── hin2n/Hin2n_android/app # hin2n 独立 App（settings.gradle 以 :hin2n 引入，applicationId wang.switchy.hin2n）
 ├── pyramid/                # Python 引擎模块（Chaquopy，仅 python flavor）
 ├── quickjs/                # QuickJS 引擎模块
@@ -24,22 +24,25 @@ tvbox-n2n/
 
 ## 2. 构建变体（flavor）
 
-三维 flavor（`flavorDimensions = ["abi","brand","mode"]`），共 2×2×3 = 12 个变体：
+二维 flavor（`flavorDimensions = ["brand","mode"]`），共 2×2 = 4 个 release 变体：
 
 | 维度 | 取值 | 说明 |
 |------|------|------|
-| abi | `armeabi` / `arm64` | 分别过滤 `armeabi-v7a` / `arm64-v8a` |
 | brand | `generic` / `hisense` | 通用包 / 海信定制 applicationId |
-| mode | `normal` / `python` / `legacy` | normal=Java 源(minSdk21, appcompat1.7.0)；python=Chaquopy(minSdk21)；**legacy=Android 4.4 兼容(minSdk19, appcompat1.6.1，复用 `src/normal/java`)** |
+| mode | `normal` / `python` | normal=Java 源（**minSdk19，Android 4.4 起可用**，appcompat1.6.1）；python=Chaquopy（minSdk21） |
+
+**32/64 位已合并**：不再有 `abi` flavor 维度拆包；`defaultConfig` 用 `abiFilters 'armeabi-v7a','arm64-v8a'` 只限定**打包** ABI（不是拆分变体），`app/src/main/jniLibs/{armeabi-v7a,arm64-v8a}`（以及 `quickjs` 模块的两套 so）一起打进同一个 APK；安装时由 Android 按设备 CPU 自动选择对应 ABI，用户无需再挑 32/64 位包。
+
+**Android 4.4（API19）**：`defaultConfig.minSdkVersion=19`；`nextlib-media3ext` 等声明 minSdk21 的三方库由主清单 `tools:overrideLibrary` 放行（原 `legacy` flavor 已合并进 `normal`，不再单独出包）。
 
 构建工具：AGP 7.4.2 / Gradle 7.5 / **JDK 17** / compileSdk 34；Kotlin 1.8、kapt（Room 2.6.1）。
 
 ```powershell
-.\gradlew.bat assembleArm64GenericLegacyDebug   # 4.4 兼容调试包
-.\gradlew.bat assemblerelease                   # 全部 release 变体（CI 同款）
+.\gradlew.bat assembleGenericNormalDebug   # Android 4.4 兼容调试包（单包含 32/64 位 so）
+.\gradlew.bat assembleRelease              # 全部 release 变体（CI 同款）
 ```
 
-输出名 `TVBox_<buildType>-<abi>-<brand>-<mode>.apk`（normal 显示为 java）。
+输出名 `TVBox_<buildType>-<brand>-<mode>.apk`（normal 显示为 java，如 `TVBox_release-generic-java.apk`）。
 
 ## 3. 内置配置（assets JSON，已去远程化）
 
@@ -154,7 +157,8 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 - 开关：`RemoteConfig.applyLauncherComponent(ctx)` 用 `PackageManager.setComponentEnabledSetting(..., DONT_KILL_APP)` 按 Hawk `rc_set_launcher` 启停别名；`bootstrap` 每次启动同步一次，远程 forceRemote 分支下发 `setAsLauncher` 时也立即同步。
 - **出厂默认开启**：`launcherEnabled()` 缺省值为 `true`；json `setAsLauncher` 字段默认值写入走两轮守卫——首轮 `rc_set_launcher_default_set`（兼容旧版本标记），第二轮 `rc_set_launcher_default_set_v2` 对**已安装过的老设备**也补写一次默认值（解决老设备首轮标记已置位导致改默认不生效的问题）；两轮都只写一次，之后用户手动开关永不被覆盖。
 - 启用后用户仍需在系统桌面选择器中确认（Android 不允许应用静默设为默认桌面）：`HomeActivity.onResume` 调 `RemoteConfig.ensureDefaultLauncher(this)`，开关已开但非默认桌面时每进程弹一次选择器；设置页切换开关时立即 `promptChooseLauncher`。
-- 取消：停用别名后 Android 自动清除本应用的默认桌面资格。**取消时不再静默依赖系统回退**，而是走 [LauncherHelper.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/LauncherHelper.java) `restoreStockLauncher()`：后台枚举全部 `CATEGORY_HOME` 候选桌面（排除自身），主线程弹「选择桌面」列表（SelectDialog，默认选中 Hawk `rc_stock_launcher` 记忆的原桌面）；选定后有 root 时 `pm enable --user 0 <pkg>` + `pm set-home-activity <pkg>` 静默启用并设为默认桌面（开机自动启动），无 root 时用 `pm.getLaunchIntentForPackage` 拉起所选桌面并 Toast 引导选「始终」，兜底系统选择器 `RemoteConfig.promptChooseLauncher`。
+- **有 root 时不再禁用原桌面**（2026-11-02 调整）：`LauncherHelper.applyAsDefault()` 只执行 `pm set-home-activity <本应用包>`，原桌面组件保持 enabled，用户随时可在系统设置/桌面选择器中切回；成功 Toast 文案同步改为「已把 TVBox 设为默认桌面（原桌面保持可用）」。
+- 取消：停用别名后 Android 自动清除本应用的默认桌面资格。**取消时不再静默依赖系统回退**，而是走 [LauncherHelper.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/LauncherHelper.java) `showLauncherChooser()`：后台枚举全部 `CATEGORY_HOME` 候选桌面（排除自身），主线程弹「选择桌面」列表（SelectDialog，默认选中当前默认桌面）；选定其他桌面后有 root 时 `pm set-home-activity <pkg>` 静默切回（`pm enable` 仅用于兼容旧版本可能禁用过的桌面），无 root 时用 `pm.getLaunchIntentForPackage` 拉起所选桌面并 Toast 引导选「始终」，兜底系统选择器 `RemoteConfig.promptChooseLauncher`。
 - 注意 applicationId 随 flavor 变化（generic=`com.github.tvbox.osc.tk` / hisense=`com.github.hisense.osc.tk`），`ComponentName` 必须用 `ctx.getPackageName()` + 清单展开类名 `com.github.tvbox.osc.LauncherAlias`（别名 `android:name=".LauncherAlias"` 以源码包名展开，与 applicationId 无关）。
 
 ### 3.10 点播切源自动返回首页刷新
@@ -303,6 +307,25 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 
 **Android 4.4（API 19）兼容**：`M3U8.removeMinorityUrl()` 的 `String.join`（Java 8/API 26+）改为 `TextUtils.join`（视频去广告默认开启，4.4 上原实现必 NoSuchMethodError 闪退）。
 
+### 3.16 启动模式、直播设置入口与 WebView 触摸换台（2026-11-02）
+
+**启动界面模式（点播 / 直播）**：
+- 复用原有 Hawk 键 `HawkConfig.HOME_DEFAULT_SHOW`（`home_default_show`，`false`=点播模式进首页，`true`=直播模式直接进直播），设置页「启动界面」（`ModelSettingFragment.llHomeLive`）由原二态开关改为 `SelectDialog` 两项选择（`showStartModeDialog()`），选中即写 Hawk 并刷新显示文案。
+- [HomeActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java) 新增 `jumpToLiveIfNeeded()`：直播模式下 `initData()` 回调 `dataInitOk` 即跳 `LivePlayActivity`（不再等待 Spider jar 加载完成，减少停留在首页的延迟）；`liveModeJumped` 保证每次启动只跳一次，避免 `initData` 多次回调重复打开直播页。
+
+**直播界面设置入口（参照 ku9）**：
+- [LivePlayActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java) 的 `LiveSettingGroup` 分组新增「**应用设置**」（`appSettingItems = ["打开设置"]`，`clickSettingItem` case 5 打开 `SettingActivity`），原「直播地址」「退出直播」索引顺移。
+- 触摸设备额外在直播界面右上角显示齿轮按钮 `tvLiveSettingButton`（[activity_live_play.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_live_play.xml)），`supportsTouch()` 时才 `VISIBLE`，点击直达 `SettingActivity`；TV 遥控器仍用 MENU 打开直播设置。
+
+**WebView 直播源触摸换台（手机/逍遥模拟器调不出节目表）**：
+- 根因：`LiveWebViewPlayer` 的 WebView 覆盖在 `mVideoView` 之上并消费触摸事件，`LiveController.singleTap` 收不到点击，导致频道列表/信息栏/设置面板均无法呼出。
+- 修复：[LiveWebViewPlayer.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/util/live/LiveWebViewPlayer.java) 新增 `TouchListener` 接口与 `installTouchGestures(WebView)`：`ACTION_DOWN` 起 600ms 长按定时器；`ACTION_MOVE` 位移 >40px 取消长按；`ACTION_UP` 未移动未长按时按横向比例回调 `onTap(xRatio)`：
+  - `xRatio < 0.4` → `showChannelList()`（频道列表/节目表换台）
+  - `0.4 ≤ xRatio < 0.6` → `toggleChannelInfo()`（频道信息栏）
+  - `xRatio ≥ 0.6` → `showSettingGroup()`（直播设置面板）
+- 长按 → `togglePageUi()` 在「网页自带界面」与「全屏视频」间切换；`pageUiMode` 随 `evaluateJavascript` 回调同步，网页 UI 模式下轻点即返回全屏视频。TV 遥控器按键仍由 `LivePlayActivity.dispatchKeyEvent` 处理，不受影响。
+- 已知取舍：WebView 的 `OnTouchListener` 始终消费触摸，网页 UI 模式下的页面内按钮需用遥控器/方向键操作（手机端轻点会先退出网页 UI，再进入全屏视频模式）。
+
 ## 4. hin2n 入口与 TV 界面
 
 - 首页「历史」入口行新增第 9 张卡片 `tvHin2nHome`（「组网」，图标 `hm_hin2n`），点击进 `Hin2nActivity`；可见性取 `RemoteConfig.hin2nEntryEnabled()`。
@@ -345,12 +368,12 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 1. `res/drawable/`：**28 个**含 `?attr/` 的 drawable 全部替换为蓝色主题固定色兜底：
    `color_theme_dark_70→#B3106D9C`、`color_theme_80→#CC18A2E7`、`color_theme_70→#B318A2E7`、`color_theme_50→#8018A2E7`、`color_theme_40→#6618A2E7`、`color_theme→#FF18A2E7`；不含 `<ripple>`/elevation。
 2. `res/drawable-v21/`：同名文件保留 `?attr/` + ripple 原版（其中 23 个是从 drawable 补拷的，5 个原本就是 v21 ripple 版，3 个 hin2n 新建），API21+ 继续随主题换色与水波纹。
-3. `defaultConfig.vectorDrawables.generatedDensities = ['mdpi','hdpi','xhdpi','xxhdpi']`：为 legacy(minSdk19) 变体把矢量图生成 PNG（normal/python minSdk21 不生成）。
-4. legacy 变体 appcompat 锁 1.6.1；`src/legacy/AndroidManifest.xml` 用 `tools:overrideLibrary` 放行 minSdk21 的三方库（nextlib 等）。
+3. `defaultConfig.vectorDrawables.generatedDensities = ['mdpi','hdpi','xhdpi','xxhdpi']`：为 minSdk<21 的变体（normal）把矢量图生成 PNG（python 的 minSdk21 不生成）。
+4. normal 变体 minSdk19、appcompat 锁 1.6.1；[主清单](file:///f:/tvbox-n2n/app/src/main/AndroidManifest.xml) 用 `tools:overrideLibrary` 放行 minSdk21 的三方库（nextlib 等）。原 `src/legacy/` 变体已删除。
 
 新增任何 drawable 时的检查清单：默认 `drawable/` 里**禁止** `?attr/`、`<ripple>`、`<vector>` 的 `android:tint="?attr/…"`；需要主题效果就在 `drawable-v21/` 放同名增强版。
 
-**4.4 主题换色运行时方案**（2026-10-22，[ThemeDrawableFix.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ThemeDrawableFix.java)）：drawable/ 硬编码蓝色导致 4.4 下不随主题换色，而 `?attr` 又不能写回 XML（预加载崩溃）。修复：API<21 时 `BaseActivity.onCreate`（setTheme 后）调 `ThemeDrawableFix.apply(ctx)`——把 23 个含主题蓝的非 vector drawable 资源（selector/layer-list/shape）的**共享 ConstantState** 里 `RGB=18A2E7` 的颜色**就地替换**为当前主题色（保留 alpha；GradientDrawable 反射 `mSolidColors` 判色后 `setColor`，StateListDrawable/LayerDrawable/ClipDrawable 递归子 drawable）。刻意不 `mutate()`：常量状态进程级共享，之后 inflate 的列表项/弹窗自动跟随；静态 `sAppliedRgb` 记录已写入色，支持主题多次切换连续替换。vector 不在此列（legacy 变体经 generatedDensities 出 PNG / AppCompat 走 VectorDrawableCompat，保持蓝色兜底）。另 `button_dialog_vod.xml` 常态由 80% 蓝改为透明（与 v21 版对齐，修复「图标背景不透明」）。
+**4.4 主题换色运行时方案**（2026-10-22，[ThemeDrawableFix.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ThemeDrawableFix.java)）：drawable/ 硬编码蓝色导致 4.4 下不随主题换色，而 `?attr` 又不能写回 XML（预加载崩溃）。修复：API<21 时 `BaseActivity.onCreate`（setTheme 后）调 `ThemeDrawableFix.apply(ctx)`——把 23 个含主题蓝的非 vector drawable 资源（selector/layer-list/shape）的**共享 ConstantState** 里 `RGB=18A2E7` 的颜色**就地替换**为当前主题色（保留 alpha；GradientDrawable 反射 `mSolidColors` 判色后 `setColor`，StateListDrawable/LayerDrawable/ClipDrawable 递归子 drawable）。刻意不 `mutate()`：常量状态进程级共享，之后 inflate 的列表项/弹窗自动跟随；静态 `sAppliedRgb` 记录已写入色，支持主题多次切换连续替换。vector 不在此列（normal 变体（minSdk19）经 generatedDensities 出 PNG / AppCompat 走 VectorDrawableCompat，保持蓝色兜底）。另 `button_dialog_vod.xml` 常态由 80% 蓝改为透明（与 v21 版对齐，修复「图标背景不透明」）。
 
 ## 8. CI（test.yml / hin2n.yml）
 
@@ -361,7 +384,7 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 4. 注入签名（TVBoxOSC.jks，base64 配置块）；
 5. setup-java 17；
 6. `./gradlew :app:assembleRelease --build-cache --parallel --daemon --warning-mode all`，输出 tee 落盘，失败时 grep `error:` 汇总到日志尾部；
-7. 产物：Artifact `takagen99-Box`（12 个 APK + 源码包 + Release Note）；定时为每天 06:59 UTC，也可手动触发并勾选「构建后不提交发布新版」。
+7. 产物：Artifact `takagen99-Box`（4 个 APK + 源码包 + Release Note）。APK 统一命名为 `TVBox_takagen99_<构建时间>-<brand>-<mode>.apk`，如 `TVBox_takagen99_20261103-1200-generic-java.apk`；发布前会校验 generic-java 包内同时存在 `lib/armeabi-v7a/` 与 `lib/arm64-v8a/`，缺失则构建失败。定时任务（每天 06:59 UTC）当前已注释，保留手动触发（可勾选「构建后不提交发布新版」）。
 
 ### hin2n.yml（hin2n 独立 App）
 - push 到 `main` 且改动 `hin2n/**` 或该工作流文件时触发，也支持手动触发（含 `donotpublish` 输入）；

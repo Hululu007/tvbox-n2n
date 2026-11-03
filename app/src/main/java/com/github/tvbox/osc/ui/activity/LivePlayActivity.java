@@ -262,6 +262,18 @@ public class LivePlayActivity extends BaseActivity {
         mBack = findViewById(R.id.tvBackButton);
         mBack.setVisibility(View.INVISIBLE);
 
+        // 触摸设备：右上角应用设置入口（ku9 直播设置入口样式）；TV 端隐藏，仍用 MENU 键
+        View liveSettingButton = findViewById(R.id.tvLiveSettingButton);
+        if (liveSettingButton != null) {
+            liveSettingButton.setVisibility(supportsTouch() ? View.VISIBLE : View.GONE);
+            liveSettingButton.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    startActivity(new Intent(LivePlayActivity.this, SettingActivity.class));
+                }
+            });
+        }
+
         // Bottom Info
         tvBottomLayout = findViewById(R.id.tvBottomLayout);
         tvBottomLayout.setVisibility(View.INVISIBLE);
@@ -298,6 +310,19 @@ public class LivePlayActivity extends BaseActivity {
         initEpgDateView();
         initEpgListView();
         initVideoView();
+        // 网页型直播源的触摸手势：轻点左区呼出原生频道列表（手机/模拟器无法长按 OK 时也能换台）
+        webPlayer.setTouchListener(new LiveWebViewPlayer.TouchListener() {
+            @Override
+            public void onTap(float xRatio) {
+                if (xRatio < 0.4f) {
+                    showChannelList();
+                } else if (xRatio < 0.6f) {
+                    toggleChannelInfo();
+                } else {
+                    showSettingGroup();
+                }
+            }
+        });
         initChannelGroupView();
         initLiveChannelView();
         initSettingGroupView();
@@ -2044,7 +2069,12 @@ public class LivePlayActivity extends BaseActivity {
                 }
                 liveSettingItemAdapter.selectItem(position, select, false);
                 break;
-            case 5:// 直播历史 takagen99 : Live History
+            case 5:// 应用设置（参照 ku9：在直播界面直接进入应用设置）
+                mHandler.removeCallbacks(mHideSettingLayoutRun);
+                tvRightSettingLayout.setVisibility(View.INVISIBLE);
+                startActivity(new Intent(this, SettingActivity.class));
+                break;
+            case 6:// 直播历史 takagen99 : Live History
                 switch (position) {
                     case 0:
                         // takagen99 : Added Live History list selection - 直播列表
@@ -2081,7 +2111,7 @@ public class LivePlayActivity extends BaseActivity {
                         break;
                 }
                 break;
-            case 6:// 退出直播 takagen99 : Added Exit Option
+            case 7:// 退出直播 takagen99 : Added Exit Option
                 switch (position) {
                     case 0:
                         finish();
@@ -2229,13 +2259,14 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveSettingGroupList() {
-        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "播放解码", "超时换源", "偏好设置", "直播地址", "退出直播"));
+        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "播放解码", "超时换源", "偏好设置", "应用设置", "直播地址", "退出直播"));
         ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
         ArrayList<String> sourceItems = new ArrayList<>();
         ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
         ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
         ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码"));
+        ArrayList<String> appSettingItems = new ArrayList<>(Arrays.asList("打开设置"));
         ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("列表历史"));
         ArrayList<String> exitConfirm = new ArrayList<>(Arrays.asList("确定"));
         itemsArrayList.add(sourceItems);
@@ -2243,6 +2274,7 @@ public class LivePlayActivity extends BaseActivity {
         itemsArrayList.add(playerDecoderItems);
         itemsArrayList.add(timeoutItems);
         itemsArrayList.add(personalSettingItems);
+        itemsArrayList.add(appSettingItems);
         itemsArrayList.add(liveAdd);
         itemsArrayList.add(exitConfirm);
 

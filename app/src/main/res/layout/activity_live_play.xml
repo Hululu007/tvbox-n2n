@@ -692,4 +692,27 @@
             android:src="@drawable/v_back" />
     </LinearLayout>
 
+    <!-- 触摸设备专用：右上角应用设置入口（参照 ku9 直播设置入口；TV 遥控器仍按 MENU 打开设置） -->
+    <LinearLayout
+        android:id="@+id/tvLiveSettingButton"
+        android:layout_width="@dimen/vs_60"
+        android:layout_height="@dimen/vs_60"
+        android:layout_gravity="top|right"
+        android:layout_marginTop="@dimen/vs_20"
+        android:layout_marginEnd="@dimen/vs_30"
+        android:layout_marginRight="@dimen/vs_30"
+        android:background="@drawable/button_dialog_vod"
+        android:clickable="true"
+        android:focusable="false"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:visibility="gone">
+
+        <ImageView
+            android:layout_width="@dimen/vs_40"
+            android:layout_height="@dimen/vs_40"
+            android:layout_gravity="center"
+            android:src="@drawable/hm_settings" />
+    </LinearLayout>
+
 </FrameLayout>

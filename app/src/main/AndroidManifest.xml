@@ -10,6 +10,13 @@
         android:name="android.software.leanback"
         android:required="false" />
 
+    <!--
+        Android 4.4（API 19）兼容：nextlib-media3ext:0.7.1 的 AAR 清单声明 minSdkVersion 21，
+        会让 minSdk19 的 normal 变体清单合并失败。该库仅在用户手动选择 FFmpeg 软解时使用，
+        默认播放链路走 media3 自带的 DefaultRenderersFactory，因此在此放行。
+    -->
+    <uses-sdk tools:overrideLibrary="io.github.anilbeesetti.nextlib.media3ext" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />

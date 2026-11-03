@@ -39,7 +39,7 @@ import java.util.List;
  *   "useRemoteConfig": false,                         // true 且远程可访问时：远程覆盖设置页全部项/
  *                                                     //   bootStart/setAsLauncher/api/live/epg/proxy
  *   "bootStart": true,                                // TVBox 开机自启：默认开启；本地/远程 json 写 false 可禁用
- *   "setAsLauncher": false,                           // 设为系统桌面（有 root 时禁用原桌面并设为默认桌面）
+ *   "setAsLauncher": false,                           // 设为系统桌面（有 root 时把本应用设为默认桌面，不禁用原桌面）
  *   "notice": {                                       // 公告：字符串（旧格式）或对象
  *     "text": "公告文本",
  *     "position": "bottom",                           // top | bottom
@@ -449,7 +449,7 @@ public class RemoteConfig {
         }
         sLauncherPrompted = true;
         if (LauncherHelper.hasRoot()) {
-            // 有 root：直接调用系统服务禁用原桌面并设为默认桌面，不再打扰用户
+            // 有 root：直接调用系统服务把本应用设为默认桌面（原桌面保持启用），不再打扰用户
             LauncherHelper.setAsDefaultLauncher(act);
         } else {
             promptChooseLauncher(act);
