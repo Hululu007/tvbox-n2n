@@ -3,6 +3,7 @@ package com.github.tvbox.osc.n2n;
 import android.app.Activity;
 import android.content.Context;
 
+import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.orhanobut.hawk.Hawk;
