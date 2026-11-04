@@ -265,18 +265,6 @@ public class LivePlayActivity extends BaseActivity {
         mBack = findViewById(R.id.tvBackButton);
         mBack.setVisibility(View.INVISIBLE);
 
-        // 触摸设备：右上角应用设置入口（ku9 直播设置入口样式）；TV 端隐藏，仍用 MENU 键
-        View liveSettingButton = findViewById(R.id.tvLiveSettingButton);
-        if (liveSettingButton != null) {
-            liveSettingButton.setVisibility(supportsTouch() ? View.VISIBLE : View.GONE);
-            liveSettingButton.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    startActivity(new Intent(LivePlayActivity.this, SettingActivity.class));
-                }
-            });
-        }
-
         // Bottom Info
         tvBottomLayout = findViewById(R.id.tvBottomLayout);
         tvBottomLayout.setVisibility(View.INVISIBLE);
@@ -431,12 +419,12 @@ public class LivePlayActivity extends BaseActivity {
 
     private void exit() {
         if (System.currentTimeMillis() - mExitTime < 2000) {
-            // 直播模式（启动即进直播）：退出直播 = 退出整个 tvbox，不留首页后台
+            // 直播模式（启动即进直播）：退出直播 = 返回 TVBox 首页
             if (com.orhanobut.hawk.Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false)) {
-                com.github.tvbox.osc.util.AppManager.getInstance().finishAllActivity();
+                Intent intent = new Intent(LivePlayActivity.this, HomeActivity.class);
+                intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                startActivity(intent);
                 finish();
-                android.os.Process.killProcess(android.os.Process.myPid());
-                System.exit(0);
                 return;
             }
             super.onBackPressed();
@@ -1866,6 +1854,26 @@ public class LivePlayActivity extends BaseActivity {
                 clickLiveChannel(position);
             }
         });
+
+        // 长按频道项：收藏分组内长按删除该收藏；其余分组长按收藏/取消收藏该频道
+        liveChannelItemAdapter.setOnItemLongClickListener(new BaseQuickAdapter.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(BaseQuickAdapter adapter, View view, int position) {
+                int groupIndex = liveChannelGroupAdapter.getSelectedGroupIndex();
+                if (groupIndex == 0 && LIVE_FAVORITE_GROUP_NAME.equals(
+                        liveChannelGroupList.get(groupIndex).getGroupName())) {
+                    // 在「★ 我的收藏」分组内：长按删除该收藏
+                    removeFavoriteChannel(position);
+                } else {
+                    // 其他分组：长按收藏/取消收藏该频道
+                    List<LiveChannelItem> channels = getLiveChannels(groupIndex);
+                    if (channels != null && position >= 0 && position < channels.size()) {
+                        toggleFavoriteByItem(channels.get(position));
+                    }
+                }
+                return true;
+            }
+        });
     }
 
     private void clickLiveChannel(int position) {
@@ -1945,6 +1953,11 @@ public class LivePlayActivity extends BaseActivity {
             case 2:
                 liveSettingItemAdapter.selectItem(livePlayerManager.getLivePlayerType(), true, true);
                 break;
+            case 3:
+                // 渲染方式：0=TextureView, 2=SurfaceView
+                int renderIdx = Hawk.get(HawkConfig.PLAY_RENDER, 0) == 2 ? 1 : 0;
+                liveSettingItemAdapter.selectItem(renderIdx, true, true);
+                break;
         }
         int scrollToPosition = liveSettingItemAdapter.getSelectedItemIndex();
         if (scrollToPosition < 0) scrollToPosition = 0;
@@ -2001,7 +2014,7 @@ public class LivePlayActivity extends BaseActivity {
 
     private void clickSettingItem(int position) {
         int settingGroupIndex = liveSettingGroupAdapter.getSelectedGroupIndex();
-        if (settingGroupIndex < 4) {
+        if (settingGroupIndex < 5) {
             if (position == liveSettingItemAdapter.getSelectedItemIndex())
                 return;
             liveSettingItemAdapter.selectItem(position, true, true);
@@ -2020,10 +2033,19 @@ public class LivePlayActivity extends BaseActivity {
                 mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
                 mVideoView.start();
                 break;
-            case 3://超时换源
+            case 3://渲染方式（0=TextureView, 2=SurfaceView）
+                int renderType = position == 1 ? 2 : 0;
+                Hawk.put(HawkConfig.PLAY_RENDER, renderType);
+                mVideoView.release();
+                livePlayerManager.init(mVideoView);
+                mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
+                mVideoView.start();
+                Toast.makeText(App.getInstance(), "渲染方式已切换，下次换台生效", Toast.LENGTH_SHORT).show();
+                break;
+            case 4://超时换源
                 Hawk.put(HawkConfig.LIVE_CONNECT_TIMEOUT, position);
                 break;
-            case 4://偏好设置
+            case 5://偏好设置
                 boolean select = false;
                 switch (position) {
                     case 0:
@@ -2045,59 +2067,23 @@ public class LivePlayActivity extends BaseActivity {
                         Hawk.put(HawkConfig.LIVE_CROSS_GROUP, select);
                         break;
                     case 4:
-                        // takagen99 : Added Skip Password Option
                         select = !Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false);
                         Hawk.put(HawkConfig.LIVE_SKIP_PASSWORD, select);
                         break;
                     case 5:
-                        // 收藏/取消收藏当前频道，收藏结果在分组列表「★ 我的收藏」中查看
                         toggleCurrentChannelFavorite();
                         break;
-//                    case 5:
-//                        // takagen99 : Added Live History list selection - 直播列表
-//                        ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
-//                        if (liveHistory.isEmpty())
-//                            return;
-//                        String current = Hawk.get(HawkConfig.LIVE_URL, "");
-//                        int idx = 0;
-//                        if (liveHistory.contains(current))
-//                            idx = liveHistory.indexOf(current);
-//                        ApiHistoryDialog dialog = new ApiHistoryDialog(LivePlayActivity.this);
-//                        dialog.setTip(getString(R.string.dia_history_live));
-//                        dialog.setAdapter(new ApiHistoryDialogAdapter.SelectDialogInterface() {
-//                            @Override
-//                            public void click(String liveURL) {
-//                                Hawk.put(HawkConfig.LIVE_URL, liveURL);
-//                                liveChannelGroupList.clear();
-//                                try {
-//                                    liveURL = Base64.encodeToString(liveURL.getBytes("UTF-8"), Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP);
-//                                    liveURL = "http://127.0.0.1:9978/proxy?do=live&type=txt&ext=" + liveURL;
-//                                    loadProxyLives(liveURL);
-//                                } catch (Throwable th) {
-//                                    th.printStackTrace();
-//                                }
-//                                dialog.dismiss();
-//                            }
-//
-//                            @Override
-//                            public void del(String value, ArrayList<String> data) {
-//                                Hawk.put(HawkConfig.LIVE_HISTORY, data);
-//                            }
-//                        }, liveHistory, idx);
-//                        dialog.show();
-//                        break;
                 }
                 liveSettingItemAdapter.selectItem(position, select, false);
                 break;
-            case 5:// 应用设置（参照 ku9：在直播界面直接进入应用设置）
+            case 6:// 应用设置（参照 ku9：在直播界面直接进入应用设置）
                 mHandler.removeCallbacks(mHideSettingLayoutRun);
                 tvRightSettingLayout.setVisibility(View.INVISIBLE);
                 startActivity(new Intent(this, SettingActivity.class));
                 break;
-            case 6:// 直播历史 takagen99 : Live History
+            case 7:// 直播历史
                 switch (position) {
                     case 0:
-                        // takagen99 : Added Live History list selection - 直播列表
                         ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
                         if (liveHistory.isEmpty())
                             return;
@@ -2131,7 +2117,7 @@ public class LivePlayActivity extends BaseActivity {
                         break;
                 }
                 break;
-            case 7:// 退出直播 takagen99 : Added Exit Option
+            case 8:// 退出直播
                 switch (position) {
                     case 0:
                         finish();
@@ -2260,29 +2246,50 @@ public class LivePlayActivity extends BaseActivity {
         for (int i = 0; i < liveChannelGroupList.size(); i++) {
             liveChannelGroupList.get(i).setGroupIndex(i);
         }
+        updateFavoriteIndicators();
+    }
+
+    /** 刷新所有频道列表中的收藏星标（★） */
+    private void updateFavoriteIndicators() {
+        if (liveChannelItemAdapter == null) return;
+        HashSet<String> names = new HashSet<>();
+        for (LiveChannelItem fav : loadFavoriteChannels()) {
+            if (fav.getChannelName() != null) {
+                names.add(fav.getChannelName());
+            }
+        }
+        liveChannelItemAdapter.setFavoriteChannelNames(names);
     }
 
     /** 收藏/取消收藏当前正在播放的频道（长按 OK 或在偏好设置中选择） */
     private void toggleCurrentChannelFavorite() {
-        if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelUrls() == null) {
+        if (currentLiveChannelItem == null) {
             Toast.makeText(App.getInstance(), "当前没有正在播放的频道", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        toggleFavoriteByItem(currentLiveChannelItem);
+    }
+
+    /** 收藏/取消收藏指定频道（长按频道列表项或从设置面板触发） */
+    private void toggleFavoriteByItem(LiveChannelItem item) {
+        if (item == null || item.getChannelUrls() == null || item.getChannelUrls().isEmpty()) {
+            Toast.makeText(App.getInstance(), "该频道无可收藏的播放源", Toast.LENGTH_SHORT).show();
             return;
         }
         ArrayList<LiveChannelItem> favorites = loadFavoriteChannels();
         boolean removed = false;
         for (int i = favorites.size() - 1; i >= 0; i--) {
-            LiveChannelItem item = favorites.get(i);
-            if (item.getChannelName().equals(currentLiveChannelItem.getChannelName())
-                    && item.getChannelUrls().equals(currentLiveChannelItem.getChannelUrls())) {
+            LiveChannelItem fav = favorites.get(i);
+            if (fav.getChannelName() != null && fav.getChannelName().equals(item.getChannelName())) {
                 favorites.remove(i);
                 removed = true;
             }
         }
         if (!removed) {
             LiveChannelItem copy = new LiveChannelItem();
-            copy.setChannelName(currentLiveChannelItem.getChannelName());
-            copy.setChannelUrls(new ArrayList<>(currentLiveChannelItem.getChannelUrls()));
-            ArrayList<String> sourceNames = currentLiveChannelItem.getChannelSourceNames();
+            copy.setChannelName(item.getChannelName());
+            copy.setChannelUrls(new ArrayList<>(item.getChannelUrls()));
+            ArrayList<String> sourceNames = item.getChannelSourceNames();
             copy.setChannelSourceNames(sourceNames == null
                     ? new ArrayList<String>() : new ArrayList<>(sourceNames));
             copy.setChannelIndex(favorites.size());
@@ -2293,6 +2300,19 @@ public class LivePlayActivity extends BaseActivity {
         saveFavoriteChannels(favorites);
         refreshFavoriteChannelGroup();
         Toast.makeText(App.getInstance(), removed ? "已取消收藏" : "已收藏当前频道", Toast.LENGTH_SHORT).show();
+    }
+
+    /** 从收藏中删除指定位置的频道（仅在「★ 我的收藏」分组内调用） */
+    private void removeFavoriteChannel(int position) {
+        ArrayList<LiveChannelItem> favorites = loadFavoriteChannels();
+        if (position < 0 || position >= favorites.size()) {
+            return;
+        }
+        LiveChannelItem removed = favorites.remove(position);
+        saveFavoriteChannels(favorites);
+        refreshFavoriteChannelGroup();
+        String name = removed != null ? removed.getChannelName() : "该频道";
+        Toast.makeText(App.getInstance(), "已取消收藏：" + name, Toast.LENGTH_SHORT).show();
     }
 
     /** 收藏数据变化后，刷新分组列表（当前播放不中断） */
@@ -2321,6 +2341,7 @@ public class LivePlayActivity extends BaseActivity {
         if (liveChannelGroupAdapter.getSelectedGroupIndex() == 0) {
             liveChannelItemAdapter.setNewData(favorites);
         }
+        updateFavoriteIndicators();
     }
 
     //加载列表
@@ -2430,11 +2451,12 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveSettingGroupList() {
-        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "播放解码", "超时换源", "偏好设置", "应用设置", "直播地址", "退出直播"));
+        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "播放解码", "渲染方式", "超时换源", "偏好设置", "应用设置", "直播地址", "退出直播"));
         ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
         ArrayList<String> sourceItems = new ArrayList<>();
         ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
         ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo"));
+        ArrayList<String> renderItems = new ArrayList<>(Arrays.asList("TextureView", "SurfaceView"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
         ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道"));
         ArrayList<String> appSettingItems = new ArrayList<>(Arrays.asList("打开设置"));
@@ -2443,6 +2465,7 @@ public class LivePlayActivity extends BaseActivity {
         itemsArrayList.add(sourceItems);
         itemsArrayList.add(scaleItems);
         itemsArrayList.add(playerDecoderItems);
+        itemsArrayList.add(renderItems);
         itemsArrayList.add(timeoutItems);
         itemsArrayList.add(personalSettingItems);
         itemsArrayList.add(appSettingItems);
@@ -2464,12 +2487,15 @@ public class LivePlayActivity extends BaseActivity {
             liveSettingGroup.setLiveSettingItems(liveSettingItemList);
             liveSettingGroupList.add(liveSettingGroup);
         }
-        liveSettingGroupList.get(3).getLiveSettingItems().get(Hawk.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 2)).setItemSelected(true);
-        liveSettingGroupList.get(4).getLiveSettingItems().get(0).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_TIME, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(1).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_NET_SPEED, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(2).setItemSelected(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(3).setItemSelected(Hawk.get(HawkConfig.LIVE_CROSS_GROUP, false));
-        liveSettingGroupList.get(4).getLiveSettingItems().get(4).setItemSelected(Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false));
+        liveSettingGroupList.get(4).getLiveSettingItems().get(Hawk.get(HawkConfig.LIVE_CONNECT_TIMEOUT, 2)).setItemSelected(true);
+        liveSettingGroupList.get(5).getLiveSettingItems().get(0).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_TIME, false));
+        liveSettingGroupList.get(5).getLiveSettingItems().get(1).setItemSelected(Hawk.get(HawkConfig.LIVE_SHOW_NET_SPEED, false));
+        liveSettingGroupList.get(5).getLiveSettingItems().get(2).setItemSelected(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false));
+        liveSettingGroupList.get(5).getLiveSettingItems().get(3).setItemSelected(Hawk.get(HawkConfig.LIVE_CROSS_GROUP, false));
+        liveSettingGroupList.get(5).getLiveSettingItems().get(4).setItemSelected(Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false));
+        // 渲染方式默认选中：0=TextureView, 2=SurfaceView
+        int renderIdx = Hawk.get(HawkConfig.PLAY_RENDER, 0) == 2 ? 1 : 0;
+        liveSettingGroupList.get(3).getLiveSettingItems().get(renderIdx).setItemSelected(true);
     }
 
     private void loadCurrentSourceList() {
