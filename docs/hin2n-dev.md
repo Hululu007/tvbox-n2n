@@ -122,7 +122,7 @@ hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/
 
 - CMake 按所选版本编译对应 edge 源码 + `edge_jni.c`，链接 `src/main/jniLibs/${ANDROID_ABI}/libcrypto.so`（预编译 OpenSSL，头文件在 cpp include 路径）。
 - 工具链固定：**NDK `25.2.9519653`（r25b）+ CMake `3.22.1`**，模块 build.gradle 与 CI 都写死，不要随意升级（n2n v1 老代码对新 Clang 敏感）。
-- 产物 `libedge_v1.so / libedge_v2.so / libedge_v2s.so / libedge_v3.so` 由 `System.loadLibrary` 按配置版本加载；app 不再配置 `abiFilters`，`armeabi-v7a` 与 `arm64-v8a` 两套 so 随单包一起安装、由系统按设备 CPU 自动选择（x86/x86_64 的预编译库存档保留，便于模拟器调试时自行加 abiFilters）。
+- 产物 `libedge_v1.so / libedge_v2.so / libedge_v2s.so / libedge_v3.so` 由 `System.loadLibrary` 按配置版本加载；`hin2n` 模块保留 `armeabi-v7a` / `arm64-v8a` 两套 so，app 通过 `splits.abi` 分别打进 `-v7a` / `-arm64` 两个 APK（每包只含对应架构，x86/x86_64 的预编译库存档保留，便于模拟器调试时自行加 abiFilters）。
 
 ## 7. 本地构建
 
@@ -139,13 +139,13 @@ hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/
 # 仓库根目录执行（不是 hin2n/Hin2n_android！模块由根 settings.gradle 以 projectDir 引入）
 .\gradlew.bat :hin2n:assembleDebug                         # 只编模块（产出 aar）
 .\gradlew.bat :hin2n:assembleDebug -Phin2nOnly             # 同上且跳过 :app/:quickjs/:pyramid 配置（CI 同款）
-.\gradlew.bat assembleGenericNormalDebug                    # Android 4.4 兼容调试包（单包含 32/64 位 so）
-.\gradlew.bat assembleGenericNormalRelease                  # 常规 release（单包，32/64 位自适应）
-.\gradlew.bat assembleRelease                               # CI 同款：全部 4 个变体
+.\gradlew.bat assembleGenericNormalDebug                    # Android 4.4 兼容调试包（自动拆出 v7a / arm64 两个 APK）
+.\gradlew.bat assembleGenericNormalRelease                  # 常规 release（同样拆成 32/64 位两个包）
+.\gradlew.bat assembleRelease                               # CI 同款：全部 4 个变体 × 2 ABI = 8 个 APK
 ```
 
-变体命名：`<brand><mode>`，brand∈{generic, hisense}，mode∈{normal, python}。32/64 位已合并进单包，不再有 abi 维度。
-APK 名 `TVBox_<buildType>-<brand>-<mode>.apk`（normal 在文件名中显示为 java）。
+变体命名：`<brand><mode>-<abi>`，brand∈{generic, hisense}，mode∈{normal, python}，abi∈{v7a, arm64}；ABI 由 `splits.abi` 在产物层拆分，不新增 flavor 维度。
+APK 名 `TVBox_<buildType>-<brand>-<mode>-<abi>.apk`（normal 在文件名中显示为 java）。
 
 只想验证 Java/资源而不装 NDK 时可只跑资源与编译任务：
 

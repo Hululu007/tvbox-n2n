@@ -1221,6 +1221,18 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
+    /**
+     * 判断节目源是否支持时移/回看（参照 MQPlayer 的节目单回看能力）：
+     * 传统电信 PLTV/8888 源，以及带 playseek/starttime 参数的时移源。
+     */
+    private boolean supportBack(String url) {
+        if (url == null || url.isEmpty()) return false;
+        String lower = url.toLowerCase();
+        return lower.contains("pltv") || lower.contains("8888")
+                || lower.contains("playseek") || lower.contains("starttime")
+                || lower.contains("seek=");
+    }
+
     private boolean replayChannel() {
         if (mVideoView == null) return true;
         try {
@@ -1236,9 +1248,9 @@ public class LivePlayActivity extends BaseActivity {
             if (currentChannelGroupIndex >= 0 && currentChannelGroupIndex < liveChannelGroupList.size()) {
                 HawkUtils.setLastLiveChannelGroup(liveChannelGroupList.get(currentChannelGroupIndex).getGroupName());
             }
-            livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName());
+            livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl());
             channel_Name = currentLiveChannelItem;
-            currentLiveChannelItem.setinclude_back(currentLiveChannelItem.getUrl().indexOf("PLTV/8888") != -1);
+            currentLiveChannelItem.setinclude_back(supportBack(currentLiveChannelItem.getUrl()));
             mHandler.post(tv_sys_timeRunnable);
             tv_channelname.setText(channel_Name.getChannelName());
             tv_channelnum.setText("" + channel_Name.getChannelNum());
@@ -1296,11 +1308,14 @@ public class LivePlayActivity extends BaseActivity {
                 if (channelGroupIndex >= 0 && channelGroupIndex < liveChannelGroupList.size()) {
                     HawkUtils.setLastLiveChannelGroup(liveChannelGroupList.get(channelGroupIndex).getGroupName());
                 }
-                livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName());
+                livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl());
+            } else if (currentLiveChannelItem != null) {
+                // 切线路时套用该线路（节目源）独立保存的解码方式
+                livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl());
             }
             if (currentLiveChannelItem == null) return true;
             channel_Name = currentLiveChannelItem;
-            currentLiveChannelItem.setinclude_back(currentLiveChannelItem.getUrl().indexOf("PLTV/8888") != -1);
+            currentLiveChannelItem.setinclude_back(supportBack(currentLiveChannelItem.getUrl()));
 
             mHandler.post(tv_sys_timeRunnable);
 
@@ -1597,6 +1612,11 @@ public class LivePlayActivity extends BaseActivity {
                 if (now.compareTo(selectedData.startdateTime) < 0) {
                     return;
                 }
+                // 已结束的节目需要节目源支持时移/回看，否则仅提示，不切换播放地址
+                if (now.compareTo(selectedData.enddateTime) > 0 && !currentLiveChannelItem.getinclude_back()) {
+                    Toast.makeText(App.getInstance(), "当前节目源不支持回看", Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 epgListAdapter.setSelectedEpgIndex(position);
                 if (now.compareTo(selectedData.startdateTime) >= 0 && now.compareTo(selectedData.enddateTime) <= 0) {
                     mVideoView.release();
@@ -1637,6 +1657,11 @@ public class LivePlayActivity extends BaseActivity {
                 String shiyiEnddate = targetDate + selectedData.originEnd.replace(":", "") + "30";
                 Date now = new Date();
                 if (now.compareTo(selectedData.startdateTime) < 0) {
+                    return;
+                }
+                // 已结束的节目需要节目源支持时移/回看，否则仅提示，不切换播放地址
+                if (now.compareTo(selectedData.enddateTime) > 0 && !currentLiveChannelItem.getinclude_back()) {
+                    Toast.makeText(App.getInstance(), "当前节目源不支持回看", Toast.LENGTH_SHORT).show();
                     return;
                 }
                 epgListAdapter.setSelectedEpgIndex(position);
@@ -2029,9 +2054,10 @@ public class LivePlayActivity extends BaseActivity {
                 break;
             case 2://播放解码
                 mVideoView.release();
-                livePlayerManager.changeLivePlayerType(mVideoView, position, currentLiveChannelItem.getChannelName());
+                livePlayerManager.changeLivePlayerType(mVideoView, position, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl());
                 mVideoView.setUrl(currentLiveChannelItem.getUrl(), setPlayHeaders(currentLiveChannelItem.getUrl()));
                 mVideoView.start();
+                Toast.makeText(App.getInstance(), "已为当前节目源保存解码方式", Toast.LENGTH_SHORT).show();
                 break;
             case 3://渲染方式（0=TextureView, 2=SurfaceView）
                 int renderType = position == 1 ? 2 : 0;
@@ -2451,7 +2477,7 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveSettingGroupList() {
-        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "播放解码", "渲染方式", "超时换源", "偏好设置", "应用设置", "直播地址", "退出直播"));
+        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "节目源解码", "渲染方式", "超时换源", "偏好设置", "应用设置", "直播地址", "退出直播"));
         ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
         ArrayList<String> sourceItems = new ArrayList<>();
         ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
@@ -2504,7 +2530,13 @@ public class LivePlayActivity extends BaseActivity {
         for (int j = 0; j < currentSourceNames.size(); j++) {
             LiveSettingItem liveSettingItem = new LiveSettingItem();
             liveSettingItem.setItemIndex(j);
-            liveSettingItem.setItemName(currentSourceNames.get(j));
+            String sourceName = currentSourceNames.get(j);
+            // MQPlayer 风格：在线路名后标记该节目源已单独设置过的解码方式
+            String decodeLabel = livePlayerManager.getSourceDecodeLabel(currentLiveChannelItem.getChannelUrls().get(j));
+            if (!decodeLabel.isEmpty()) {
+                sourceName = sourceName + " [已设" + decodeLabel + "]";
+            }
+            liveSettingItem.setItemName(sourceName);
             liveSettingItemList.add(liveSettingItem);
         }
         liveSettingGroupList.get(0).setLiveSettingItems(liveSettingItemList);

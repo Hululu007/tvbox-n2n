@@ -10,7 +10,7 @@
 
 ```
 tvbox-n2n/
-├── app/                    # TVBox 主模块（含 n2n/ 集成包；单包内含 32/64 位 so）
+├── app/                    # TVBox 主模块（含 n2n/ 集成包；构建时按 ABI 拆成 32/64 位两个 APK）
 ├── hin2n/Hin2n_android/app # hin2n 独立 App（settings.gradle 以 :hin2n 引入，applicationId wang.switchy.hin2n）
 ├── pyramid/                # Python 引擎模块（Chaquopy，仅 python flavor）
 ├── quickjs/                # QuickJS 引擎模块
@@ -31,18 +31,18 @@ tvbox-n2n/
 | brand | `generic` / `hisense` | 通用包 / 海信定制 applicationId |
 | mode | `normal` / `python` | normal=Java 源（**minSdk19，Android 4.4 起可用**，appcompat1.6.1）；python=Chaquopy（minSdk21） |
 
-**32/64 位已合并**：不再有 `abi` flavor 维度拆包；`defaultConfig` 用 `abiFilters 'armeabi-v7a','arm64-v8a'` 只限定**打包** ABI（不是拆分变体），`app/src/main/jniLibs/{armeabi-v7a,arm64-v8a}`（以及 `quickjs` 的两套 so、`pyramid` 的 Python 运行库）一起打进同一个 APK；安装时由 Android 按设备 CPU 自动选择对应 ABI，用户无需再挑 32/64 位包。
+**32/64 位按 ABI 拆包**：没有新增 `abi` flavor 维度（否则 `:pyramid` 没有匹配维度会报 `AmbiguousConfigurationSelectionException`），而是用 `splits.abi { include 'armeabi-v7a','arm64-v8a'; universalApk false }` 在产物层拆分。每个 brand×mode 变体输出两个 APK：`-v7a`（armeabi-v7a，32 位）与 `-arm64`（arm64-v8a，64 位），每个包只含对应 ABI 的 so，安装体积更小。**`splits.abi` 不能与 `defaultConfig.ndk.abiFilters` 同时配置**（AGP 会报「Conflicting configuration」），ABI 白名单统一由 `splits.abi.include` 控制，x86/x86_64 自然不产出。
 
 **Android 4.4（API19）**：`defaultConfig.minSdkVersion=19`；`nextlib-media3ext` 等声明 minSdk21 的三方库由主清单 `tools:overrideLibrary` 放行（原 `legacy` flavor 已合并进 `normal`，不再单独出包）。
 
 构建工具：AGP 7.4.2 / Gradle 7.5 / **JDK 17** / compileSdk 34；Kotlin 1.8、kapt（Room 2.6.1）。
 
 ```powershell
-.\gradlew.bat assembleGenericNormalDebug   # Android 4.4 兼容调试包（单包含 32/64 位 so）
+.\gradlew.bat assembleGenericNormalDebug   # Android 4.4 兼容调试包（自动产出 v7a / arm64 两个 APK）
 .\gradlew.bat assembleRelease              # 全部 release 变体（CI 同款）
 ```
 
-输出名 `TVBox_<buildType>-<brand>-<mode>.apk`（normal 显示为 java，如 `TVBox_release-generic-java.apk`）。
+输出名 `TVBox_<buildType>-<brand>-<mode>-<abi>.apk`（normal 显示为 java，如 `TVBox_release-generic-java-v7a.apk` / `TVBox_release-generic-java-arm64.apk`）。
 
 ## 3. 内置配置（assets JSON，已去远程化）
 
@@ -100,6 +100,8 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 | [ApkDownloader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ApkDownloader.java) | 统一下载管线：OkHttp 流式下载到 `getExternalFilesDir`，首页顶部进度条；完成后 FileProvider+`ACTION_INSTALL_PACKAGE`/`ACTION_VIEW` 安装；Android 8+ 缺未知来源权限时先存 `sPendingInstall` 跳设置，`HomeActivity.onResume` 调 `resumePendingInstall(activity)` 自动重装；Activity 已销毁时用 application context 兜底 |
 | [CustomVodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/CustomVodActivity.java) | 自定义点播界面（`ui.activity` 包），复用 `R.layout.activity_vod`；打开时把接口 JSON 的 `sites` 以 `cv_` 前缀**仅内存注入** `ApiConfig`（不覆盖用户首页源），退出时 `removeCustomSources` 并恢复原 home 源；支持 `http(s)://`（拼本机参数 + 密文自动解密）、`assets/`、`file:///绝对路径`（本地内容同样先过 `ConfigCrypto.maybeDecrypt`，**注意：之后用标准 Gson 解析，不剥 JSONC 注释**） |
 | [DonateActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/DonateActivity.java) | 捐助界面（`ui.activity` 包，`type=page target=donate` 入口打开）：读 `RemoteConfig.donate()` 渲染标题（`title`，空=「支持我们」）、项目详细介绍（`desc`，空=内置介绍文案，支持 `\n` 换行）、自定义图片/收款二维码（`image`：http(s) 走 Glide、`assets/` 路径读包内文件、其余按 drawable 资源名解析；缺失或加载失败时图片区隐藏）、二维码下方说明文字（`tip`，空=隐藏）；布局 [activity_donate.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_donate.xml) 复用主题顶栏样式 |
+| [AppMarketLoader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/AppMarketLoader.java) | **应用市场数据层**（§3.17）：读 `RemoteConfig.appMarket()`，`url` 非空走 OkGo（模板占位 + `headers` + `ConfigCrypto.maybeDecrypt`），为空读 `appMarket.apps` → `assets/app_market.json`；`load` 分页、`loadDetail` 详情合并、`installedVersionCode`/下载中状态，失败自动回退本地目录 |
+| [AppMarketItem.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/bean/AppMarketItem.java) | 应用市场条目（`bean` 包）：`fromJson` 容错解析（size 兼容字节数/字符串、screenshots 兼容字符串与对象）、`mergeFrom` 详情非空字段覆盖、`displayName`/`formatDownloads`/`formatSize` |
 
 设置页：[ModelSettingFragment.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/ModelSettingFragment.java) 的 `initRemoteConfig()` 绑定 `llRcBoot`（开机启动，Hawk `n2n_boot_start`）与 `llRcLauncher`（设为桌面，走 `RemoteConfig.setLauncherEnabled` + `promptChooseLauncher`）；「配置地址」行只保留入口不回显已输入地址（tvApi 已删）。布局 `res/layout/fragment_model.xml` 与 `res/layout-v21/fragment_model.xml` 中的卡片标题为「内置配置」。
 
@@ -302,6 +304,12 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 - 网络请求附加 `days=N` 参数（两种 URL 形态 `?ch=&date=` 与 `{name}/{date}` 模板都附加）；服务端支持时一次返回窗口内多天（条目带 `"date":"yyyy-MM-dd"` 字段），`parseAndCacheEpg()` 按天拆分缓存；旧服务端忽略该参数按原单日格式返回，客户端兼容并触发 `prefetchEpgWindow()` 后台单线程串行预取（300ms 间隔）窗口内其余日期；
 - `EpgCache` 存储：`filesDir/epg_cache/MD5(频道名).json`，有效期 = 历史日期永久、今天/未来仅拉取当天内；写入时顺带清理 10 天前旧数据；空结果也缓存（当天不再对无节目频道重复请求）；
 - `sEpgFetching` 集合防止同一频道同一日期并发重复请求。
+- **节目单回看**：`supportBack(url)` 识别 PLTV/8888、`playseek`、`starttime`、`seek=` 等时移源；点选已结束节目时先校验 `currentLiveChannelItem.getinclude_back()`，不支持则 Toast「当前节目源不支持回看」并保持直播，避免直接改 URL 导致黑屏。
+
+**直播按节目源独立解码（参照 MQPlayer 解码配置）**（[LivePlayerManager.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/bean/LivePlayerManager.java) + [LivePlayActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java)）：
+- 存储：Hawk 键 `live_source_decode_<MD5(线路URL)>`，值为原有 `{"pl":0/1/2,"ijk":"硬解码"/"软解码"}`；读取顺序 = 当前线路 URL 配置 → 旧频道名配置（兼容历史数据）→ 全局默认；
+- 切台/切线路时 `getLiveChannelPlayer(videoView, channelName, url)` 都会套用新节目源配置，各线路解码方式互不影响；
+- 设置面板第 3 组改名「节目源解码」，切换后立即写当前线路并 Toast「已为当前节目源保存解码方式」；线路选择列表会给已单独设置过的线路追加 `[已设硬解/软解/系统/EXO]` 标记（`getSourceDecodeLabel()`）。
 
 **阿里云播放器 License**：AliyunPlayer SDK 5.5+ 强制校验 License，未配置时 SDK 内部弹「配置信息初始化失败，请重启app」Toast（不影响播放）。json 新增 `aliLicenseKey`，`PlayerHelper.init()` 反射调 `AliPlayerGlobalSettings.setLicenseKey`（反射兼容旧版 SDK 无该类的情况，失败静默忽略）。
 
@@ -309,8 +317,8 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 
 ### 3.16 启动模式、直播设置入口与 WebView 触摸换台（2026-11-02）
 
-**启动界面模式（点播 / 直播）**：
-- 复用原有 Hawk 键 `HawkConfig.HOME_DEFAULT_SHOW`（`home_default_show`，`false`=点播模式进首页，`true`=直播模式直接进直播），设置页「启动界面」（`ModelSettingFragment.llHomeLive`）由原二态开关改为 `SelectDialog` 两项选择（`showStartModeDialog()`），选中即写 Hawk 并刷新显示文案。
+**启动时进直播（开关）**：
+- 复用原有 Hawk 键 `HawkConfig.HOME_DEFAULT_SHOW`（`home_default_show`，`false`=启动进首页，`true`=启动直接进直播），设置页「启动时进直播」（`ModelSettingFragment.llHomeLive`，文案 `mn_live_boot`）使用 cac4ffe 分支的二态开关：点击即翻转 Hawk 值并把右侧文案刷新为「开启 / 关闭」，不再弹出「启动界面」选择框。
 - [HomeActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java) 新增 `jumpToLiveIfNeeded()`：直播模式下 `initData()` 回调 `dataInitOk` 即跳 `LivePlayActivity`（不再等待 Spider jar 加载完成，减少停留在首页的延迟）；`liveModeJumped` 保证每次启动只跳一次，避免 `initData` 多次回调重复打开直播页。
 
 **直播界面设置入口（参照 ku9）**：
@@ -325,6 +333,18 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
   - `xRatio ≥ 0.6` → `showSettingGroup()`（直播设置面板）
 - 长按 → `togglePageUi()` 在「网页自带界面」与「全屏视频」间切换；`pageUiMode` 随 `evaluateJavascript` 回调同步，网页 UI 模式下轻点即返回全屏视频。TV 遥控器按键仍由 `LivePlayActivity.dispatchKeyEvent` 处理，不受影响。
 - 已知取舍：WebView 的 `OnTouchListener` 始终消费触摸，网页 UI 模式下的页面内按钮需用遥控器/方向键操作（手机端轻点会先退出网页 UI，再进入全屏视频模式）。
+
+### 3.17 应用市场（「应用」页面，AppsActivity）
+
+「我的应用」升级为应用市场，入口仍是 `page target=apps` → `AppsActivity`：
+
+- 界面 [activity_apps.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_apps.xml)：`tvSearch` + 五个 Tab（精选 / 应用 / 游戏 / 排行 / 管理）+ `mGridMarket`（`AppMarketAdapter`，卡片 `item_app_market.xml`）与 `mGridApps`（已安装列表 `AppsAdapter`）；TV/盒子 4 列、手机按设计宽度 5~6 列；
+- `AppsActivity.selectTab/loadMarket`：精选=`recommend`、应用=`category=app`、游戏=`category=game`、排行=`sort=download`；`AppMarketAdapter.setOnLoadMoreListener` 触发 `page+1`，`requestSeq` 防止快速切 Tab 时旧请求覆盖新列表；
+- 详情 `AppMarketDetailDialog`（[dialog_app_market_detail.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/dialog_app_market_detail.xml)）：先展示列表字段，再异步 `AppMarketLoader.loadDetail` 用 `AppMarketItem.mergeFrom` 合并详情（仅覆盖非空字段）；按钮状态由 `AppMarketAdapter.getActionState` 计算（安装 / 更新 / 打开 / 下载中）；
+- 下载安装复用 `ApkDownloader.download/install/resumePendingInstall`；`AppMarketLoader.markDownloading/clearDownloading` 维护「下载中」状态避免重复点击；
+- 「管理」Tab 为本机第三方应用：`AppInfo.Sorter.sort` 排序、长按 `toggleDelMode()` 卸载模式；`ensureUpdateIndex` 最多拉 5 页市场目录建立「包名 → versionCode」映射，`bindUpdateBadges` 标记 `AppInfo.updateAvailable`，`AppsAdapter` 显示 `tvUpdateBadge`；
+- 数据层 `AppMarketLoader`：`url` 非空走 OkGo（`{category}/{sort}/{page}/{pageSize}/{keyword}` 模板替换 + `headers` + 响应 `ConfigCrypto.maybeDecrypt`）；`url` 为空读 `appMarket.apps`，再退 `assets/app_market.json`；响应兼容根数组 / `data.list` / `data` 数组 / `list` / `apps`，有 `total` 优先按总数判断 `hasMore`、否则按「本页是否满页」；网络或解析失败一律回退本地目录并提示；
+- 配置字段与协议见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 的 `appMarket` 段（`url/detailUrl/headers/pageSize/apps`）。
 
 ## 4. hin2n 入口与 TV 界面
 
@@ -384,7 +404,7 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 4. 注入签名（TVBoxOSC.jks，base64 配置块）；
 5. setup-java 17；
 6. `./gradlew :app:assembleRelease --build-cache --parallel --daemon --warning-mode all`，输出 tee 落盘，失败时 grep `error:` 汇总到日志尾部；
-7. 产物：Artifact `takagen99-Box`（4 个 APK + 源码包 + Release Note）。APK 统一命名为 `TVBox_takagen99_<构建时间>-<brand>-<mode>.apk`，如 `TVBox_takagen99_20261103-1200-generic-java.apk`；发布前会校验 generic-java 包内同时存在 `lib/armeabi-v7a/` 与 `lib/arm64-v8a/`，缺失则构建失败。定时任务（每天 06:59 UTC）当前已注释，保留手动触发（可勾选「构建后不提交发布新版」）。
+7. 产物：Artifact `takagen99-Box`（8 个 APK + 源码包 + Release Note）。每个 brand×mode 变体按 ABI 拆为 `-v7a` / `-arm64`，APK 统一命名为 `TVBox_takagen99_<构建时间>-<brand>-<mode>-<abi>.apk`，如 `TVBox_takagen99_20261104-1200-generic-java-arm64.apk`；发布前会校验 generic-java-v7a 只含 `lib/armeabi-v7a/`、generic-java-arm64 只含 `lib/arm64-v8a/`，缺失或混入其它 ABI 则构建失败。定时任务（每天 06:59 UTC）当前已注释，保留手动触发（可勾选「构建后不提交发布新版」）。
 
 ### hin2n.yml（hin2n 独立 App）
 - push 到 `main` 且改动 `hin2n/**` 或该工作流文件时触发，也支持手动触发（含 `donotpublish` 输入）；

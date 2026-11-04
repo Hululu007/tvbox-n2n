@@ -146,7 +146,7 @@ public class ModelSettingFragment extends BaseLazyFragment {
         tvDns = findViewById(R.id.tvDns);
         tvDns.setText(OkGoHelper.dnsHttpsList.get(Hawk.get(HawkConfig.DOH_URL, 0)));
         tvHomeDefaultShow = findViewById(R.id.tvHomeDefaultShow);
-        tvHomeDefaultShow.setText(Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false) ? "直播模式" : "点播模式");
+        tvHomeDefaultShow.setText(Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false) ? "开启" : "关闭");
 
         // 远程配置（内嵌在「配置地址」下方）
         initRemoteConfig();
@@ -809,7 +809,9 @@ public class ModelSettingFragment extends BaseLazyFragment {
             @Override
             public void onClick(View v) {
                 FastClickCheckUtil.check(v);
-                showStartModeDialog();
+                boolean now = !Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false);
+                Hawk.put(HawkConfig.HOME_DEFAULT_SHOW, now);
+                tvHomeDefaultShow.setText(now ? "开启" : "关闭");
             }
         });
 
@@ -820,44 +822,6 @@ public class ModelSettingFragment extends BaseLazyFragment {
             }
         };
 
-    }
-
-    /**
-     * 启动界面模式：点播模式=打开应用进入首页（原行为），直播模式=打开应用直接进入直播界面。
-     * 复用 HawkConfig.HOME_DEFAULT_SHOW（home_default_show），下次启动生效。
-     */
-    private void showStartModeDialog() {
-        final ArrayList<String> modes = new ArrayList<>();
-        modes.add("点播模式（进入首页）");
-        modes.add("直播模式（进入直播）");
-        final SelectDialog<String> dialog = new SelectDialog<>(mActivity);
-        dialog.setTip("选择启动界面");
-        dialog.setAdapter(null,
-                new SelectDialogAdapter.SelectDialogInterface<String>() {
-                    @Override
-                    public void click(String value, int pos) {
-                        Hawk.put(HawkConfig.HOME_DEFAULT_SHOW, pos == 1);
-                        tvHomeDefaultShow.setText(pos == 1 ? "直播模式" : "点播模式");
-                        dialog.dismiss();
-                    }
-
-                    @Override
-                    public String getDisplay(String val) {
-                        return val;
-                    }
-                },
-                new DiffUtil.ItemCallback<String>() {
-                    @Override
-                    public boolean areItemsTheSame(String a, String b) {
-                        return a == b;
-                    }
-
-                    @Override
-                    public boolean areContentsTheSame(String a, String b) {
-                        return a.equals(b);
-                    }
-                }, modes, Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false) ? 1 : 0);
-        dialog.show();
     }
 
     /**

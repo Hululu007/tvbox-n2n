@@ -58,7 +58,7 @@
     <string name="mn_home_type">Type</string>
     <string name="mn_icon">Button</string>
     <string name="mn_history_num">History</string>
-    <string name="mn_start_mode">Start Screen</string>
+    <string name="mn_live_boot">Autostart Live</string>
     <string name="mn_wall_change">Wallpaper</string>
     <string name="mn_wall_load">Loading Wallpaper</string>
     <string name="mn_wall_reset">Reset</string>
@@ -273,5 +273,36 @@
     </string-array>
 
     <!-- 结束 视频设置 相关配置 -->
+    <!-- 应用市场 -->
+    <string name="app_market_title">App Market</string>
+    <string name="app_market_tab_featured">Featured</string>
+    <string name="app_market_tab_app">Apps</string>
+    <string name="app_market_tab_game">Games</string>
+    <string name="app_market_tab_rank">Ranking</string>
+    <string name="app_market_tab_manage">Manage</string>
+    <string name="app_market_hot_rank">Top Downloads</string>
+    <string name="app_market_search_title">Search Apps</string>
+    <string name="app_market_search_hint">Enter app name</string>
+    <string name="app_market_empty">No apps found</string>
+    <string name="app_market_loading">Loading…</string>
+    <string name="app_market_install">Install</string>
+    <string name="app_market_open">Open</string>
+    <string name="app_market_update">Update</string>
+    <string name="app_market_downloading">Downloading</string>
+    <string name="app_market_unknown">Unknown</string>
+    <string name="app_market_developer">Developer: %1$s</string>
+    <string name="app_market_version">Version %1$s</string>
+    <string name="app_market_size">Size %1$s</string>
+    <string name="app_market_downloads">%1$s downloads</string>
+    <string name="app_market_desc">Description</string>
+    <string name="app_market_no_description">No description</string>
+    <string name="app_market_screenshots">Screenshots</string>
+    <string name="app_market_close">Close</string>
+    <string name="app_market_update_badge">Update</string>
+    <string name="app_market_network_error">Network error</string>
+    <string name="app_market_no_download_url">No download URL available</string>
+    <string name="app_market_open_failed">Unable to open the app</string>
+    <string name="app_market_download_failed">Download failed: %1$s</string>
+    <string name="app_market_downloading_tip">Downloading, please wait</string>
 
 </resources>

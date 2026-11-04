@@ -11,12 +11,15 @@ import com.orhanobut.hawk.Hawk;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Objects;
 
 import xyz.doikki.videoplayer.player.VideoView;
 
 public class LivePlayerManager {
+    /** 节目源（具体线路 URL）解码配置的存储前缀，与按频道名保存的旧配置隔离 */
+    private static final String SOURCE_CONFIG_PREFIX = "live_source_decode_";
     JSONObject defaultPlayerConfig = new JSONObject();
     JSONObject currentPlayerConfig;
 
@@ -43,8 +46,20 @@ public class LivePlayerManager {
         }
     }
 
+    /**
+     * 读取并应用解码配置。
+     * 优先使用「节目源 URL」维度保存的配置（每个线路独立解码方式），
+     * 未单独设置时回退到旧的「频道名」配置，最后回退到全局默认配置。
+     */
     public void getLiveChannelPlayer(VideoView videoView, String channelName) {
-        JSONObject playerConfig = Hawk.get(channelName, null);
+        getLiveChannelPlayer(videoView, channelName, null);
+    }
+
+    public void getLiveChannelPlayer(VideoView videoView, String channelName, String sourceUrl) {
+        JSONObject playerConfig = getSourceConfig(sourceUrl);
+        if (playerConfig == null) {
+            playerConfig = channelName == null ? null : Hawk.get(channelName, null);
+        }
         if (playerConfig == null) {
             if (!currentPlayerConfig.toString().equals(defaultPlayerConfig.toString()))
                 getDefaultLiveChannelPlayer(videoView);
@@ -103,6 +118,14 @@ public class LivePlayerManager {
     }
 
     public void changeLivePlayerType(VideoView videoView, int playerType, String channelName) {
+        changeLivePlayerType(videoView, playerType, channelName, null);
+    }
+
+    /**
+     * 保存当前节目源（线路 URL）的解码方式并立即生效。
+     * 同一频道切换线路时会读取各自线路保存的解码配置。
+     */
+    public void changeLivePlayerType(VideoView videoView, int playerType, String channelName, String sourceUrl) {
         JSONObject playerConfig = currentPlayerConfig;
         try {
             switch (playerType) {
@@ -128,12 +151,48 @@ public class LivePlayerManager {
         }
         PlayerHelper.updateCfg(videoView, playerConfig);
 
+        String storeKey = getSourceConfigKey(sourceUrl);
+        if (storeKey == null) storeKey = channelName;
         if (playerConfig.toString().equals(defaultPlayerConfig.toString()))
-            Hawk.delete(channelName);
+            Hawk.delete(storeKey);
         else
-            Hawk.put(channelName, playerConfig);
+            Hawk.put(storeKey, playerConfig);
 
         currentPlayerConfig = playerConfig;
+    }
+
+    /** 节目源是否单独保存过解码方式 */
+    public boolean hasSourceDecode(String sourceUrl) {
+        return getSourceConfig(sourceUrl) != null;
+    }
+
+    /** 返回节目源的解码方式简称，未单独设置返回空串（用于线路列表上的标记） */
+    public String getSourceDecodeLabel(String sourceUrl) {
+        JSONObject config = getSourceConfig(sourceUrl);
+        if (config == null) return "";
+        int playerType = config.optInt("pl", 0);
+        String ijkCodec = config.optString("ijk", "软解码");
+        if (playerType == 0) return "系统";
+        if (playerType == 1) return ijkCodec.equals("硬解码") ? "硬解" : "软解";
+        return "EXO";
+    }
+
+    private JSONObject getSourceConfig(String sourceUrl) {
+        String key = getSourceConfigKey(sourceUrl);
+        return key == null ? null : Hawk.get(key, null);
+    }
+
+    private String getSourceConfigKey(String sourceUrl) {
+        if (sourceUrl == null || sourceUrl.isEmpty()) return null;
+        try {
+            MessageDigest digest = MessageDigest.getInstance("MD5");
+            byte[] bytes = digest.digest(sourceUrl.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder(SOURCE_CONFIG_PREFIX);
+            for (byte b : bytes) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Throwable t) {
+            return SOURCE_CONFIG_PREFIX + sourceUrl.hashCode();
+        }
     }
 
     public void changeLivePlayerScale(@NonNull VideoView videoView, int playerScale, String channelName){

@@ -3,6 +3,7 @@ package com.github.tvbox.osc.ui.adapter;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import com.chad.library.adapter.base.BaseQuickAdapter;
 import com.chad.library.adapter.base.BaseViewHolder;
@@ -26,6 +27,10 @@ public class AppsAdapter extends BaseQuickAdapter<AppInfo, BaseViewHolder> {
         } else {
             tvDel.setVisibility(View.GONE);
         }
+
+        TextView tvUpdateBadge = helper.getView(R.id.tvUpdateBadge);
+        tvUpdateBadge.setVisibility(item.updateAvailable && !HawkConfig.hotVodDelete
+                ? View.VISIBLE : View.GONE);
 
         helper.setText(R.id.appName, item.getName());
         ImageView ivApps = helper.getView(R.id.ivApps);

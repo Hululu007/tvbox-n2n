@@ -120,9 +120,10 @@ jobs:
         run: |
           rm -rf apk/
           mkdir -p apk/
-          # 32/64 位已合并进单包，构建只产出 4 个 brand×mode 变体：
-          #   generic-java / generic-python / hisense-java / hisense-python
-          # 统一重命名为 TVBox_takagen99_<tag>-<brand>-<mode>.apk，便于按安装说明选包。
+          # 每个 brand×mode 变体按 ABI 拆成 2 个独立包，共 8 个：
+          #   generic-java-v7a / generic-java-arm64 / generic-python-v7a / generic-python-arm64
+          #   hisense-java-v7a / hisense-java-arm64 / hisense-python-v7a / hisense-python-arm64
+          # 统一重命名为 TVBox_takagen99_<tag>-<brand>-<mode>-<abi>.apk，便于按安装说明选包。
           files=$(find app/build/outputs/apk -path '*/release/*.apk' -name 'TVBox_*.apk')
           if [ -z "$files" ]; then
             echo "未找到 release APK，当前构建产物："
@@ -139,15 +140,19 @@ jobs:
 
       - name: Verify APK
         run: |
-          # generic-java（normal 变体）是 Android 4.4+ 的首选安装包，必须同时含 32/64 位 so
-          apk=$(ls apk/TVBox_takagen99_${{ env.tag }}-generic-java.apk)
-          unzip -Z1 "$apk" | grep -q '^lib/armeabi-v7a/' || { echo "缺少 32 位 so (armeabi-v7a)"; exit 1; }
-          unzip -Z1 "$apk" | grep -q '^lib/arm64-v8a/'   || { echo "缺少 64 位 so (arm64-v8a)"; exit 1; }
-          echo "OK：generic-java 同时包含 armeabi-v7a 与 arm64-v8a"
+          # generic-java 是 Android 4.4+ 的首选安装包，必须分别产出 32 位与 64 位独立包，
+          # 且每个包只含对应 ABI 的 so，避免装错架构或体积膨胀。
+          apk32=$(ls apk/TVBox_takagen99_${{ env.tag }}-generic-java-v7a.apk)
+          apk64=$(ls apk/TVBox_takagen99_${{ env.tag }}-generic-java-arm64.apk)
+          unzip -Z1 "$apk32" | grep -q '^lib/armeabi-v7a/' || { echo "32 位包缺少 armeabi-v7a so"; exit 1; }
+          if unzip -Z1 "$apk32" | grep -q '^lib/arm64-v8a/'; then echo "32 位包误含 arm64-v8a so"; exit 1; fi
+          unzip -Z1 "$apk64" | grep -q '^lib/arm64-v8a/' || { echo "64 位包缺少 arm64-v8a so"; exit 1; }
+          if unzip -Z1 "$apk64" | grep -q '^lib/armeabi-v7a/'; then echo "64 位包误含 armeabi-v7a so"; exit 1; fi
+          echo "OK：generic-java 已拆分为 v7a 与 arm64 两个独立安装包"
       - name: Release Note
         run: |
           export LESSCHARSET=utf-8
-          echo -e "Credit: [takagen99](https://github.com/takagen99/Box)\nBase: 258a5fef61578869ae905ca230bdde9e99fc19a8\nBuild: ${{ env.tag }}\n推荐安装: TVBox_takagen99_${{ env.tag }}-generic-java.apk（Android 4.4+，单包自动识别 32/64 位）\nChanges:\n\`\`\`" > apk/takagen99-Release.log
+          echo -e "Credit: [takagen99](https://github.com/takagen99/Box)\nBase: 258a5fef61578869ae905ca230bdde9e99fc19a8\nBuild: ${{ env.tag }}\n推荐安装: 32 位设备用 TVBox_takagen99_${{ env.tag }}-generic-java-v7a.apk；64 位设备用 TVBox_takagen99_${{ env.tag }}-generic-java-arm64.apk（Android 4.4+）\nChanges:\n\`\`\`" > apk/takagen99-Release.log
           git log --pretty=format:%B -10 | sed -e "/^Merge \(pull\|branch\|remote\)/d" -e '/^$/d' >> apk/takagen99-Release.log
           echo -e '\n```' >> apk/takagen99-Release.log
       - name: Upload App To Artifact

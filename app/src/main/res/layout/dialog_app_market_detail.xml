@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用市场详情弹窗 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="@dimen/vs_960"
+        android:layout_height="@dimen/vs_600"
+        android:layout_gravity="center"
+        android:background="@drawable/shape_dialog_bg_main"
+        android:orientation="vertical"
+        android:padding="@dimen/vs_30">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/ivDetailIcon"
+                android:layout_width="@dimen/vs_160"
+                android:layout_height="@dimen/vs_160"
+                android:background="@drawable/shape_thumb_radius"
+                android:padding="@dimen/vs_15"
+                android:scaleType="fitCenter" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_vertical"
+                android:layout_marginStart="@dimen/vs_25"
+                android:layout_marginLeft="@dimen/vs_25"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/tvDetailName"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:singleLine="true"
+                    android:textColor="@android:color/white"
+                    android:textSize="@dimen/ts_32"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tvDetailDeveloper"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vs_8"
+                    android:ellipsize="end"
+                    android:singleLine="true"
+                    android:textColor="@color/color_FFFFFF_70"
+                    android:textSize="@dimen/ts_20" />
+
+                <TextView
+                    android:id="@+id/tvDetailSummary"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vs_2"
+                    android:ellipsize="end"
+                    android:maxLines="2"
+                    android:textColor="@color/color_FFFFFF_80"
+                    android:textSize="@dimen/ts_20"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="@dimen/vs_8"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/tvDetailVersion"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:singleLine="true"
+                        android:textColor="@color/color_FFFFFF_80"
+                        android:textSize="@dimen/ts_18" />
+
+                    <TextView
+                        android:id="@+id/tvDetailSize"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:singleLine="true"
+                        android:textColor="@color/color_FFFFFF_80"
+                        android:textSize="@dimen/ts_18" />
+
+                    <TextView
+                        android:id="@+id/tvDetailDownloads"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:singleLine="true"
+                        android:textColor="@color/color_FFFFFF_80"
+                        android:textSize="@dimen/ts_18" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vs_15"
+            android:text="@string/app_market_desc"
+            android:textColor="@color/color_FFFFFF_50"
+            android:textSize="@dimen/ts_18" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_marginTop="@dimen/vs_5"
+            android:layout_weight="1"
+            android:focusable="true"
+            android:scrollbars="vertical">
+
+            <TextView
+                android:id="@+id/tvDetailDesc"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:lineSpacingExtra="@dimen/vs_4"
+                android:textColor="@color/color_FFFFFF"
+                android:textSize="@dimen/ts_20" />
+        </ScrollView>
+
+        <TextView
+            android:id="@+id/tvScreenshotsLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vs_10"
+            android:text="@string/app_market_screenshots"
+            android:textColor="@color/color_FFFFFF_50"
+            android:textSize="@dimen/ts_18"
+            android:visibility="gone" />
+
+        <com.owen.tvrecyclerview.widget.TvRecyclerView
+            android:id="@+id/mScreenshotGrid"
+            android:layout_width="match_parent"
+            android:layout_height="@dimen/vs_160"
+            android:layout_marginTop="@dimen/vs_5"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:visibility="gone"
+            app:tv_horizontalSpacingWithMargins="@dimen/vs_10"
+            app:tv_verticalSpacingWithMargins="@dimen/vs_10" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vs_20"
+            android:gravity="end"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/btnDetailAction"
+                android:layout_width="@dimen/vs_160"
+                android:layout_height="wrap_content"
+                android:background="@drawable/button_dialog_vod"
+                android:focusable="true"
+                android:gravity="center"
+                android:padding="@dimen/vs_10"
+                android:textColor="@color/color_FFFFFF"
+                android:textSize="@dimen/ts_22" />
+
+            <TextView
+                android:id="@+id/btnDetailClose"
+                android:layout_width="@dimen/vs_140"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="@dimen/vs_20"
+                android:layout_marginLeft="@dimen/vs_20"
+                android:background="@drawable/button_dialog_vod"
+                android:focusable="true"
+                android:gravity="center"
+                android:padding="@dimen/vs_10"
+                android:text="@string/app_market_close"
+                android:textColor="@color/color_FFFFFF"
+                android:textSize="@dimen/ts_22" />
+        </LinearLayout>
+    </LinearLayout>
+</FrameLayout>

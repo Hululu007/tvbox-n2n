@@ -78,6 +78,20 @@ import java.util.List;
  *     "checkUrl": "https://.../version.json",         // 远程版本信息地址（优先），或直接内联下列字段
  *     "versionCode": 2, "versionName": "1.0.2", "url": "https://.../x.apk",
  *     "force": false, "notes": "更新内容" },
+ *   "appMarket": {                                    // 「应用市场」联网配置（「应用」页面）
+ *     // url 模板支持 {category}(all/app/game)、{sort}(recommend/download/update)、
+ *     // {page}(从 1 开始)、{pageSize}、{keyword}；为空=使用 assets/app_market.json
+ *     "url": "https://.../apps?category={category}&sort={sort}&page={page}",
+ *     "detailUrl": "https://.../app/detail?packageName={packageName}",  // 可选；空=直接用列表字段
+ *     "headers": { "X-Token": "..." },                // 可选请求头
+ *     "pageSize": 24,
+ *     "apps": [ {"packageName":"com.x","name":"示例","versionName":"1.0",
+ *                "versionCode":10,"icon":"https://.../i.png","size":"12MB",
+ *                "downloads":1000,"category":"app","summary":"...",
+ *                "description":"...","screenshots":["https://.../s1.jpg"],
+ *                "downloadUrl":"https://.../x.apk","developer":"...",
+ *                "updateTime":"2026-01-01"} ]        // 内置兜底数组（为空则读 assets/app_market.json）
+ *   },
  *   "hin2nEntry": true,                               // 首页是否显示 hin2n 固定入口
  *   "hin2n": { "apkUrl": "https://.../hin2n.apk" },   // 独立组网 App：未安装时的 APK 下载地址（可选）
  *   "secretKey": "",                                  // 接口固定密钥模式的秘钥覆盖（空=用 ConfigCrypto.SECRET_KEY）
@@ -142,6 +156,8 @@ public class RemoteConfig {
     public static final String K_EPG_DAYS = "rc_epg_days";
     /** 阿里云播放器 SDK License Key（json "aliLicenseKey"；5.5+ 版本不配时 SDK 会弹「配置信息初始化失败」） */
     public static final String K_ALI_LICENSE = "rc_ali_license";
+    /** 应用市场配置（json "appMarket" 段原文；列表/详情接口模板 + 请求头 + 内置兜底 apps） */
+    public static final String K_APP_MARKET = "rc_app_market";
     /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
 
@@ -543,6 +559,19 @@ public class RemoteConfig {
         }
     }
 
+    /** 应用市场配置（"appMarket" 段）：未配置返回空对象，调用方无需判空 */
+    public static JSONObject appMarket() {
+        String raw = Hawk.get(K_APP_MARKET, "");
+        if (raw.isEmpty()) {
+            return new JSONObject();
+        }
+        try {
+            return new JSONObject(raw);
+        } catch (Throwable t) {
+            return new JSONObject();
+        }
+    }
+
     private static List<Entry> parseEntries(String raw) {
         List<Entry> list = new ArrayList<>();
         if (raw == null || raw.isEmpty()) {
@@ -871,6 +900,15 @@ public class RemoteConfig {
         }
         if (j.has("upgrade") && j.optJSONObject("upgrade") != null) {
             Hawk.put(K_UPGRADE, j.optJSONObject("upgrade").toString());
+        }
+        // 应用市场配置：本地/远程均可下发；空对象或 null 时清除（回退内置目录 assets/app_market.json）
+        if (j.has("appMarket") && j.optJSONObject("appMarket") != null) {
+            JSONObject market = j.optJSONObject("appMarket");
+            if (market.length() > 0) {
+                Hawk.put(K_APP_MARKET, market.toString());
+            } else {
+                Hawk.delete(K_APP_MARKET);
+            }
         }
         // 捐助界面配置：本地/远程均可下发；空对象或 null 时清除（界面用代码内置介绍）
         if (j.has("donate")) {

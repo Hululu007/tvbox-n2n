@@ -244,7 +244,7 @@
     "homeRec": 1,                      // 首页推荐内容：0=豆瓣热播 1=站点推荐 2=观看历史
     "homeNum": 4,                      // 历史条数：0=20条 1=40条 2=60条 3=80条 4=100条
     "homeRecStyle": false,             // 首页多行网格：true=多行 false=单行横滑（默认）
-    "homeDefaultShow": false,          // 启动界面模式：false=点播模式（进入首页） true=直播模式（直接进入直播）
+    "homeDefaultShow": false,          // 启动时进直播：false=关闭（进入首页） true=开启（直接进入直播）
     "showPreview": true,               // 小窗预览：true=浏览列表时右下角小窗试看
     // ---- 播放器选项 ----
     "playScale": 0,                    // 画面缩放：0=默认 1=16:9 2=4:3 3=填充 4=原始 5=裁剪
@@ -280,6 +280,30 @@
     "url": "",                         // 新版 APK 下载地址（必填，否则不提示）
     "force": false,                    // true=强制升级（无取消按钮，返回键也不能关闭弹窗）
     "notes": ""                        // 更新内容说明（可空，弹窗内换行展示）
+  },
+
+  // ==================== 应用市场（「应用」页面 apps） ====================
+  // 「我的应用」已升级为专业应用市场：精选 / 应用 / 游戏 / 排行 / 管理 五个 Tab，
+  // 支持分类浏览、关键词搜索、详情（简介/截图/版本/大小）、APK 下载安装、
+  // 已安装应用更新提示与卸载管理。
+  // 数据来源二选一：
+  //   ① 配置 url（第三方接口，见下）；
+  //   ② url 留空 → 读取下面的 apps 内置数组；apps 为空 → 读取 assets/app_market.json
+  //      （出厂为空目录，需自行补充条目后才会有内容）。
+  // url 模板占位符：{category}(all|app|game) {sort}(recommend|download|update)
+  //                 {page}(从 1 开始) {pageSize}(默认 24) {keyword}(已 URL 编码)
+  // 响应兼容：根数组 / {"data":{"total":N,"list":[...]}} / {"data":[...]} /
+  //           {"list":[...]} / {"apps":[...]}
+  // 条目字段：packageName name versionName versionCode icon size downloads category
+  //           summary description screenshots[] downloadUrl developer updateTime
+  // detailUrl 模板占位符：{packageName}；留空直接用列表字段。
+  // headers 为可选请求头（如鉴权 Token）；接口响应同样支持密文下发与本机参数拼接。
+  "appMarket": {
+    "url": "",                         // 列表接口地址模板；空=使用下方 apps / assets/app_market.json
+    "detailUrl": "",                   // 详情接口地址模板（可选）；空=直接用列表字段
+    "headers": {},                     // 可选请求头，如 {"X-Token":"..."}
+    "pageSize": 24,                    // 每页条数（1~100）
+    "apps": []                         // 内置兜底目录；空数组则读 assets/app_market.json
   },
 
   // ==================== hin2n 组网（独立 App，包名 wang.switchy.hin2n） ====================

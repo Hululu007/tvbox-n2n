@@ -58,7 +58,7 @@
     <string name="mn_home_type">推荐</string>
     <string name="mn_icon">按钮位置</string>
     <string name="mn_history_num">历史条数</string>
-    <string name="mn_start_mode">启动界面</string>
+    <string name="mn_live_boot">启动时进直播</string>
     <string name="mn_wall_change">换张壁纸</string>
     <string name="mn_wall_load">壁纸更换中</string>
     <string name="mn_wall_reset">重置壁纸</string>
@@ -229,4 +229,36 @@
         <item>首选配置地址</item>
         <item>首选设置配置</item>
     </string-array>
+
+    <!-- 应用市场 -->
+    <string name="app_market_title">应用市场</string>
+    <string name="app_market_tab_featured">精选</string>
+    <string name="app_market_tab_app">应用</string>
+    <string name="app_market_tab_game">游戏</string>
+    <string name="app_market_tab_rank">排行</string>
+    <string name="app_market_tab_manage">管理</string>
+    <string name="app_market_hot_rank">热门榜</string>
+    <string name="app_market_search_title">搜索应用</string>
+    <string name="app_market_search_hint">请输入应用名称</string>
+    <string name="app_market_empty">没有找到相关应用</string>
+    <string name="app_market_loading">正在加载…</string>
+    <string name="app_market_install">安装</string>
+    <string name="app_market_open">打开</string>
+    <string name="app_market_update">更新</string>
+    <string name="app_market_downloading">下载中</string>
+    <string name="app_market_unknown">未知</string>
+    <string name="app_market_developer">开发者：%1$s</string>
+    <string name="app_market_version">版本 %1$s</string>
+    <string name="app_market_size">大小 %1$s</string>
+    <string name="app_market_downloads">下载量 %1$s</string>
+    <string name="app_market_desc">简介</string>
+    <string name="app_market_no_description">暂无简介</string>
+    <string name="app_market_screenshots">应用截图</string>
+    <string name="app_market_close">关闭</string>
+    <string name="app_market_update_badge">可更新</string>
+    <string name="app_market_network_error">网络请求失败</string>
+    <string name="app_market_no_download_url">该应用暂无下载地址</string>
+    <string name="app_market_open_failed">无法打开该应用</string>
+    <string name="app_market_download_failed">下载失败：%1$s</string>
+    <string name="app_market_downloading_tip">正在下载，请稍候</string>
 </resources>

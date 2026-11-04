@@ -221,6 +221,13 @@
     "force": false,
     "notes": ""
   },
+  "appMarket": {
+    "url": "",
+    "detailUrl": "",
+    "headers": {},
+    "pageSize": 24,
+    "apps": []
+  },
   "hin2n": {
     "apkUrl": "https://github.com/tianku1985/tvbox-n2n/releases/download/hin2n-latest/hin2n-latest.apk"
   },

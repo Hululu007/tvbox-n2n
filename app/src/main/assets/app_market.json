@@ -1,0 +1,25 @@
+{
+  "_comment": "应用市场内置兜底目录：tvbox-config.json 的 appMarket.url 为空时读取本文件 apps 数组。若 appMarket.apps 非空则优先使用配置内的数组。",
+  "_fields": {
+    "packageName": "应用包名（用于判断已安装/版本更新/打开应用）",
+    "name": "应用名称",
+    "versionName": "版本名（显示用）",
+    "versionCode": "版本号（整数，用于更新比较）",
+    "icon": "图标 URL",
+    "size": "安装包大小（可填数字字节，或 '12MB' 这类字符串）",
+    "downloads": "下载量（整数，排行按此降序）",
+    "category": "分类：app 或 game",
+    "summary": "一句话简介",
+    "description": "详细介绍",
+    "screenshots": "截图 URL 数组（可为空）",
+    "downloadUrl": "APK 下载地址（安装/更新使用）",
+    "developer": "开发者",
+    "updateTime": "更新时间（字符串，update 排序使用）"
+  },
+  "_example": {
+    "name": "示例应用",
+    "url": "https://example.com/app.apk",
+    "downloadUrl": "https://example.com/app.apk"
+  },
+  "apps": []
+}

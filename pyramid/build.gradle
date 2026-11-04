@@ -24,9 +24,9 @@ android {
             }
         }
 
-        // 单包同时打包 32/64 位 Python 运行库，由系统安装时按 CPU 自动选择。
-        // 不再按 ABI 拆分 flavor，否则 app 侧已无 abi 维度，Gradle 无法匹配到唯一变体
-        // （AmbiguousConfigurationSelectionException: project :pyramid）。
+        // 同时保留 32/64 位 Python 运行库；app 模块用 splits.abi 在产物层拆包，
+        // 不新增 abi flavor 维度（否则 Gradle 无法为 :pyramid 匹配唯一变体，
+        // 报 AmbiguousConfigurationSelectionException）。
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a'
         }

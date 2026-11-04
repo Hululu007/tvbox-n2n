@@ -21,12 +21,11 @@ android {
         // 在 API<21 上会抛 Resources.NotFoundException 闪退。这里让 AGP 为 minSdk<21 的变体额外生成 PNG
         // （normal 为 minSdk19 会生成，python 的 minSdk21 不会生成），装有 4.4 设备的包仍走 PNG 兜底。
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
-        // 单包同时打入 armeabi-v7a 与 arm64-v8a（见 jniLibs），由系统安装时按 CPU 自动选择，
-        // 不再按 ABI 拆包，避免用户装错 32/64 位版本。这里只过滤打包的 ABI（不是拆包），
-        // 顺带排除 hin2n 模块为模拟器编译的 x86/x86_64 库。
-        ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a'
-        }
+        // 同时保留 armeabi-v7a 与 arm64-v8a（见 jniLibs），
+        // 实际输出时通过下方 splits.abi 按 ABI 拆成 32 位 / 64 位独立 APK，
+        // 并排除 hin2n 模块为模拟器编译的 x86/x86_64 库。
+        // 注意：splits.abi 与 defaultConfig 的 ndk.abiFilters 不能同时配置（AGP 会报冲突），
+        // ABI 白名单统一交给 splits.abi.include。
         //设置room的Schema的位置
         javaCompileOptions {
             annotationProcessorOptions {
@@ -46,7 +45,9 @@ android {
         }
     }
 
-    // 只保留「品牌 + 模式」两个维度：32/64 位已合并进同一个 APK，由系统按设备 CPU 自动选择。
+    // 「品牌 + 模式」两个维度；ABI 不再作为 flavor 维度，
+    // 否则 :pyramid 库模块没有匹配的 abi 维度会报 AmbiguousConfigurationSelectionException。
+    // 32/64 位改由 splits.abi 在构建产物层拆分：每个变体生成 v7a 与 arm64 两个 APK。
     flavorDimensions += ["brand", "mode"]
     productFlavors {
         generic  {
@@ -74,11 +75,23 @@ android {
         }
     }
 
+    // 按 ABI 拆分 APK：32 位 armeabi-v7a、64 位 arm64-v8a，各自独立安装包。
+    splits {
+        abi {
+            enable true
+            reset()
+            include 'armeabi-v7a', 'arm64-v8a'
+            universalApk false
+        }
+    }
+
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
             def flavorNames = variant.productFlavors.collect { it.name == "normal" ? "java" : it.name }.join('-')
-            // 构建自定义文件名
-            def fileName = "TVBox_${variant.buildType.name}-${flavorNames}.apk"
+            // ABI 后缀：v7a / arm64，用于区分 32 位与 64 位安装包
+            def abi = output.getFilter(com.android.build.OutputFile.ABI)
+            def abiSuffix = abi == "armeabi-v7a" ? "-v7a" : (abi == "arm64-v8a" ? "-arm64" : "")
+            def fileName = "TVBox_${variant.buildType.name}-${flavorNames}${abiSuffix}.apk"
             outputFileName = fileName
         }
     }

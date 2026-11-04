@@ -384,7 +384,7 @@ public class HomeActivity extends BaseActivity {
     /** 直播模式每次启动只跳转一次，避免 initData 多次回调重复打开直播页 */
     private boolean liveModeJumped = false;
 
-    /** 启动界面=直播模式时跳到直播页（点播模式保持首页） */
+    /** 开启「启动时进直播」时跳到直播页（关闭时保持首页） */
     private void jumpToLiveIfNeeded() {
         if (liveModeJumped) {
             return;
@@ -436,7 +436,7 @@ public class HomeActivity extends BaseActivity {
         }
 
         if (dataInitOk) {
-            // 启动界面=直播模式：点播接口配置就绪即进入直播（不等待 Spider jar 加载），
+            // 启动时进直播=开启：点播接口配置就绪即进入直播（不等待 Spider jar 加载），
             // 避免先停留在首页只能靠后续 jar 加载完成才跳转的延迟。
             jumpToLiveIfNeeded();
         }

@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 应用市场：标题 + 搜索 + 分类 Tab + 内容区 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
@@ -14,24 +15,22 @@
         android:paddingLeft="@dimen/vs_50"
         android:paddingTop="@dimen/vs_20"
         android:paddingRight="@dimen/vs_50"
-        android:paddingBottom="@dimen/vs_20">
+        android:paddingBottom="@dimen/vs_12">
 
         <View
             android:layout_width="@dimen/vs_5"
-            android:layout_height="match_parent"
+            android:layout_height="@dimen/vs_30"
             android:layout_gravity="center"
             android:layout_marginTop="@dimen/vs_8"
             android:layout_marginEnd="@dimen/vs_12"
             android:layout_marginRight="@dimen/vs_12"
-            android:layout_marginBottom="@dimen/vs_8"
             android:background="?attr/color_theme" />
 
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="@dimen/vs_50"
-            android:drawablePadding="@dimen/vs_10"
             android:gravity="center"
-            android:text="@string/act_app"
+            android:text="@string/app_market_title"
             android:textColor="@android:color/white"
             android:textSize="@dimen/ts_34"
             android:textStyle="bold" />
@@ -55,31 +54,158 @@
             android:textSize="@dimen/ts_24"
             android:visibility="gone" />
 
-        <ImageView
-            android:id="@+id/tvDelete"
-            android:layout_width="@dimen/vs_50"
+        <TextView
+            android:id="@+id/tvSearch"
+            android:layout_width="wrap_content"
             android:layout_height="@dimen/vs_50"
-            android:layout_marginStart="@dimen/vs_10"
-            android:layout_marginEnd="@dimen/vs_10"
-            android:gravity="center"
+            android:layout_gravity="center"
             android:background="@drawable/button_dialog_vod"
-            android:focusable="false"
-            android:focusableInTouchMode="false"
-            android:padding="@dimen/vs_5"
-            android:src="@drawable/icon_delete" />
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingLeft="@dimen/vs_25"
+            android:paddingRight="@dimen/vs_25"
+            android:text="@string/act_search"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_22" />
     </LinearLayout>
 
-    <com.owen.tvrecyclerview.widget.TvRecyclerView
-        android:id="@+id/mGridViewApps"
+    <LinearLayout
+        android:id="@+id/tabBar"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
+        android:layout_height="wrap_content"
         android:clipChildren="false"
         android:clipToPadding="false"
+        android:orientation="horizontal"
+        android:paddingLeft="@dimen/vs_50"
+        android:paddingRight="@dimen/vs_50"
+        android:paddingBottom="@dimen/vs_10">
+
+        <TextView
+            android:id="@+id/tabFeatured"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/vs_50"
+            android:layout_marginEnd="@dimen/vs_10"
+            android:layout_marginRight="@dimen/vs_10"
+            android:background="@drawable/button_dialog_vod"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingLeft="@dimen/vs_20"
+            android:paddingRight="@dimen/vs_20"
+            android:text="@string/app_market_tab_featured"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_24" />
+
+        <TextView
+            android:id="@+id/tabApp"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/vs_50"
+            android:layout_marginEnd="@dimen/vs_10"
+            android:layout_marginRight="@dimen/vs_10"
+            android:background="@drawable/button_dialog_vod"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingLeft="@dimen/vs_20"
+            android:paddingRight="@dimen/vs_20"
+            android:text="@string/app_market_tab_app"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_24" />
+
+        <TextView
+            android:id="@+id/tabGame"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/vs_50"
+            android:layout_marginEnd="@dimen/vs_10"
+            android:layout_marginRight="@dimen/vs_10"
+            android:background="@drawable/button_dialog_vod"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingLeft="@dimen/vs_20"
+            android:paddingRight="@dimen/vs_20"
+            android:text="@string/app_market_tab_game"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_24" />
+
+        <TextView
+            android:id="@+id/tabRank"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/vs_50"
+            android:layout_marginEnd="@dimen/vs_10"
+            android:layout_marginRight="@dimen/vs_10"
+            android:background="@drawable/button_dialog_vod"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingLeft="@dimen/vs_20"
+            android:paddingRight="@dimen/vs_20"
+            android:text="@string/app_market_tab_rank"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_24" />
+
+        <TextView
+            android:id="@+id/tabManage"
+            android:layout_width="wrap_content"
+            android:layout_height="@dimen/vs_50"
+            android:background="@drawable/button_dialog_vod"
+            android:focusable="true"
+            android:gravity="center"
+            android:paddingLeft="@dimen/vs_20"
+            android:paddingRight="@dimen/vs_20"
+            android:text="@string/app_market_tab_manage"
+            android:textColor="@android:color/white"
+            android:textSize="@dimen/ts_24" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvSectionTitle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
         android:paddingLeft="@dimen/vs_80"
-        android:paddingTop="@dimen/vs_40"
-        android:paddingRight="@dimen/vs_80"
-        android:paddingBottom="@dimen/vs_40"
-        app:tv_horizontalSpacingWithMargins="@dimen/vs_25"
-        app:tv_selectedItemIsCentered="true"
-        app:tv_verticalSpacingWithMargins="@dimen/vs_25" />
+        android:paddingBottom="@dimen/vs_5"
+        android:text="@string/app_market_hot_rank"
+        android:textColor="@color/color_FFFFFF_70"
+        android:textSize="@dimen/ts_22"
+        android:visibility="gone" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <com.owen.tvrecyclerview.widget.TvRecyclerView
+            android:id="@+id/mGridMarket"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:paddingLeft="@dimen/vs_80"
+            android:paddingTop="@dimen/vs_25"
+            android:paddingRight="@dimen/vs_80"
+            android:paddingBottom="@dimen/vs_40"
+            app:tv_horizontalSpacingWithMargins="@dimen/vs_25"
+            app:tv_selectedItemIsCentered="true"
+            app:tv_verticalSpacingWithMargins="@dimen/vs_25" />
+
+        <com.owen.tvrecyclerview.widget.TvRecyclerView
+            android:id="@+id/mGridApps"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:paddingLeft="@dimen/vs_80"
+            android:paddingTop="@dimen/vs_40"
+            android:paddingRight="@dimen/vs_80"
+            android:paddingBottom="@dimen/vs_40"
+            android:visibility="gone"
+            app:tv_horizontalSpacingWithMargins="@dimen/vs_25"
+            app:tv_selectedItemIsCentered="true"
+            app:tv_verticalSpacingWithMargins="@dimen/vs_25" />
+
+        <TextView
+            android:id="@+id/tvEmpty"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:text="@string/app_market_empty"
+            android:textColor="@color/color_FFFFFF_70"
+            android:textSize="@dimen/ts_24"
+            android:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>
