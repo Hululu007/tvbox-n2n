@@ -579,7 +579,7 @@ public class RemoteConfig {
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject cfg = parseLoose(raw);
             sConfig = cfg;
-            sConfigBase = src; // 相对接口地址以主配置所在目录为基准拼接
+            sConfigBase = url; // 相对接口地址以主配置所在目录为基准拼接
             apply(app, cfg, false);
             Hawk.put(K_REMOTE_RAW, raw);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
