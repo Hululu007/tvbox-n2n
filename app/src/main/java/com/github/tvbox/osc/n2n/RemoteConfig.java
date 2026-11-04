@@ -26,7 +26,8 @@ import java.util.List;
  *
  * 主配置内的 {@code remoteConfigUrl} 可作为二次远程覆盖（可选）。
  * 接口字段（api/live/epg/proxy/upgrade/appMarket 等）若未写 http(s)://，
- * 会自动拼接主接口（api）的协议 + 域名/IP，详见 {@link #resolveInterfaceUrl(String)}。
+ * 会自动拼接配置来源地址（CONFIG_URL / remoteConfigUrl）的协议 + 域名/IP + 目录，
+ * 配置为本地文件时回退拼接主接口（api）域名，详见 {@link #resolveInterfaceUrl(String)}。
  * 所有接口请求均支持 ke 前缀加密（{@link ConfigCrypto}），并自动携带本机参数。
  *
  * JSON 结构（所有字段可选，缺省保持本地现状；支持 // 与 /* 注释、尾逗号）：
@@ -153,6 +154,14 @@ public class RemoteConfig {
 
     /** 最近一次加载的主配置 JSON（入口/主题/hin2n 播种等逻辑读取） */
     private static volatile JSONObject sConfig = null;
+
+    /**
+     * 最近一次成功加载配置的来源地址（http(s) 绝对地址）。
+     * 相对接口地址（live/epg/proxy/upgrade/appMarket/自定义点播等）优先按它拼接，
+     * 保证「配置与接口同服务器/同目录」的部署开箱即用；配置来自本地文件或尚未加载时，
+     * 回退到主接口（api）的协议 + 域名 + 目录。
+     */
+    private static volatile String sConfigBase = "";
 
     /** 单个自定义入口 */
     public static class Entry {
@@ -467,7 +476,7 @@ public class RemoteConfig {
      * <p>主配置内部的 {@code remoteConfigUrl} 仍可作为「二次远程覆盖」使用；
      * 主配置为远程时，建议直接留空该字段，避免重复请求。</p>
      */
-    public static final String CONFIG_URL = "";
+    public static final String CONFIG_URL = "http://yaochi.nps.tianku.net:8080/php-demo/index.php?r=config";
 
     /**
      * App 启动时调用：按 {@link #CONFIG_URL} 加载主配置并应用。
@@ -513,6 +522,7 @@ public class RemoteConfig {
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject cfg = parseLoose(raw);
             sConfig = cfg;
+            sConfigBase = ""; // 本地/assets 配置无 URL 基准，相对接口地址回退拼接主接口 api 域名
             apply(app, cfg, false);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
             if (!secondary.isEmpty()) {
@@ -569,6 +579,7 @@ public class RemoteConfig {
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject cfg = parseLoose(raw);
             sConfig = cfg;
+            sConfigBase = src; // 相对接口地址以主配置所在目录为基准拼接
             apply(app, cfg, false);
             Hawk.put(K_REMOTE_RAW, raw);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
@@ -617,6 +628,7 @@ public class RemoteConfig {
             // 是 json 直接解析，不是 json 先解密后加载（ke 前缀/固定密钥两种模式自动识别）
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject remote = parseLoose(raw);
+            sConfigBase = url; // 相对接口地址以本次远程配置所在目录为基准拼接
             apply(app, remote, true);
             // 缓存存解密后的明文：断网兜底无需再解密，与旧版本明文缓存格式兼容
             Hawk.put(K_REMOTE_RAW, raw);
@@ -881,7 +893,7 @@ public class RemoteConfig {
             if (market.length() > 0) {
                 try {
                     JSONObject resolved = new JSONObject(market.toString());
-                    // 应用市场接口同样支持相对地址（默认拼接主接口域名/IP）
+                    // 应用市场接口同样支持相对地址（默认拼接主配置来源地址的域名/IP，本地配置回退主接口 api 域名）
                     if (resolved.has("url")) {
                         resolved.put("url", resolveInterfaceUrl(resolved.optString("url", "")));
                     }
@@ -1028,7 +1040,8 @@ public class RemoteConfig {
 
     /**
      * 写入接口地址。APK 内已无设置页，JSON 是唯一配置来源，因此每次加载都以 JSON 为准。
-     * live/epg/proxy 等「其它接口」若未写 http(s)://，自动拼接主接口（api）的域名/IP。
+     * live/epg/proxy 等「其它接口」若未写 http(s)://，自动拼接配置来源地址的域名/IP
+     * （配置为本地文件时回退拼接主接口 api 域名）。
      */
     private static void applyEndpoint(final Context app, JSONObject j, String key, String hawkKey, String label, boolean force) {
         if (!j.has(key)) {
@@ -1045,10 +1058,14 @@ public class RemoteConfig {
     }
 
     /**
-     * 其它接口相对地址解析：不带 http:// / https:// 的地址，默认使用主接口（api）的
-     * 协议 + 域名 + 端口。例如主接口为 {@code http://1.2.3.4/config.json}，
-     * live 填 {@code /live.txt} → {@code http://1.2.3.4/live.txt}；
-     * 填 {@code live.txt} → {@code http://1.2.3.4/live.txt}。
+     * 其它接口相对地址解析：不带 http:// / https:// 的地址，优先使用**配置来源地址**
+     * （{@link #CONFIG_URL} 或二次远程配置 remoteConfigUrl 的实际拉取地址）的
+     * 协议 + 域名 + 端口 + 所在目录拼接；配置来自本地文件/assets 或尚未加载成功时，
+     * 回退到主接口（api）的协议 + 域名 + 目录。
+     *
+     * <p>例如配置地址为 {@code http://1.2.3.4:8080/php-demo/index.php?r=config}，
+     * live 填 {@code index.php?r=live} → {@code http://1.2.3.4:8080/php-demo/index.php?r=live}；
+     * 填 {@code /live.txt} → {@code http://1.2.3.4:8080/live.txt}。</p>
      *
      * <p>已带协议、clan://、file://、assets/、proxy://、tkp2p:// 等特殊地址原样返回。</p>
      */
@@ -1068,18 +1085,24 @@ public class RemoteConfig {
             return u;
         }
         try {
-            String api = Hawk.get(HawkConfig.API_URL, "");
-            if (api == null || api.isEmpty()
-                    || (!api.startsWith("http://") && !api.startsWith("https://"))) {
+            // 优先按配置来源地址拼接（配置与接口同服务器/同目录部署时开箱即用）；
+            // 配置为本地文件或尚未加载时，回退主接口 api 的域名/IP。
+            String base = sConfigBase;
+            if (base == null || base.isEmpty()
+                    || (!base.startsWith("http://") && !base.startsWith("https://"))) {
+                base = Hawk.get(HawkConfig.API_URL, "");
+            }
+            if (base == null || base.isEmpty()
+                    || (!base.startsWith("http://") && !base.startsWith("https://"))) {
                 return u;
             }
-            java.net.URL base = new java.net.URL(api);
-            String origin = base.getProtocol() + "://" + base.getAuthority();
+            java.net.URL b = new java.net.URL(base);
+            String origin = b.getProtocol() + "://" + b.getAuthority();
             if (u.startsWith("/")) {
                 return origin + u;
             }
-            // 相对路径：以主接口所在目录为基准
-            String path = base.getPath();
+            // 相对路径：以基准地址所在目录为准
+            String path = b.getPath();
             int slash = path == null ? -1 : path.lastIndexOf('/');
             String dir = slash >= 0 ? path.substring(0, slash + 1) : "/";
             return origin + dir + u;

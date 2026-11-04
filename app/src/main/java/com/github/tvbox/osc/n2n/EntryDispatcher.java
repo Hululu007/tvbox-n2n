@@ -50,7 +50,7 @@ public class EntryDispatcher {
                 Intent it = new Intent(act, CustomVodActivity.class);
                 it.putExtra("name", e.name == null ? "" : e.name);
                 String entryUrl = target.isEmpty() ? (e.url == null ? "" : e.url) : target;
-                // 自定义点播接口同样支持相对地址（默认拼接主接口域名/IP）
+                // 自定义点播接口同样支持相对地址（默认拼接主配置来源地址的域名/IP，本地配置回退主接口 api 域名）
                 it.putExtra("url", RemoteConfig.resolveInterfaceUrl(entryUrl));
                 String theme = e.theme == null ? "" : e.theme.trim();
                 it.putExtra("theme", theme);

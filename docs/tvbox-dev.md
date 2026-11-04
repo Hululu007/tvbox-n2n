@@ -66,7 +66,7 @@ tvbox-n2n/
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
 | `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
 | `topEntries` / `homeEntries` | 每次加载覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 = 保持代码默认 UI（默认不含设置入口） |
-| `api` / `live` / `epg` / `proxy` | **每次加载都以 JSON 为准**（应用内无设置页）；`live`/`epg`/`proxy` 未带协议时自动拼接主接口域名/IP |
+| `api` / `live` / `epg` / `proxy` | **每次加载都以 JSON 为准**（应用内无设置页）；`live`/`epg`/`proxy` 未带协议时优先拼接主配置来源地址的域名/IP + 目录（本地配置时回退拼主接口 api 域名） |
 | `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记）；出厂默认开 |
 | `secretKey`（固定密钥模式秘钥） | 每次启动覆盖 Hawk `rc_secret_key`；非空时**优先于** `ConfigCrypto.SECRET_KEY` Java 常量（见 §3.11） |
 | `donate`（捐助界面对象） | 每次启动覆盖 Hawk `rc_donate`；字段缺失或非对象时删除缓存（捐助界面回退内置文案）。子字段：`title`（顶栏标题）/`desc`（介绍，`\n` 换行）/`image`（二维码：http(s)/assets/路径/drawable 名）/`tip`（二维码下方说明文字，空=不显示） |
@@ -91,7 +91,7 @@ tvbox-n2n/
 
 | 类 | 职责 |
 |----|------|
-| [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | **配置中心**（§3.1/§3.2）：`CONFIG_URL` 常量在代码里手动指定配置来源（`http(s)://` 远程 / 本地文件 / `assets/xxx.json` / 空=全用代码默认值），APK 内不打包任何配置 JSON；`bootstrap(ctx)` 为空则不加载、远程走后台线程 `fetchPrimary`（`DeviceParams.append` 拼参数 + `ConfigCrypto.maybeDecrypt` 自动解密，成功后缓存明文兜底）、本地/资源走 `loadLocalPrimary` 同步读取；`apply(ctx,cfg,remoteOnly)` 中 `api/live/epg/proxy` 每次强制写入 JSON 值，`settings` 每次强制应用默认（设置页已移除），相对接口地址经 `resolveInterfaceUrl` 自动补全主接口协议+域名+目录；`remoteOnly=true` 时跳过 settings/bootStart/hin2n，`useRemoteConfig=true` 且远程可达时进入 forceRemote 强制覆盖分支；若 `remoteConfigUrl` 非空则再异步拉取一次；`secretKey()`/`donate()` 暴露秘钥与捐助配置 |
+| [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | **配置中心**（§3.1/§3.2）：`CONFIG_URL` 常量在代码里手动指定配置来源（`http(s)://` 远程 / 本地文件 / `assets/xxx.json` / 空=全用代码默认值），APK 内不打包任何配置 JSON；`bootstrap(ctx)` 为空则不加载、远程走后台线程 `fetchPrimary`（`DeviceParams.append` 拼参数 + `ConfigCrypto.maybeDecrypt` 自动解密，成功后缓存明文兜底）、本地/资源走 `loadLocalPrimary` 同步读取；`apply(ctx,cfg,remoteOnly)` 中 `api/live/epg/proxy` 每次强制写入 JSON 值，`settings` 每次强制应用默认（设置页已移除），相对接口地址经 `resolveInterfaceUrl` 优先按配置来源地址（`sConfigBase`）补全协议+域名+目录，本地配置回退主接口 api 域名；`remoteOnly=true` 时跳过 settings/bootStart/hin2n，`useRemoteConfig=true` 且远程可达时进入 forceRemote 强制覆盖分支；若 `remoteConfigUrl` 非空则再异步拉取一次；`secretKey()`/`donate()` 暴露秘钥与捐助配置 |
 | [ConfigCrypto.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ConfigCrypto.java) | **接口密文统一解密**（§3.11）：`maybeDecrypt(raw)` 是 json/明文原样返回，是密文按两种模式（ke 前缀 / 固定密钥）自动识别解密，失败原样返回永不抛异常；**`SECRET_KEY` 常量 = 固定密钥模式的秘钥自定义修改位置** |
 | [DeviceParams.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/DeviceParams.java) | **接口请求本机参数拼接**（§3.12）：`append(url)` 给 http(s) 请求统一拼上 `mac/ip/model/brand/device/sdk/release/app` 查询参数，服务端按 `$_GET['mac']` 等按设备下发 |
 | [Hin2nSeeder.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nSeeder.java) | 首启播种 hin2n 配置；字段别名 `ipMode/fromSupernode`、`localIP/localIpAuto`、`acceptMulticast/dropMulticast`(反义) |

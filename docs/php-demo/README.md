@@ -42,7 +42,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | `index.php?r=crypto` | — | 明文/ke/固定密钥三种形态联调 |
 | `tvbox_crypto.php` | — | 加密工具函数与演示 |
 
-主配置里的接口地址使用**相对地址**（如 `index.php?r=api&enc=ke`），客户端会自动以主配置 URL 的域名/IP 拼接，无需写死域名。
+主配置里的接口地址使用**相对地址**（如 `index.php?r=api&enc=ke`），客户端会自动以**主配置 URL 的域名/IP + 所在目录**拼接（配置来自本地文件时回退拼接主接口 api 域名），无需写死域名。
 
 `r=config` 返回完整系统配置：接口地址、`epgDays`、`settings` 全量设置项、首页 `home`、`themes`、`tkp2p`、`topEntries`/`homeEntries`、应用市场、升级与捐助等，字段含义与 [配置示例](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 一致。
 

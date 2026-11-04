@@ -72,7 +72,7 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 
 | 字段 | 说明 |
 |------|------|
-| `api` | 主点播接口地址（其它接口的相对地址以它的域名/IP 为基准） |
+| `api` | 主点播接口地址（本地配置时其它接口的相对地址以它的域名/IP 为基准） |
 | `live` | 直播源（txt / m3u / json 地址） |
 | `epg` | 节目单地址 |
 | `proxy` | 播放代理（可选） |
@@ -83,7 +83,7 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 | `notice` / `home` / `themes` / `donate` | 公告、首页外观、主题、捐助页 |
 | `remoteConfigUrl` | 可选的二次远程配置覆盖 |
 
-> **相对地址规则**：`live`、`epg`、`proxy`、`upgrade.checkUrl`、`appMarket.url/detailUrl`、自定义点播入口等，未写 `http://` 或 `https://` 时，自动拼接主接口 `api` 的协议 + 域名/IP。例如 `api = http://1.2.3.4/config.json`，`live = live.txt` → `http://1.2.3.4/live.txt`。
+> **相对地址规则**：`live`、`epg`、`proxy`、`upgrade.checkUrl`、`appMarket.url/detailUrl`、自定义点播入口等，未写 `http://` 或 `https://` 时，**优先拼接主配置来源地址**（`CONFIG_URL` / `remoteConfigUrl`）的协议 + 域名/IP + 所在目录；配置来自本地文件/assets 时回退拼接主接口 `api` 的域名/IP。例如主配置地址为 `http://1.2.3.4:8080/php-demo/index.php?r=config`，`live = index.php?r=live` → `http://1.2.3.4:8080/php-demo/index.php?r=live`。
 
 > **接口加密**：以上接口返回内容可以是明文 JSON，也可以是 `ke` 前缀密文（AES-128-ECB），客户端自动识别。
 

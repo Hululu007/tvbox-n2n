@@ -180,7 +180,8 @@
   // ==================== 接口地址（JSON 是唯一配置来源） ====================
   // 应用内无设置页，每次加载都以 JSON 为准。接口均支持密文下发，远程请求自动携带
   // 本机参数。live/epg/proxy/upgrade/appMarket/自定义点播若未写 http(s)://，
-  // 自动拼接主接口 api 的协议 + 域名/IP。
+  // 自动拼接主配置来源地址（CONFIG_URL / remoteConfigUrl）的协议 + 域名/IP + 目录；
+  // 配置为本地文件/assets 时回退拼接主接口 api 的域名/IP。
   "api": "",                           // 点播源接口（JSON 格式见 docs/vod.config.example.json）；
                                        //   留空且配置了 live 时可作纯直播盒子（不弹「源地址为空」）
   "live": "",                          // 直播源接口（txt / m3u / json）
@@ -256,7 +257,7 @@
   // 不配 url（或 versionCode<=0）则不提示；整段删除即关闭升级检查。
   "upgrade": {
     "checkUrl": "",                    // 远程版本信息地址（优先），返回与本段同结构的 json（可密文）；
-                                       //   支持相对地址：如 "upgrade/version.json" 自动拼接主接口域名
+                                       //   支持相对地址：如 "upgrade/version.json" 自动拼接主配置地址域名（本地配置时回退拼主接口 api 域名）
     "versionCode": 0,                  // 内联模式（无 checkUrl 时）：新版本号，> 当前版本才提示
     "versionName": "",                 // 新版本名（仅显示用，如 "1.0.2"）
     "url": "",                         // 新版 APK 下载地址（必填，否则不提示）

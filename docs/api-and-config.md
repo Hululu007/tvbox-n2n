@@ -55,7 +55,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 ```jsonc
 {
   "api": "http://your-domain/index.php?r=api&enc=ke",
-  "live": "index.php?r=live&enc=ke",          // 相对地址 → 自动拼主接口域名
+  "live": "index.php?r=live&enc=ke",          // 相对地址 → 自动拼主配置地址的域名+目录
   "epg": "index.php?r=epg&enc=ke",
   "proxy": "",
   "bootStart": true,
@@ -247,16 +247,19 @@ echo bin2hex(openssl_encrypt($json, 'AES-128-ECB', substr($secret, 0, 16), OPENS
 
 ## 5. 相对地址规则
 
-`live` / `epg` / `proxy` / `upgrade.checkUrl` / `appMarket.url` / `appMarket.detailUrl` / 自定义点播 `target` 未写协议时，自动以主接口 `api` 的协议 + 域名 + 目录拼接。
+`live` / `epg` / `proxy` / `upgrade.checkUrl` / `appMarket.url` / `appMarket.detailUrl` / 自定义点播 `target` 未写协议时，**优先以主配置来源地址（`CONFIG_URL` / `remoteConfigUrl` 的实际拉取地址）的协议 + 域名 + 目录拼接**；配置来自本地文件/assets 时回退以主接口 `api` 的协议 + 域名 + 目录拼接。
 
-例：`api = http://1.2.3.4/php-demo/index.php?r=api`：
+例：主配置地址 `CONFIG_URL = http://1.2.3.4/php-demo/index.php?r=config`：
 
 | 填写 | 解析结果 |
 |------|----------|
 | `/live.txt` | `http://1.2.3.4/live.txt` |
 | `live.txt` | `http://1.2.3.4/php-demo/live.txt` |
+| `index.php?r=live` | `http://1.2.3.4/php-demo/index.php?r=live` |
 | `https://cdn.example.com/live.txt` | 原样 |
 | `clan://...` / `assets/...` / `file://...` | 原样 |
+
+配置为本地文件/assets 时以上规则不变，仅基准地址换成主接口 `api` 的协议 + 域名 + 目录。
 
 ---
 

@@ -24,7 +24,7 @@ require_once __DIR__ . '/tvbox_crypto.php';
 $route = isset($_GET['r']) ? strtolower(trim((string)$_GET['r'])) : '';
 $dev = tk_device();
 
-/** 生成带当前加密方式的相对接口地址（未带协议，客户端会自动拼主接口域名） */
+/** 生成带当前加密方式的相对接口地址（未带协议，客户端自动以主配置地址所在目录拼接） */
 function tk_rel_url(string $query, string $enc): string
 {
     $url = 'index.php?' . $query;
@@ -145,7 +145,7 @@ switch ($route) {
             'remoteConfigUrl' => '',       // 二次远程覆盖地址（空=不启用）
             'useRemoteConfig' => false,    // true 且远程可访问时：远程强制覆盖 settings/bootStart/接口地址
             'secretKey' => '',             // 固定密钥加密的秘钥；空=用客户端 ConfigCrypto.SECRET_KEY
-            // ---- 接口地址（未写协议时自动拼主接口域名） ----
+            // ---- 接口地址（未写协议时自动拼主配置地址的域名/IP + 目录） ----
             'api' => tk_abs_url('r=api', $enc),
             'live' => tk_rel_url('r=live', $enc),
             'epg' => tk_rel_url('r=epg', $enc),
