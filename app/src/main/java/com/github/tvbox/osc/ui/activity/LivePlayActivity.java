@@ -128,6 +128,9 @@ public class LivePlayActivity extends BaseActivity {
     private int currentLiveChannelIndex = -1;
     private LiveChannelItem currentLiveChannelItem = null;
 
+    // 直播频道收藏分组（固定显示在分组列表第一位）
+    private static final String LIVE_FAVORITE_GROUP_NAME = "★ 我的收藏";
+
     // 遥控器数字键输入的要切换的频道号码
     private int selectedChannelNumber = 0;
     private TextView tvSelectedChannel;
@@ -492,6 +495,11 @@ public class LivePlayActivity extends BaseActivity {
                     && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
                 // 长按 OK：WebView 型源切换「网页自带 UI（页面内节目单）/ 全屏视频」
                 webPlayer.togglePageUi();
+                return true;
+            } else if (event.getRepeatCount() > 0
+                    && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER)) {
+                // 长按 OK：收藏/取消收藏当前直播频道
+                toggleCurrentChannelFavorite();
                 return true;
             } else if (keyCode == KeyEvent.KEYCODE_MENU) {
                 showSettingGroup();
@@ -2041,6 +2049,10 @@ public class LivePlayActivity extends BaseActivity {
                         select = !Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false);
                         Hawk.put(HawkConfig.LIVE_SKIP_PASSWORD, select);
                         break;
+                    case 5:
+                        // 收藏/取消收藏当前频道，收藏结果在分组列表「★ 我的收藏」中查看
+                        toggleCurrentChannelFavorite();
+                        break;
 //                    case 5:
 //                        // takagen99 : Added Live History list selection - 直播列表
 //                        ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
@@ -2161,6 +2173,156 @@ public class LivePlayActivity extends BaseActivity {
         }
     }
 
+    /**
+     * 读取收藏的直播频道。存储格式为 JSON 字符串列表，保留频道名称、全部线路及线路名，
+     * 避免直播源刷新后收藏失效。
+     */
+    private ArrayList<LiveChannelItem> loadFavoriteChannels() {
+        ArrayList<LiveChannelItem> favorites = new ArrayList<>();
+        ArrayList<String> rawList = Hawk.get(HawkConfig.LIVE_FAVORITES, new ArrayList<String>());
+        if (rawList == null) {
+            return favorites;
+        }
+        for (String raw : rawList) {
+            try {
+                JSONObject obj = new JSONObject(raw);
+                LiveChannelItem item = new LiveChannelItem();
+                item.setChannelIndex(favorites.size());
+                item.setChannelNum(favorites.size() + 1);
+                item.setChannelName(obj.optString("name"));
+                JSONArray urlsArray = obj.optJSONArray("urls");
+                ArrayList<String> urls = new ArrayList<>();
+                if (urlsArray != null) {
+                    for (int i = 0; i < urlsArray.length(); i++) {
+                        urls.add(urlsArray.optString(i));
+                    }
+                }
+                if (urls.isEmpty()) {
+                    continue;
+                }
+                item.setChannelUrls(urls);
+                JSONArray namesArray = obj.optJSONArray("sourceNames");
+                ArrayList<String> names = new ArrayList<>();
+                if (namesArray != null) {
+                    for (int i = 0; i < namesArray.length(); i++) {
+                        names.add(namesArray.optString(i));
+                    }
+                }
+                while (names.size() < urls.size()) {
+                    names.add("线路" + (names.size() + 1));
+                }
+                item.setChannelSourceNames(names);
+                item.setSourceIndex(0);
+                favorites.add(item);
+            } catch (Throwable ignored) {
+            }
+        }
+        return favorites;
+    }
+
+    private void saveFavoriteChannels(List<LiveChannelItem> favorites) {
+        ArrayList<String> rawList = new ArrayList<>();
+        for (LiveChannelItem item : favorites) {
+            try {
+                JSONObject obj = new JSONObject();
+                obj.put("name", item.getChannelName());
+                JSONArray urlsArray = new JSONArray();
+                for (String url : item.getChannelUrls()) {
+                    urlsArray.put(url);
+                }
+                obj.put("urls", urlsArray);
+                JSONArray namesArray = new JSONArray();
+                if (item.getChannelSourceNames() != null) {
+                    for (String name : item.getChannelSourceNames()) {
+                        namesArray.put(name);
+                    }
+                }
+                obj.put("sourceNames", namesArray);
+                rawList.add(obj.toString());
+            } catch (Throwable ignored) {
+            }
+        }
+        Hawk.put(HawkConfig.LIVE_FAVORITES, rawList);
+    }
+
+    /** 把收藏分组插入到分组列表第一位；每次进入直播页都会重建，保证与收藏数据同步 */
+    private void injectFavoriteChannelGroup() {
+        for (int i = liveChannelGroupList.size() - 1; i >= 0; i--) {
+            if (LIVE_FAVORITE_GROUP_NAME.equals(liveChannelGroupList.get(i).getGroupName())) {
+                liveChannelGroupList.remove(i);
+            }
+        }
+        LiveChannelGroup favoriteGroup = new LiveChannelGroup();
+        favoriteGroup.setGroupName(LIVE_FAVORITE_GROUP_NAME);
+        favoriteGroup.setGroupPassword("");
+        favoriteGroup.setLiveChannels(loadFavoriteChannels());
+        liveChannelGroupList.add(0, favoriteGroup);
+        for (int i = 0; i < liveChannelGroupList.size(); i++) {
+            liveChannelGroupList.get(i).setGroupIndex(i);
+        }
+    }
+
+    /** 收藏/取消收藏当前正在播放的频道（长按 OK 或在偏好设置中选择） */
+    private void toggleCurrentChannelFavorite() {
+        if (currentLiveChannelItem == null || currentLiveChannelItem.getChannelUrls() == null) {
+            Toast.makeText(App.getInstance(), "当前没有正在播放的频道", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ArrayList<LiveChannelItem> favorites = loadFavoriteChannels();
+        boolean removed = false;
+        for (int i = favorites.size() - 1; i >= 0; i--) {
+            LiveChannelItem item = favorites.get(i);
+            if (item.getChannelName().equals(currentLiveChannelItem.getChannelName())
+                    && item.getChannelUrls().equals(currentLiveChannelItem.getChannelUrls())) {
+                favorites.remove(i);
+                removed = true;
+            }
+        }
+        if (!removed) {
+            LiveChannelItem copy = new LiveChannelItem();
+            copy.setChannelName(currentLiveChannelItem.getChannelName());
+            copy.setChannelUrls(new ArrayList<>(currentLiveChannelItem.getChannelUrls()));
+            ArrayList<String> sourceNames = currentLiveChannelItem.getChannelSourceNames();
+            copy.setChannelSourceNames(sourceNames == null
+                    ? new ArrayList<String>() : new ArrayList<>(sourceNames));
+            copy.setChannelIndex(favorites.size());
+            copy.setChannelNum(favorites.size() + 1);
+            copy.setSourceIndex(0);
+            favorites.add(copy);
+        }
+        saveFavoriteChannels(favorites);
+        refreshFavoriteChannelGroup();
+        Toast.makeText(App.getInstance(), removed ? "已取消收藏" : "已收藏当前频道", Toast.LENGTH_SHORT).show();
+    }
+
+    /** 收藏数据变化后，刷新分组列表（当前播放不中断） */
+    private void refreshFavoriteChannelGroup() {
+        LiveChannelGroup favoriteGroup = null;
+        for (LiveChannelGroup group : liveChannelGroupList) {
+            if (LIVE_FAVORITE_GROUP_NAME.equals(group.getGroupName())) {
+                favoriteGroup = group;
+                break;
+            }
+        }
+        ArrayList<LiveChannelItem> favorites = loadFavoriteChannels();
+        if (favoriteGroup == null) {
+            favoriteGroup = new LiveChannelGroup();
+            favoriteGroup.setGroupName(LIVE_FAVORITE_GROUP_NAME);
+            favoriteGroup.setGroupPassword("");
+            liveChannelGroupList.add(0, favoriteGroup);
+            for (int i = 0; i < liveChannelGroupList.size(); i++) {
+                liveChannelGroupList.get(i).setGroupIndex(i);
+            }
+            // 收藏组插入后，当前分组索引整体+1
+            currentChannelGroupIndex++;
+        }
+        favoriteGroup.setLiveChannels(favorites);
+        liveChannelGroupAdapter.setNewData(liveChannelGroupList);
+        if (liveChannelGroupAdapter.getSelectedGroupIndex() == 0) {
+            liveChannelItemAdapter.setNewData(favorites);
+        }
+    }
+
     //加载列表
     public void loadProxyLives(String url) {
         try {
@@ -2239,6 +2401,7 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveState() {
+        injectFavoriteChannelGroup();
         int lastChannelGroupIndex = -1;
         int lastLiveChannelIndex = -1;
         Intent intent = getIntent();
@@ -2273,7 +2436,7 @@ public class LivePlayActivity extends BaseActivity {
         ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
         ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
-        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码"));
+        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道"));
         ArrayList<String> appSettingItems = new ArrayList<>(Arrays.asList("打开设置"));
         ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("列表历史"));
         ArrayList<String> exitConfirm = new ArrayList<>(Arrays.asList("确定"));

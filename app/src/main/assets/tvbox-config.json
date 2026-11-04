@@ -274,7 +274,6 @@
     { "name": "收藏", "type": "page", "target": "collect", "icon": "hm_fav" },
     { "name": "推送", "type": "page", "target": "push",    "icon": "hm_push" },
     { "name": "文件", "type": "page", "target": "drive",   "icon": "hm_folder" },
-    { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
     { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" },
     { "name": "系统", "type": "page", "target": "system",  "icon": "hm_settings" },
     { "name": "捐助", "type": "page", "target": "donate",  "icon": "hm_fav" }

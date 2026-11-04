@@ -74,6 +74,8 @@ public class App extends MultiDexApplication {
                 .setEncryption(new com.orhanobut.hawk.PlainEncryption())
                 .build();
         Hawk.put(HawkConfig.DEBUG_OPEN, false);
+        // 上次启动若在点播配置加载中途异常退出，这里自动清理坏配置，避免「一开就崩」的死循环
+        com.github.tvbox.osc.n2n.ConfigGuard.recoverIfNeeded(this);
         // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）。
         // 先于 initParams()：JSON 中的「设置页默认值」仅当用户从未手动修改时写入，
         // initParams() 里的硬编码默认值只作最终兜底，不会覆盖 JSON。

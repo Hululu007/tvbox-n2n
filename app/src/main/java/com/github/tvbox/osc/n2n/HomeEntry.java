@@ -231,6 +231,11 @@ public class HomeEntry {
                 applyEntryStyle(bar.getChildAt(i), entryBg, iconColor, alpha);
             }
         }
+        // 顶栏主题色（含远程 iconColor）更新后，同步刷新首页历史一行入口图标，
+        // 解决首次启动时远程配置稍晚到达导致「历史一行」图标仍是默认白色的问题
+        if (act instanceof com.github.tvbox.osc.ui.activity.HomeActivity) {
+            ((com.github.tvbox.osc.ui.activity.HomeActivity) act).refreshUserEntryStyle();
+        }
     }
 
     private static void applyEntryStyle(View v, int entryBg, int iconColor, float alpha) {

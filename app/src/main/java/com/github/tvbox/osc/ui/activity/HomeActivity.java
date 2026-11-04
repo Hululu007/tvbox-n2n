@@ -371,6 +371,13 @@ public class HomeActivity extends BaseActivity {
         tvName.clearAnimation();
     }
 
+    /** 供首页入口样式刷新时调用：把最新主题色/远程 iconColor 应用到历史一行 */
+    public void refreshUserEntryStyle() {
+        if (userFragment != null) {
+            userFragment.refreshEntryIconStyle();
+        }
+    }
+
     private boolean dataInitOk = false;
     private boolean jarInitOk = false;
 
@@ -526,6 +533,8 @@ public class HomeActivity extends BaseActivity {
                             showLoadSuccessNotice();
                         }
                         showWarningTextOnce();
+                        // 首页初始化完成，清除「配置加载中」标记（异常退出时保留以便下次自愈）
+                        com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
                         // 远程升级检查：延迟片刻，避免与免责声明弹窗叠加
                         mHandler.postDelayed(new Runnable() {
                             @Override
@@ -548,6 +557,7 @@ public class HomeActivity extends BaseActivity {
                             dataInitOk = true;
                             jarInitOk = true;
                             initData();
+                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
                         }
                     });
                     return;
@@ -566,6 +576,7 @@ public class HomeActivity extends BaseActivity {
                                         public void run() {
                                             initData();
                                             dialog.hide();
+                                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
                                         }
                                     });
                                 }
@@ -579,6 +590,7 @@ public class HomeActivity extends BaseActivity {
                                         public void run() {
                                             initData();
                                             dialog.hide();
+                                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
                                         }
                                     });
                                 }
@@ -592,6 +604,7 @@ public class HomeActivity extends BaseActivity {
                                         public void run() {
                                             initData();
                                             dialog.hide();
+                                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
                                         }
                                     });
                                 }

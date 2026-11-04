@@ -168,6 +168,9 @@ public class ApiConfig {
             return;
         }
         File cache = new File(App.getInstance().getFilesDir().getAbsolutePath() + "/" + MD5.encode(apiUrl));
+        // 标记本次配置开始加载：若进程在加载/首页初始化阶段被系统杀死，
+        // 下次启动由 ConfigGuard 自动清理该坏配置，避免反复崩溃
+        com.github.tvbox.osc.n2n.ConfigGuard.begin(App.getInstance(), apiUrl, cache);
         if (useCache && cache.exists()) {
             // 缓存解析（文件 IO + Gson）放工作线程，避免阻塞首页主线程
             new Thread(new Runnable() {

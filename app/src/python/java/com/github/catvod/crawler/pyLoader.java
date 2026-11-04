@@ -18,13 +18,33 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class pyLoader implements IPyLoader {
-    private final PythonLoader pythonLoader;
+    // 延迟初始化：Python 运行时启动较重（解压资源、加载 .so），
+    // 不能在构造 ApiConfig 时（主线程）同步启动，否则部分设备会黑屏/ANR。
+    private volatile PythonLoader pythonLoader;
     private final ConcurrentHashMap<String, Spider> spiders;
     private String lastConfig = null; // 记录上次的配置
 
     public pyLoader() {
-        pythonLoader = PythonLoader.getInstance().setApplication(App.getInstance());
         spiders = new ConcurrentHashMap<>();
+    }
+
+    /** 首次真正需要执行 Python 源时才启动 Python 运行时，失败时返回 null（降级为空源） */
+    private PythonLoader ensureLoader() {
+        if (pythonLoader != null) {
+            return pythonLoader;
+        }
+        synchronized (this) {
+            if (pythonLoader == null) {
+                try {
+                    pythonLoader = PythonLoader.getInstance().setApplication(App.getInstance());
+                } catch (Throwable th) {
+                    // 部分设备/系统缺少 Python 运行所需组件：记录后降级，保证 App 仍可正常打开
+                    Log.e("PyLoader", "Python 运行时初始化失败: " + th.getMessage(), th);
+                    pythonLoader = null;
+                }
+            }
+        }
+        return pythonLoader;
     }
 
     @Override
@@ -35,9 +55,17 @@ public class pyLoader implements IPyLoader {
     @Override
     public void setConfig(String jsonStr) {
         if (jsonStr != null && !jsonStr.equals(lastConfig)) {
-            Log.i("PyLoader", "echo-setConfig 初始化json ");
-            pythonLoader.setConfig(jsonStr);
-            lastConfig = jsonStr;
+            PythonLoader loader = ensureLoader();
+            if (loader == null) {
+                return;
+            }
+            try {
+                Log.i("PyLoader", "echo-setConfig 初始化json ");
+                loader.setConfig(jsonStr);
+                lastConfig = jsonStr;
+            } catch (Throwable th) {
+                Log.e("PyLoader", "setConfig 失败: " + th.getMessage(), th);
+            }
         }
     }
 
@@ -58,8 +86,12 @@ public class pyLoader implements IPyLoader {
                 Log.i("PyLoader", "无存储权限，终止执行");
                 return new SpiderNull();
             }
+            PythonLoader loader = ensureLoader();
+            if (loader == null) {
+                return new SpiderNull();
+            }
             Log.i("PyLoader", "echo-getSpider url: " + getPyUrl(cls, ext));
-            Spider sp = pythonLoader.getSpider(key, getPyUrl(cls, ext));
+            Spider sp = loader.getSpider(key, getPyUrl(cls, ext));
 //            Log.i("PyLoader", "echo-getSpider homeContent: " + sp.homeContent(true));
             spiders.put(key, sp);
             Log.i("PyLoader", "echo-getSpider 加载spider: " + key);

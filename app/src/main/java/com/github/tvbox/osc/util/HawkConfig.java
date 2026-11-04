@@ -29,6 +29,7 @@ public class HawkConfig {
     public static final String HOME_SEARCH_POSITION = "search_position"; // true=Up, false=Down
     public static final String HOME_MENU_POSITION = "menu_position";     // true=Up, false=Down
 	public static final String HOME_DEFAULT_SHOW = "home_default_show";  //启动时直接进直播的开关
+    public static final String LIVE_FAVORITES = "live_favorites";        // 直播频道收藏（JSON 字符串列表）
 
     // Player Settings
     public static final String SHOW_PREVIEW = "show_preview";

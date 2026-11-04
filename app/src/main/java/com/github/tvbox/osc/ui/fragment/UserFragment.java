@@ -144,6 +144,11 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         }
     }
 
+    /** 顶栏主题色/远程 iconColor 更新后，同步刷新历史一行入口图标颜色 */
+    public void refreshEntryIconStyle() {
+        applyEntryIconColor();
+    }
+
     @Override
     public void onFragmentResume() {
         // 每次回到首页都重新应用，确保远程配置刷新后图标色同步
@@ -155,11 +160,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         } else {
             tvSearch.setVisibility(View.GONE);
         }
-        if (!Hawk.get(HawkConfig.HOME_MENU_POSITION, true)) {
-            tvSetting.setVisibility(View.VISIBLE);
-        } else {
-            tvSetting.setVisibility(View.GONE);
-        }
+        // 点播界面的设置入口统一由顶栏 tvN2n 承载，历史一行不再显示设置入口
+        tvSetting.setVisibility(View.GONE);
 
         super.onFragmentResume();
         if (Hawk.get(HawkConfig.HOME_REC, 0) == 2 && homeHotVodAdapter != null) {
@@ -411,6 +413,10 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         int iconMargin = res.getDimensionPixelSize(R.dimen.vs_3);
         int tvPad = res.getDimensionPixelSize(R.dimen.vs_3);
         for (final RemoteConfig.Entry e : entries) {
+            // 设置入口已由首页顶栏统一承载，历史一行不再生成设置卡片
+            if ("page".equals(e.type) && "setting".equals(e.target)) {
+                continue;
+            }
             LinearLayout card = new LinearLayout(mContext);
             LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT, h);

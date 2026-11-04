@@ -83,14 +83,22 @@ public class PythonLoader {
 
     public PythonLoader setApplication(Application app) {
         this.app = app;
-        setSdk(this.app);
-        if (pyInstance == null) {
-            if (!Python.isStarted()) {
-                androidPlatform = new AndroidPlatform(app);
-                Python.start(androidPlatform);
+        try {
+            setSdk(this.app);
+            if (pyInstance == null) {
+                if (!Python.isStarted()) {
+                    androidPlatform = new AndroidPlatform(app);
+                    Python.start(androidPlatform);
+                }
+                pyInstance = Python.getInstance();
+                pyApp = pyInstance.getModule("app");
             }
-            pyInstance = Python.getInstance();
-            pyApp = pyInstance.getModule("app");
+        } catch (Throwable th) {
+            // Python 运行时启动失败时不抛出到调用方（否则会导致启动黑屏/崩溃），
+            // 统一降级为空源，待下次真正使用 Python 源时再尝试
+            PyLog.e("Python 运行时启动失败: " + th.getMessage());
+            pyInstance = null;
+            pyApp = null;
         }
         return this;
     }
@@ -122,6 +130,7 @@ public class PythonLoader {
 
     public Spider getSpider(String key, String url) throws Exception {
         if (app == null) throw new Exception("set application first");
+        if (pyInstance == null) throw new Exception("python runtime not ready");
         if (spiders.containsKey(key)) {
             PyLog.d(key + " :缓存加载成功！");
             return spiders.get(key);
