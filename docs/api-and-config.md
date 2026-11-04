@@ -22,7 +22,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | 写法 | 说明 |
 |------|------|
 | `http://` / `https://` | 远程配置，后台拉取，断网用上次缓存 |
-| `/sdcard/TKLauncher/config.json` | 设备本地文件（可加 `file:///`） |
+| `/sdcard/TKLauncher.app/config.json` | 设备本地文件（可加 `file:///`） |
 | `assets/xxx.json` | APK 内资源（可选，默认不打包） |
 | 留空 | 全部使用代码默认值 |
 

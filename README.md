@@ -15,7 +15,7 @@ This repo relies on the following third-party projects:
 - `hin2n/`：hin2n 源码（n2n 子模块已实体化），以 Gradle library 模块 `:hin2n` 随主工程编译，**不再单独出 APK**
 
 ## 定制功能
-- **应用名「桌面」+ 独立包名**：generic=`TKLauncher`、hisense=`TKLauncher.hisense`，与其它 TVBox 区分，可并存安装
+- **应用名「桌面」+ 独立包名**：generic=`TKLauncher.app`、hisense=`TKLauncher.hisense`，与其它 TVBox 区分，可并存安装
 - **内置系统桌面**：清单直接声明 HOME/DEFAULT（参考 MQLauncher），安装后即可作为桌面；已移除应用内「选择桌面/设为桌面」功能与入口
 - **hin2n 组网内置**：首页「历史」入口行的「组网」卡片或顶栏图标进入 TV 引导页，遥控器管理 n2n 配置（28 字段与原版一致）、连接/日志/Ping/开机自连；界面随 TVBox 主题变色
 - **全部配置由 JSON 下发，应用内无设置页**：APK 内不再打包任何配置 JSON；远程/本地地址在 `RemoteConfig.CONFIG_URL` 代码中手动指定（远程可热更新，本地可用文件），配置示例见 `docs/`

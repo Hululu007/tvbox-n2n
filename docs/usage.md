@@ -8,7 +8,7 @@
 
 TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 
-- 应用名称为「**桌面**」，包名为 `TKLauncher`（海信版 `TKLauncher.hisense`），可与其它 TVBox 并存安装；
+- 应用名称为「**桌面**」，包名为 `TKLauncher.app`（海信版 `TKLauncher.hisense`），可与其它 TVBox 并存安装；
 - 安装后直接出现在系统桌面选择器，可作为系统桌面使用（参考 MQLauncher 的 HOME 声明方式），**不再有应用内「选择桌面/设为桌面」开关**；
 - 点播、直播、搜索、收藏、播放历史、应用市场、hin2n 组网等功能齐全；
 - **首页推荐默认多行网格显示**；
@@ -27,7 +27,7 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 
 | 维度 | 选择 |
 |------|------|
-| 品牌 | 普通设备选 **generic**（包名 `TKLauncher`）；海信定制机型选 **hisense**（包名 `TKLauncher.hisense`） |
+| 品牌 | 普通设备选 **generic**（包名 `TKLauncher.app`）；海信定制机型选 **hisense**（包名 `TKLauncher.hisense`） |
 | 模式 | 一般设备选 **normal**（文件名显示 java，Android 4.4 起可用）；需要 Python 影视源选 **python**（Android 5.0 及以上） |
 | 架构 | 32 位设备选 **v7a**（armeabi-v7a）；64 位设备选 **arm64**（arm64-v8a） |
 
@@ -57,7 +57,7 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 - 开发者编译时在 [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) 的 `CONFIG_URL` 常量填写配置地址；
 - 支持三种来源：
   - **远程**：`http://...` / `https://...`（推荐，可热更新，断网时使用上次缓存）；
-  - **本地文件**：如 `/sdcard/TKLauncher/config.json` 或 `file:///...`；
+  - **本地文件**：如 `/sdcard/TKLauncher.app/config.json` 或 `file:///...`；
   - **APK 资源**：`assets/xxx.json`（仅当确实需要随包携带配置时）；
 - `CONFIG_URL` 留空 = 不加载配置，使用程序默认值；
 - JSON 支持注释（`//`、`/* */`）和尾逗号。

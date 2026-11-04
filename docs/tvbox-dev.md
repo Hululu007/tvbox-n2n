@@ -51,7 +51,7 @@ tvbox-n2n/
 **应用内已移除设置页和全部设置入口**，所有功能设置统一由 JSON 下发。APK 内**不再打包任何默认配置 JSON**（`assets/tvbox-config.json`、`assets/app_market.json` 均已删除）。配置来源由 `RemoteConfig.CONFIG_URL` 在代码中手动指定，支持 `http(s)://`、设备本地文件、`assets/xxx.json`，留空则全部使用代码默认值。
 
 - 远程配置：`http(s)://` 后台拉取，不阻塞启动；成功后应用并缓存，断网自动用上次缓存兜底；内容可为明文或 `ke` 前缀密文。
-- 本地配置：绝对路径（如 `/sdcard/TKLauncher/config.json`）或 `file:///...`，同步读取；文件不存在时再到应用私有目录查找。
+- 本地配置：绝对路径（如 `/sdcard/TKLauncher.app/config.json`）或 `file:///...`，同步读取；文件不存在时再到应用私有目录查找。
 - APK 资源：`assets/xxx.json` 仅用于确需随包携带配置的场景，不是默认方式。
 - 文件支持 JSONC：`//` 行注释、`/* */` 块注释、尾逗号、UTF-8 BOM（解析器 `RemoteConfig.parseLoose`，注释不会穿透字符串，URL 安全）。
 - App 启动顺序：`Hawk.init()` → `RemoteConfig.bootstrap(this)` 加载主配置 → `initParams()` 代码默认值兜底。远程主配置异步应用；本地/资源主配置同步应用。
@@ -162,7 +162,7 @@ tvbox-n2n/
 - 清单：[AndroidManifest.xml](file:///f:/tvbox-n2n/app/src/main/AndroidManifest.xml) 的 `HomeActivity` 直接声明 `LAUNCHER` / `LEANBACK_LAUNCHER` / `HOME` / `DEFAULT` 四个 category（参考 MQLauncher 的做法），安装后即成为桌面候选。
 - **不再使用 activity-alias，也不再有 `setAsLauncher` 开关、root 静默设桌面、应用内「选择桌面」列表**；`LauncherHelper.java` 已删除，`RemoteConfig` 中的 launcher 相关方法已移除。
 - 用户按主页键时由 **Android 系统桌面选择器**决定默认桌面；想换回原桌面走系统设置 → 主页/默认应用。
-- applicationId：generic=`TKLauncher`，hisense=`TKLauncher.hisense`（可共存）。
+- applicationId：generic=`TKLauncher.app`，hisense=`TKLauncher.hisense`（可共存）；Android 要求包名至少含一个「.」。
 
 ### 3.10 点播切源自动返回首页刷新并重新进入点播
 

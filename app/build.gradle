@@ -12,7 +12,8 @@ android {
 
     defaultConfig {
         // 独立包名：与其它 TVBox 安装包区分，可同时安装
-        applicationId 'TKLauncher'
+        // 注意：Android 要求 applicationId 至少包含一个「.」，单段包名（TKLauncher）会导致清单合并失败
+        applicationId 'TKLauncher.app'
         minSdkVersion 19
         targetSdkVersion 28
         versionCode 1
