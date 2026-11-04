@@ -19,7 +19,6 @@ import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.SourceBean;
-import com.github.tvbox.osc.n2n.LauncherHelper;
 import com.github.tvbox.osc.n2n.RemoteConfig;
 import com.github.tvbox.osc.player.thirdparty.Kodi;
 import com.github.tvbox.osc.player.thirdparty.MXPlayer;
@@ -92,7 +91,6 @@ public class ModelSettingFragment extends BaseLazyFragment {
 
     // 内置配置区（远程地址配置已移除，仅保留 TVBox 开机启动 / 选择桌面入口）
     private TextView tvRcBoot;
-    private TextView tvRcLauncher;
 
     public static ModelSettingFragment newInstance() {
         return new ModelSettingFragment().setArguments();
@@ -829,6 +827,8 @@ public class ModelSettingFragment extends BaseLazyFragment {
      * 这里仅保留 TVBox「开机启动」开关和「选择桌面」入口；hin2n 的开机自动连 VPN 在组网引导页内单独设置。
      */
     private void initRemoteConfig() {
+        // 设置页整体入口已移除；桌面相关行也不再显示
+        findViewById(R.id.llRcLauncher).setVisibility(View.GONE);
         tvRcBoot = findViewById(R.id.tvRcBoot);
         tvRcBoot.setText(RemoteConfig.bootStartEnabled() ? "开" : "关");
         findViewById(R.id.llRcBoot).setOnClickListener(new View.OnClickListener() {
@@ -843,28 +843,8 @@ public class ModelSettingFragment extends BaseLazyFragment {
             }
         });
 
-        // 选择桌面：点击弹出设备上全部桌面应用列表（含 TVBox 自身），
-        // 选哪个就把哪个设为默认桌面（沙发桌面同款交互）；右侧显示当前默认桌面名
-        tvRcLauncher = findViewById(R.id.tvRcLauncher);
-        refreshLauncherName();
-        findViewById(R.id.llRcLauncher).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                FastClickCheckUtil.check(v);
-                LauncherHelper.showLauncherChooser(mActivity, new LauncherHelper.LauncherChosenCallback() {
-                    @Override
-                    public void onChosen() {
-                        refreshLauncherName();
-                    }
-                });
-            }
-        });
-    }
+        // 「选择桌面」入口已移除：清单直接声明 HOME，安装后由系统桌面选择器管理
 
-    /** 刷新「选择桌面」右侧的当前默认桌面名显示 */
-    private void refreshLauncherName() {
-        String name = LauncherHelper.currentLauncherName(mContext);
-        tvRcLauncher.setText(name.isEmpty() ? "未设置" : name);
     }
 
     @Override

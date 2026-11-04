@@ -19,7 +19,7 @@ import com.github.tvbox.osc.ui.activity.HomeActivity;
 import com.github.tvbox.osc.ui.activity.LivePlayActivity;
 import com.github.tvbox.osc.ui.activity.PushActivity;
 import com.github.tvbox.osc.ui.activity.SearchActivity;
-import com.github.tvbox.osc.ui.activity.SettingActivity;
+
 import com.github.tvbox.osc.ui.activity.VodActivity;
 import com.github.tvbox.osc.ui.fragment.UserFragment;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -49,7 +49,9 @@ public class EntryDispatcher {
             } else if ("vod".equals(type)) {
                 Intent it = new Intent(act, CustomVodActivity.class);
                 it.putExtra("name", e.name == null ? "" : e.name);
-                it.putExtra("url", target.isEmpty() ? (e.url == null ? "" : e.url) : target);
+                String entryUrl = target.isEmpty() ? (e.url == null ? "" : e.url) : target;
+                // 自定义点播接口同样支持相对地址（默认拼接主接口域名/IP）
+                it.putExtra("url", RemoteConfig.resolveInterfaceUrl(entryUrl));
                 String theme = e.theme == null ? "" : e.theme.trim();
                 it.putExtra("theme", theme);
                 if (!theme.isEmpty()) {
@@ -84,8 +86,6 @@ public class EntryDispatcher {
             cls = CollectActivity.class;
         } else if ("push".equals(target)) {
             cls = PushActivity.class;
-        } else if ("setting".equals(target)) {
-            cls = SettingActivity.class;
         } else if ("drive".equals(target)) {
             cls = DriveActivity.class;
         } else if ("apps".equals(target)) {
@@ -128,7 +128,7 @@ public class EntryDispatcher {
                 HomeActivity.switchTheme(act, true);
             }
         } else if ("styleSwitch".equals(target)) {
-            boolean grid = !Hawk.get(HawkConfig.HOME_REC_STYLE, false);
+            boolean grid = !Hawk.get(HawkConfig.HOME_REC_STYLE, true);
             Hawk.put(HawkConfig.HOME_REC_STYLE, grid);
             try {
                 if (UserFragment.tvHotListForGrid != null && UserFragment.tvHotListForLine != null) {
@@ -230,7 +230,7 @@ public class EntryDispatcher {
             return wifiIcon(ctx);
         }
         if ("feature".equals(e.type) && "styleSwitch".equals(e.target)) {
-            return Hawk.get(HawkConfig.HOME_REC_STYLE, false) ? "hm_up_down" : "hm_left_right";
+            return Hawk.get(HawkConfig.HOME_REC_STYLE, true) ? "hm_up_down" : "hm_left_right";
         }
         return "";
     }

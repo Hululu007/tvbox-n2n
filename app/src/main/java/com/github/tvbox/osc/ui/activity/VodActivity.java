@@ -408,8 +408,9 @@ public class VodActivity extends BaseActivity {
                     ApiConfig.get().setSourceBean(value);
                     fDialog.dismiss();
                     // 提示并自动返回主界面刷新数据（主界面 onResume 检测标志位后强制刷新）
-                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」，即将返回主界面刷新数据", Toast.LENGTH_LONG).show();
+                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」，即将返回主界面刷新并重新进入点播", Toast.LENGTH_LONG).show();
                     HomeActivity.sRefreshOnResume = true;
+                    HomeActivity.sReopenVodAfterRefresh = true;
                     mHandler.postDelayed(new Runnable() {
                         @Override
                         public void run() {

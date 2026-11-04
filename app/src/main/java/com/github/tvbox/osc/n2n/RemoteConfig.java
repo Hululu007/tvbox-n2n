@@ -1,15 +1,7 @@
 package com.github.tvbox.osc.n2n;
 
 import android.app.Activity;
-import android.content.ComponentName;
 import android.content.Context;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
-import android.os.Build;
-import android.provider.Settings;
-import android.util.Log;
-import android.widget.Toast;
 
 import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -25,21 +17,23 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 内置配置接口：TVBox 的全部可配置项统一来自 APK 内置 assets/tvbox-config.json。
+ * 统一配置中心：TVBox 的全部功能设置均来自 JSON（远程或本地），应用内不再提供设置页。
  *
- * 远程配置：若内置配置指定了 remoteConfigUrl，启动时会异步拉取该远程 json，
- * 覆盖「除 settings（设置页）和 hin2n（n2n 组网）之外」的所有段；
- * 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
- * remoteConfigUrl 留空或远程无法访问时，全部使用内置 json（含上次成功拉取的远程缓存兜底）。
- * 开机启动（TVBox 开机自启 + hin2n 开机自动连 VPN）仍然保留。
+ * 配置来源：由 {@link #CONFIG_URL} 在代码中手动指定，支持
+ * {@code http(s)://} 远程地址、设备本地文件路径、{@code assets/xxx.json}；
+ * 留空则全部使用代码内置默认值。APK 内不打包任何默认配置 json。
+ *
+ * 主配置内的 {@code remoteConfigUrl} 可作为二次远程覆盖（可选）。
+ * 接口字段（api/live/epg/proxy/upgrade/appMarket 等）若未写 http(s)://，
+ * 会自动拼接主接口（api）的协议 + 域名/IP，详见 {@link #resolveInterfaceUrl(String)}。
+ * 所有接口请求均支持 ke 前缀加密（{@link ConfigCrypto}），并自动携带本机参数。
  *
  * JSON 结构（所有字段可选，缺省保持本地现状；支持 // 与 /* 注释、尾逗号）：
  * {
- *   "remoteConfigUrl": "https://.../config.json",     // 远程配置地址（空=不启用远程）
- *   "useRemoteConfig": false,                         // true 且远程可访问时：远程覆盖设置页全部项/
- *                                                     //   bootStart/setAsLauncher/api/live/epg/proxy
- *   "bootStart": true,                                // TVBox 开机自启：默认开启；本地/远程 json 写 false 可禁用
- *   "setAsLauncher": false,                           // 设为系统桌面（有 root 时把本应用设为默认桌面，不禁用原桌面）
+ *   "remoteConfigUrl": "https://.../config.json",     // 二次远程覆盖（可选，空=不启用）
+ *   "useRemoteConfig": false,                         // true 且远程可访问时：远程覆盖设置项/
+ *                                                     //   bootStart/api/live/epg/proxy
+ *   "bootStart": true,                                // TVBox 开机自启：默认开启
  *   "notice": {                                       // 公告：字符串（旧格式）或对象
  *     "text": "公告文本",
  *     "position": "bottom",                           // top | bottom
@@ -80,7 +74,7 @@ import java.util.List;
  *     "force": false, "notes": "更新内容" },
  *   "appMarket": {                                    // 「应用市场」联网配置（「应用」页面）
  *     // url 模板支持 {category}(all/app/game)、{sort}(recommend/download/update)、
- *     // {page}(从 1 开始)、{pageSize}、{keyword}；为空=使用 assets/app_market.json
+ *     // {page}(从 1 开始)、{pageSize}、{keyword}；为空=仅使用下方 apps 数组
  *     "url": "https://.../apps?category={category}&sort={sort}&page={page}",
  *     "detailUrl": "https://.../app/detail?packageName={packageName}",  // 可选；空=直接用列表字段
  *     "headers": { "X-Token": "..." },                // 可选请求头
@@ -90,7 +84,7 @@ import java.util.List;
  *                "downloads":1000,"category":"app","summary":"...",
  *                "description":"...","screenshots":["https://.../s1.jpg"],
  *                "downloadUrl":"https://.../x.apk","developer":"...",
- *                "updateTime":"2026-01-01"} ]        // 内置兜底数组（为空则读 assets/app_market.json）
+ *                "updateTime":"2026-01-01"} ]        // 直接下发的应用数组（可选）
  *   },
  *   "hin2nEntry": true,                               // 首页是否显示 hin2n 固定入口
  *   "hin2n": { "apkUrl": "https://.../hin2n.apk" },   // 独立组网 App：未安装时的 APK 下载地址（可选）
@@ -108,21 +102,20 @@ import java.util.List;
  * }
  *
  * 入口类型：page=打开 TVBox 界面（target: vod/live/search/history/collect/push/
- * setting/drive/hin2n/apps/fastsearch/system=安卓系统设置/donate=捐助界面）；
+ * drive/hin2n/apps/fastsearch/system=安卓系统设置/donate=捐助界面；应用内已无设置页）；
  * feature=内置功能（target: siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/
  * wifi/date）；app=打开其他 App（pkg，未安装且配 url 时后台下载安装）；vod=打开自定义
  * 点播列表界面（target=数据接口，格式同点播 api json 但仅供该界面，不影响 app 其它配置）。
  *
- * 接口加密（ConfigCrypto）：本地内置 assets 与所有远程接收接口（远程配置/点播/直播/
- * EPG/自定义点播/升级检查）支持密文下发——内容是 json 直接解析，不是 json 自动解密后
- * 加载（ke 前缀模式兼容 PHP：ke=substr(md5(...),13) 前缀 + AES-128-ECB hex；固定密钥
- * 模式用 "secretKey" 或 ConfigCrypto.SECRET_KEY）。
- * 接口本机参数（DeviceParams）：所有远程接口请求自动在 URL 拼接 mac/ip/model/brand/
- * device/sdk/release/app 参数，服务端可按机下发。
+ * 接口加密（ConfigCrypto）：所有远程接收接口（远程配置/点播/直播/EPG/自定义点播/
+ * 应用市场/升级检查）支持密文下发——ke 前缀模式兼容 PHP：ke=substr(md5(...),13)
+ * 前缀 + AES-128-ECB hex；固定密钥模式用 "secretKey" 或 ConfigCrypto.SECRET_KEY。
+ * 接口本机参数（DeviceParams）：所有 OkGo 请求统一携带请求头 X-Device-Mac /
+ * X-Device-Ip / X-OS-Version / X-App-Version；自有接口额外在 URL 拼接
+ * mac/ip/model/brand/device/sdk/release/app 参数，服务端可直接取用。
  *
- * 覆盖规则：notice/home/tkp2p/entries/themes/hin2nEntry/checkInterval/ua/secretKey/
- * donate 每次启动应用；bootStart 只作为默认值写入一次；api/live/epg/proxy 仅在用户
- * 未配置时作为默认值。setAsLauncher 出厂默认开启（含老设备一次性重放），用户可关。
+ * 覆盖规则：除 bootStart（是否开机自启）外，所有配置每次加载都以 JSON 为准；
+ * 设置页已移除，不存在用户手动值冲突。
  */
 public class RemoteConfig {
 
@@ -144,10 +137,6 @@ public class RemoteConfig {
     public static final String K_HIN2N = "rc_hin2n_entry";
     public static final String K_BOOT = "n2n_boot_start";      // TVBox 开机自启开关（用户值优先）
     public static final String K_BOOT_DEFAULT_SET = "n2n_boot_default_set"; // 内置默认值是否已写入过
-    public static final String K_LAUNCHER = "rc_set_launcher";            // 设为系统桌面开关（用户值优先）
-    public static final String K_LAUNCHER_DEFAULT_SET = "rc_set_launcher_default_set"; // 内置默认值是否已写入过
-    /** 设为桌面默认值第二轮重放守卫：setAsLauncher 出厂默认改 true 后，对老设备也补写一次 */
-    public static final String K_LAUNCHER_DEFAULT_SET_V2 = "rc_set_launcher_default_set_v2";
     /** 接口固定密钥模式的秘钥覆盖值（json "secretKey"；空=用 ConfigCrypto.SECRET_KEY） */
     public static final String K_SECRET = "rc_secret_key";
     /** 捐助界面配置（json "donate" 段原文） */
@@ -161,17 +150,7 @@ public class RemoteConfig {
     /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
 
-    /**
-     * Launcher 别名类名后缀（清单中为 {@code android:name=".LauncherAlias"}）。
-     * 同时保留源码包名展开方式作为兜底候选。
-     */
-    private static final String LAUNCHER_ALIAS_SUFFIX = ".LauncherAlias";
-    private static final String LAUNCHER_ALIAS_FIXED = "com.github.tvbox.osc.LauncherAlias";
-
-    /** 内置配置（app/src/main/assets/ 下，随 APK 打包） */
-    private static final String LOCAL_ASSET = "tvbox-config.json";
-
-    /** 最近一次加载的内置 JSON（hin2n 播种等逻辑读取） */
+    /** 最近一次加载的主配置 JSON（入口/主题/hin2n 播种等逻辑读取） */
     private static volatile JSONObject sConfig = null;
 
     /** 单个自定义入口 */
@@ -392,140 +371,6 @@ public class RemoteConfig {
         }
     }
 
-    // ==================== 设为系统桌面 ====================
-
-    /** 设为系统桌面开关（JSON "setAsLauncher" 默认值 + 设置页用户开关；出厂默认开启） */
-    public static boolean launcherEnabled() {
-        return Hawk.get(K_LAUNCHER, true);
-    }
-
-    /** 设置页切换「设为系统桌面」：写入开关并同步 Launcher 别名状态 */
-    public static void setLauncherEnabled(Context ctx, boolean on) {
-        Hawk.put(K_LAUNCHER, on);
-        applyLauncherComponent(ctx);
-    }
-
-    /**
-     * 按当前开关启用/停用 Launcher 别名。
-     * 启用后 TVBox 出现在系统桌面选择器；停用后 Android 自动清除本应用默认桌面资格，
-     * 系统回退到原桌面（或弹出选择器让用户确认）。
-     *
-     * <p>组件名兼容两种展开方式（清单里写的是 {@code android:name=".LauncherAlias"}）：
-     * 清单合并既可能按源码包名展开为 {@code com.github.tvbox.osc.LauncherAlias}，
-     * 也可能按 applicationId 展开为 {@code <包名>.LauncherAlias}。
-     * 这里两个候选都试，且先用 getActivityInfo 确认组件确实存在再设置，
-     * 避免 mutate 不存在的组件导致「设为桌面」静默失效。</p>
-     */
-    public static void applyLauncherComponent(Context ctx) {
-        if (ctx == null) {
-            return;
-        }
-        int state = launcherEnabled()
-                ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
-        String[] candidates = new String[]{
-                ctx.getPackageName() + LAUNCHER_ALIAS_SUFFIX,
-                LAUNCHER_ALIAS_FIXED
-        };
-        for (String alias : candidates) {
-            try {
-                PackageManager pm = ctx.getPackageManager();
-                ComponentName cn = new ComponentName(ctx.getPackageName(), alias);
-                // 组件必须已在清单中声明，否则设置会抛异常（getActivityInfo 可命中停用组件）
-                pm.getActivityInfo(cn, 0);
-                pm.setComponentEnabledSetting(cn, state, PackageManager.DONT_KILL_APP);
-                return;
-            } catch (Throwable ignored) {
-            }
-        }
-    }
-
-    /** 当前是否已是系统默认桌面 */
-    public static boolean isDefaultLauncher(Context ctx) {
-        try {
-            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-            ResolveInfo ri = ctx.getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
-            return ri != null && ri.activityInfo != null
-                    && ctx.getPackageName().equals(ri.activityInfo.packageName);
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /** 每进程最多自动弹一次桌面选择器（开关已开但还不是默认桌面时） */
-    private static boolean sLauncherPrompted = false;
-
-    /** 主界面 onResume 调用：开关已开但未设为默认桌面时，root 自动接管，否则弹一次系统桌面选择器 */
-    public static void ensureDefaultLauncher(Activity act) {
-        if (act == null || sLauncherPrompted) {
-            return;
-        }
-        if (!launcherEnabled() || isDefaultLauncher(act)) {
-            return;
-        }
-        sLauncherPrompted = true;
-        if (LauncherHelper.hasRoot()) {
-            // 有 root：直接调用系统服务把本应用设为默认桌面（原桌面保持启用），不再打扰用户
-            LauncherHelper.setAsDefaultLauncher(act);
-        } else {
-            promptChooseLauncher(act);
-        }
-    }
-
-    /**
-     * 唤起系统「选择/设置默认桌面」入口。
-     *
-     * <p>两个关键点：</p>
-     * <ul>
-     *   <li>不能用 {@code Intent.createChooser}：它只会让用户挑一个应用「打开一次」，
-     *       不写入默认桌面，按 HOME 仍回原桌面——这也是「设为桌面无效」的原因之一；</li>
-     *   <li>若设备已存在默认桌面，直接启动 CATEGORY_HOME 只会把原桌面拉起来（同样看着像没反应），
-     *       所以此时应跳系统「主屏幕/默认桌面」设置页让用户显式切换；
-     *       当前没有默认桌面时，直接启动 HOME intent 才会弹出带「始终/仅一次」的系统弹窗。</li>
-     * </ul>
-     */
-    public static void promptChooseLauncher(Activity act) {
-        if (act == null || act.isFinishing() || (Build.VERSION.SDK_INT >= 17 && act.isDestroyed())) {
-            return;
-        }
-        boolean hasDefault = hasOtherDefaultLauncher(act);
-        if (hasDefault && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP
-                && startSafe(act, new Intent(Settings.ACTION_HOME_SETTINGS))) {
-            return;
-        }
-        Intent home = new Intent(Intent.ACTION_MAIN);
-        home.addCategory(Intent.CATEGORY_HOME);
-        home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        if (startSafe(act, home)) {
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            startSafe(act, new Intent(Settings.ACTION_HOME_SETTINGS));
-        }
-    }
-
-    private static boolean startSafe(Activity act, Intent intent) {
-        try {
-            act.startActivity(intent);
-            return true;
-        } catch (Throwable th) {
-            Log.i("RemoteConfig", "start " + intent.getAction() + " failed: " + th.getMessage());
-            return false;
-        }
-    }
-
-    /** 设备上是否已存在「非本应用」的默认桌面 */
-    private static boolean hasOtherDefaultLauncher(Context ctx) {
-        try {
-            Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
-            ResolveInfo ri = ctx.getPackageManager().resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY);
-            return ri != null && ri.activityInfo != null
-                    && !ctx.getPackageName().equals(ri.activityInfo.packageName);
-        } catch (Throwable ignored) {
-            return false;
-        }
-    }
-
     /** 读取已缓存的自定义入口列表（旧版 "entries"，仅 app 类型，顶栏兜底） */
     public static List<Entry> entries() {
         return parseEntries(Hawk.get(K_ENTRIES, ""));
@@ -607,30 +452,143 @@ public class RemoteConfig {
     }
 
     /**
-     * App 启动时调用：同步读取内置 assets/tvbox-config.json 并应用（含 settings 与 hin2n 段）。
-     * 若内置配置指定了 remoteConfigUrl，另起后台线程拉取远程 json，覆盖除 settings/hin2n 之外的所有段。
+     * 主配置地址：由开发者在代码中手动指定（APK 内不再打包任何配置 json）。
+     *
+     * <p>支持三种写法：</p>
+     * <ul>
+     *   <li>远程：{@code http://...} / {@code https://...}（推荐，可热更新）</li>
+     *   <li>设备本地文件：绝对路径，如 {@code /sdcard/tvbox-config.json}，或 {@code file:///...}（需存储读写权限）</li>
+     *   <li>APK 内资源：{@code assets/xxx.json}（如需随包携带配置时使用）</li>
+     * </ul>
+     *
+     * <p>留空 = 不加载任何配置，全部使用代码内置默认值。</p>
+     *
+     * <p>主配置内部的 {@code remoteConfigUrl} 仍可作为「二次远程覆盖」使用；
+     * 主配置为远程时，建议直接留空该字段，避免重复请求。</p>
+     */
+    public static final String CONFIG_URL = "";
+
+    /**
+     * App 启动时调用：按 {@link #CONFIG_URL} 加载主配置并应用。
+     * 远程主配置在后台线程拉取（不阻塞启动），本地/资源主配置同步读取。
      */
     public static void bootstrap(Context ctx) {
         if (ctx == null) {
             return;
         }
-        try {
-            byte[] data = readAsset(ctx.getApplicationContext(), LOCAL_ASSET);
-            if (data != null) {
-                // 内置配置允许明文或 ke 前缀模式密文（ConfigCrypto 自动识别）；
-                // 注意：assets 禁止用固定密钥模式加密——此时 secretKey 尚未写入 Hawk
-                String raw = ConfigCrypto.maybeDecrypt(new String(data, "UTF-8"));
-                JSONObject cfg = parseLoose(raw);
-                sConfig = cfg;
-                apply(ctx.getApplicationContext(), cfg, false);
-                // 每次启动同步「设为系统桌面」开关到 Launcher 别名状态
-                applyLauncherComponent(ctx.getApplicationContext());
-
-                // 远程接口：拉取成功后覆盖非设置/非n2n段；失败则保持内置
-                String remoteUrl = cfg.optString("remoteConfigUrl", "").trim();
-                if (!remoteUrl.isEmpty()) {
-                    fetchRemoteAsync(ctx.getApplicationContext(), remoteUrl);
+        final String src = CONFIG_URL == null ? "" : CONFIG_URL.trim();
+        if (src.isEmpty()) {
+            // 未配置：完全使用代码默认值（无需任何本地 json）
+            return;
+        }
+        if (src.startsWith("http://") || src.startsWith("https://")) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    fetchPrimary(appSingleton(), src);
                 }
+            }, "rc-primary-fetch").start();
+            return;
+        }
+        loadLocalPrimary(ctx.getApplicationContext(), src);
+    }
+
+    /** 避免在匿名内部类里直接持有 Activity Context：统一取全局 Application */
+    private static Context appSingleton() {
+        try {
+            return App.getInstance().getApplicationContext();
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 同步读取本地/资源主配置并应用 */
+    private static void loadLocalPrimary(Context app, String src) {
+        try {
+            String raw = readLocalConfig(app, src);
+            if (raw == null || raw.isEmpty()) {
+                return;
+            }
+            raw = ConfigCrypto.maybeDecrypt(raw);
+            JSONObject cfg = parseLoose(raw);
+            sConfig = cfg;
+            apply(app, cfg, false);
+            String secondary = cfg.optString("remoteConfigUrl", "").trim();
+            if (!secondary.isEmpty()) {
+                fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 读取本地文件或 assets 资源 */
+    private static String readLocalConfig(Context app, String src) {
+        try {
+            if (src.startsWith("assets/")) {
+                byte[] data = readAsset(app, src.substring("assets/".length()));
+                return data == null ? null : new String(data, "UTF-8");
+            }
+            String path = src;
+            if (path.startsWith("file://")) {
+                path = path.substring("file://".length());
+            }
+            java.io.File f = new java.io.File(path);
+            if (!f.exists()) {
+                // 兼容只写文件名的场景：到应用私有目录找
+                f = new java.io.File(app.getFilesDir(), path);
+            }
+            if (!f.exists()) {
+                return null;
+            }
+            java.io.FileInputStream in = new java.io.FileInputStream(f);
+            try {
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    bos.write(buf, 0, n);
+                }
+                return new String(bos.toByteArray(), "UTF-8");
+            } finally {
+                try { in.close(); } catch (Throwable ignored) {}
+            }
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** 后台线程拉取主远程配置 */
+    private static void fetchPrimary(Context app, String url) {
+        try {
+            String raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
+            if (raw == null || raw.isEmpty()) {
+                restoreCachedRemote(app, false);
+                return;
+            }
+            raw = ConfigCrypto.maybeDecrypt(raw);
+            JSONObject cfg = parseLoose(raw);
+            sConfig = cfg;
+            apply(app, cfg, false);
+            Hawk.put(K_REMOTE_RAW, raw);
+            String secondary = cfg.optString("remoteConfigUrl", "").trim();
+            if (!secondary.isEmpty()) {
+                fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
+            }
+        } catch (Throwable t) {
+            restoreCachedRemote(app, false);
+        }
+    }
+
+    /** 断网时用上次缓存的主配置兜底 */
+    private static void restoreCachedRemote(Context app, boolean remoteOnly) {
+        try {
+            String cached = Hawk.get(K_REMOTE_RAW, "");
+            if (cached != null && !cached.isEmpty()) {
+                JSONObject cfg = parseLoose(cached);
+                if (remoteOnly == false) {
+                    sConfig = cfg;
+                }
+                apply(app, cfg, remoteOnly);
             }
         } catch (Throwable ignored) {
         }
@@ -716,10 +674,17 @@ public class RemoteConfig {
     public static void fetchAuto(Context ctx, Callback cb) {
         String url = remoteConfigUrl(ctx);
         if (url.isEmpty()) {
+            // 主配置本身就是远程时，刷新/重载直接重新拉取主配置
+            String primary = CONFIG_URL == null ? "" : CONFIG_URL.trim();
+            if (primary.startsWith("http://") || primary.startsWith("https://")) {
+                url = primary;
+            }
+        }
+        if (url.isEmpty()) {
             if (cb != null) cb.onDone(true);
             return;
         }
-        fetchAndApply(ctx.getApplicationContext(), url, cb);
+        fetchAndApply(ctx.getApplicationContext(), resolveInterfaceUrl(url), cb);
     }
 
     /** 同步拉取指定远程地址并应用 */
@@ -899,13 +864,26 @@ public class RemoteConfig {
             Hawk.delete(K_HOME_ENTRIES);
         }
         if (j.has("upgrade") && j.optJSONObject("upgrade") != null) {
-            Hawk.put(K_UPGRADE, j.optJSONObject("upgrade").toString());
+            JSONObject up = new JSONObject(j.optJSONObject("upgrade").toString());
+            // 升级检查接口支持相对地址
+            if (up.has("checkUrl")) {
+                up.put("checkUrl", resolveInterfaceUrl(up.optString("checkUrl", "")));
+            }
+            Hawk.put(K_UPGRADE, up.toString());
         }
-        // 应用市场配置：本地/远程均可下发；空对象或 null 时清除（回退内置目录 assets/app_market.json）
+        // 应用市场配置：本地/远程均可下发；空对象或 null 时清除（界面为空，APK 内无内置目录）
         if (j.has("appMarket") && j.optJSONObject("appMarket") != null) {
             JSONObject market = j.optJSONObject("appMarket");
             if (market.length() > 0) {
-                Hawk.put(K_APP_MARKET, market.toString());
+                JSONObject resolved = new JSONObject(market.toString());
+                // 应用市场接口同样支持相对地址（默认拼接主接口域名/IP）
+                if (resolved.has("url")) {
+                    resolved.put("url", resolveInterfaceUrl(resolved.optString("url", "")));
+                }
+                if (resolved.has("detailUrl")) {
+                    resolved.put("detailUrl", resolveInterfaceUrl(resolved.optString("detailUrl", "")));
+                }
+                Hawk.put(K_APP_MARKET, resolved.toString());
             } else {
                 Hawk.delete(K_APP_MARKET);
             }
@@ -952,28 +930,15 @@ public class RemoteConfig {
                 Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
                 Hawk.put(K_BOOT_DEFAULT_SET, true);
             }
-            if (j.has("setAsLauncher") && !Hawk.get(K_LAUNCHER_DEFAULT_SET, false)) {
-                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", true));
-                Hawk.put(K_LAUNCHER_DEFAULT_SET, true);
-                Hawk.put(K_LAUNCHER_DEFAULT_SET_V2, true);
-            } else if (j.has("setAsLauncher") && !Hawk.get(K_LAUNCHER_DEFAULT_SET_V2, false)) {
-                // 出厂默认改为「开启」后的第二轮重放：老设备（旧守卫已置位）也补写一次默认值，
-                // 使「默认设为系统桌面」全量生效；用户在设置页关闭后此守卫已置位，不再回写
-                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", true));
-                Hawk.put(K_LAUNCHER_DEFAULT_SET_V2, true);
-            }
             JSONObject st = j.optJSONObject("settings");
             if (st != null) {
-                applySettingsDefaults(st, false);
+                // APK 内已无设置页：JSON 是本机配置的唯一来源，因此设置项每次都按 JSON 生效
+                applySettingsDefaults(st, true);
             }
         } else if (forceRemote) {
             // 远程覆盖模式：强制覆盖用户已修改的设置
             if (j.has("bootStart")) {
                 Hawk.put(K_BOOT, j.optBoolean("bootStart", false));
-            }
-            if (j.has("setAsLauncher")) {
-                Hawk.put(K_LAUNCHER, j.optBoolean("setAsLauncher", false));
-                applyLauncherComponent(ctx);
             }
             JSONObject st = j.optJSONObject("settings");
             if (st != null) {
@@ -993,9 +958,8 @@ public class RemoteConfig {
     }
 
     /**
-     * 设置页默认值（JSON "settings" 段 → Hawk）。键名与含义见 assets/tvbox-config.json 注释。
-     * force=false 为 putIfAbsent 语义：用户在设置页修改过（Hawk 已有该键）后，JSON 不再覆盖；
-     * force=true（useRemoteConfig 开启且远程可访问）时强制覆盖用户值。
+     * 功能设置默认值（JSON "settings" 段 → Hawk）。字段含义见 docs/tvbox-config.example.jsonc 的 settings 段。
+     * 应用内已无设置页，调用方统一传 force=true（JSON 每次加载都以配置为准）。
      */
     private static void applySettingsDefaults(JSONObject st, boolean force) {
         // ---- 首页选项 ----
@@ -1056,8 +1020,8 @@ public class RemoteConfig {
     }
 
     /**
-     * 仅当用户尚未配置时把 JSON 中的地址作为默认值写入；用户配置过后不再覆盖。
-     * force=true（useRemoteConfig 开启且远程可访问）时强制覆盖用户值。
+     * 写入接口地址。APK 内已无设置页，JSON 是唯一配置来源，因此每次加载都以 JSON 为准。
+     * live/epg/proxy 等「其它接口」若未写 http(s)://，自动拼接主接口（api）的域名/IP。
      */
     private static void applyEndpoint(final Context app, JSONObject j, String key, String hawkKey, String label, boolean force) {
         if (!j.has(key)) {
@@ -1067,27 +1031,53 @@ public class RemoteConfig {
         if (v.isEmpty()) {
             return;
         }
-        if (!force) {
-            // 用户手动配置过（含清空保存）后，JSON 不再回填/覆盖
-            if (Hawk.get(hawkKey + "_manual", false)) {
-                return;
-            }
-            String cur = Hawk.get(hawkKey, "");
-            if (cur != null && !cur.trim().isEmpty()) {
-                return;
-            }
+        if (!"api".equals(key)) {
+            v = resolveInterfaceUrl(v);
         }
         Hawk.put(hawkKey, v);
-        toast(app, label + (force ? "已按远程配置更新，重启后生效" : "已从内置配置读取，重启后生效"));
     }
 
-    private static void toast(final Context app, final String msg) {
-        if (app == null) {
-            return;
+    /**
+     * 其它接口相对地址解析：不带 http:// / https:// 的地址，默认使用主接口（api）的
+     * 协议 + 域名 + 端口。例如主接口为 {@code http://1.2.3.4/config.json}，
+     * live 填 {@code /live.txt} → {@code http://1.2.3.4/live.txt}；
+     * 填 {@code live.txt} → {@code http://1.2.3.4/live.txt}。
+     *
+     * <p>已带协议、clan://、file://、assets/、proxy://、tkp2p:// 等特殊地址原样返回。</p>
+     */
+    public static String resolveInterfaceUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String u = url.trim();
+        if (u.isEmpty()) {
+            return u;
+        }
+        if (u.startsWith("http://") || u.startsWith("https://")
+                || u.startsWith("clan://") || u.startsWith("file://")
+                || u.startsWith("assets/") || u.startsWith("proxy://")
+                || u.startsWith("tkp2p://") || u.startsWith("rtmp://")
+                || u.startsWith("rtsp://") || u.startsWith("content://")) {
+            return u;
         }
         try {
-            Toast.makeText(app, msg, Toast.LENGTH_SHORT).show();
-        } catch (Throwable ignored) {
+            String api = Hawk.get(HawkConfig.API_URL, "");
+            if (api == null || api.isEmpty()
+                    || (!api.startsWith("http://") && !api.startsWith("https://"))) {
+                return u;
+            }
+            java.net.URL base = new java.net.URL(api);
+            String origin = base.getProtocol() + "://" + base.getAuthority();
+            if (u.startsWith("/")) {
+                return origin + u;
+            }
+            // 相对路径：以主接口所在目录为基准
+            String path = base.getPath();
+            int slash = path == null ? -1 : path.lastIndexOf('/');
+            String dir = slash >= 0 ? path.substring(0, slash + 1) : "/";
+            return origin + dir + u;
+        } catch (Throwable t) {
+            return u;
         }
     }
 }

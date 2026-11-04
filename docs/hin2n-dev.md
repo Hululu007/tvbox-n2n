@@ -8,7 +8,7 @@
 ## 1. 模块定位与分层规则
 
 ```
-┌─────────────────────────────── :app (TVBox, com.github.tvbox.osc.tk) ───────────────────────────────┐
+┌─────────────────────────────── :app (TVBox, com.github.tvbox.osc) ───────────────────────────────┐
 │  n2n/ 包：TV 引导页 UI、播种、开机广播、RemoteConfig 内置配置、首页入口                              │
 │      │  通过 PackageManager/Intent 检测并拉起独立 hin2n App；未安装时按 hin2n.apkUrl 下载            │
 └──────┼──────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -94,7 +94,7 @@ N2NService.onStartCommand
 ## 5. 内置 JSON 播种（出厂配置）
 
 hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/hin2n-config.json`
-（不再是 tvbox 的 tvbox-config.json——拆分后组网配置完全由 hin2n App 自维护）：
+（不再是 tvbox 的配置——拆分后组网配置完全由 hin2n App 自维护）；本仓库内置的 hin2n 模块随主配置 JSON 的 `hin2n` 段播种（`RemoteConfig.CONFIG_URL` 指定来源）：
 
 ```jsonc
 {
@@ -145,7 +145,7 @@ hin2n 独立 App 的出厂配置位于 `hin2n/Hin2n_android/app/src/main/assets/
 ```
 
 变体命名：`<brand><mode>-<abi>`，brand∈{generic, hisense}，mode∈{normal, python}，abi∈{v7a, arm64}；ABI 由 `splits.abi` 在产物层拆分，不新增 flavor 维度。
-APK 名 `TVBox_<buildType>-<brand>-<mode>-<abi>.apk`（normal 在文件名中显示为 java）。
+APK 名 `TKLauncher_<buildType>-<brand>-<mode>-<abi>.apk`（normal 在文件名中显示为 java）。
 
 只想验证 Java/资源而不装 NDK 时可只跑资源与编译任务：
 

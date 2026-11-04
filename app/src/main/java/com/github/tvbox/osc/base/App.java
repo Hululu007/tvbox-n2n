@@ -76,9 +76,8 @@ public class App extends MultiDexApplication {
         Hawk.put(HawkConfig.DEBUG_OPEN, false);
         // 上次启动若在点播配置加载中途异常退出，这里自动清理坏配置，避免「一开就崩」的死循环
         com.github.tvbox.osc.n2n.ConfigGuard.recoverIfNeeded(this);
-        // 加载 APK 内置配置 JSON（assets/tvbox-config.json，已移除远程地址配置）。
-        // 先于 initParams()：JSON 中的「设置页默认值」仅当用户从未手动修改时写入，
-        // initParams() 里的硬编码默认值只作最终兜底，不会覆盖 JSON。
+        // 加载主配置：地址由 RemoteConfig.CONFIG_URL 在代码中手动指定，支持远程 URL
+        // 或设备本地 json 文件；APK 内不再打包任何默认配置文件。
         try {
             com.github.tvbox.osc.n2n.RemoteConfig.bootstrap(this);
         } catch (Throwable th) {
@@ -171,6 +170,7 @@ public class App extends MultiDexApplication {
         putDefault(HawkConfig.HOME_MENU_POSITION, true);     //按钮位置-设置: true=上方, false=下方
         putDefault(HawkConfig.HOME_REC, 1);                  //推荐: 0=豆瓣热播, 1=站点推荐, 2=观看历史
         putDefault(HawkConfig.HOME_NUM, 4);                  //历史条数: 0=20条, 1=40条, 2=60条, 3=80条, 4=100条
+        putDefault(HawkConfig.HOME_REC_STYLE, true);         //首页推荐默认多行（网格）显示
         // 播放器选项
         putDefault(HawkConfig.SHOW_PREVIEW, true);           //窗口预览: true=开启, false=关闭
         putDefault(HawkConfig.PLAY_SCALE, 0);                //画面缩放: 0=默认, 1=16:9, 2=4:3, 3=填充, 4=原始, 5=裁剪

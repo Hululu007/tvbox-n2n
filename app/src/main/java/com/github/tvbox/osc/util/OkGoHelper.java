@@ -29,6 +29,7 @@ import javax.net.ssl.SSLSocketFactory;
 import okhttp3.Cache;
 import okhttp3.ConnectionSpec;
 import okhttp3.HttpUrl;
+import okhttp3.Interceptor;
 import okhttp3.OkHttpClient;
 import okhttp3.dnsoverhttps.DnsOverHttps;
 import okhttp3.internal.Util;
@@ -173,6 +174,19 @@ public class OkGoHelper {
 
         //builder.retryOnConnectionFailure(false);
         builder.connectionSpecs(getConnectionSpec());
+        // 全局请求头：所有 OkGo 请求都携带本机系统版本、MAC、IP、App 版本
+        builder.addInterceptor(new Interceptor() {
+            @Override
+            public okhttp3.Response intercept(Interceptor.Chain chain) throws java.io.IOException {
+                okhttp3.Request original = chain.request();
+                okhttp3.Request.Builder rb = original.newBuilder()
+                        .header("X-Device-Mac", com.github.tvbox.osc.n2n.DeviceParams.getMac())
+                        .header("X-Device-Ip", com.github.tvbox.osc.n2n.DeviceParams.getIp())
+                        .header("X-OS-Version", com.github.tvbox.osc.n2n.DeviceParams.getSystemVersion())
+                        .header("X-App-Version", com.github.tvbox.osc.n2n.DeviceParams.getAppVersion());
+                return chain.proceed(rb.build());
+            }
+        });
         builder = builder.addInterceptor(loggingInterceptor)
                 .readTimeout(DEFAULT_MILLISECONDS, TimeUnit.MILLISECONDS)
                 .writeTimeout(DEFAULT_MILLISECONDS, TimeUnit.MILLISECONDS)

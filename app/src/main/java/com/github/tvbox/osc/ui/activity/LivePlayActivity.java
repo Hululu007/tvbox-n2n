@@ -2102,12 +2102,7 @@ public class LivePlayActivity extends BaseActivity {
                 }
                 liveSettingItemAdapter.selectItem(position, select, false);
                 break;
-            case 6:// 应用设置（参照 ku9：在直播界面直接进入应用设置）
-                mHandler.removeCallbacks(mHideSettingLayoutRun);
-                tvRightSettingLayout.setVisibility(View.INVISIBLE);
-                startActivity(new Intent(this, SettingActivity.class));
-                break;
-            case 7:// 直播历史
+            case 6:// 直播历史
                 switch (position) {
                     case 0:
                         ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
@@ -2143,7 +2138,7 @@ public class LivePlayActivity extends BaseActivity {
                         break;
                 }
                 break;
-            case 8:// 退出直播
+            case 7:// 退出直播
                 switch (position) {
                     case 0:
                         finish();
@@ -2477,7 +2472,7 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private void initLiveSettingGroupList() {
-        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "节目源解码", "渲染方式", "超时换源", "偏好设置", "应用设置", "直播地址", "退出直播"));
+        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "节目源解码", "渲染方式", "超时换源", "偏好设置", "直播历史", "退出直播"));
         ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
         ArrayList<String> sourceItems = new ArrayList<>();
         ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
@@ -2485,7 +2480,6 @@ public class LivePlayActivity extends BaseActivity {
         ArrayList<String> renderItems = new ArrayList<>(Arrays.asList("TextureView", "SurfaceView"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
         ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道"));
-        ArrayList<String> appSettingItems = new ArrayList<>(Arrays.asList("打开设置"));
         ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("列表历史"));
         ArrayList<String> exitConfirm = new ArrayList<>(Arrays.asList("确定"));
         itemsArrayList.add(sourceItems);
@@ -2494,7 +2488,6 @@ public class LivePlayActivity extends BaseActivity {
         itemsArrayList.add(renderItems);
         itemsArrayList.add(timeoutItems);
         itemsArrayList.add(personalSettingItems);
-        itemsArrayList.add(appSettingItems);
         itemsArrayList.add(liveAdd);
         itemsArrayList.add(exitConfirm);
 

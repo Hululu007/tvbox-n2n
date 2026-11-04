@@ -3,7 +3,7 @@ package com.github.tvbox.osc.n2n;
 import com.github.tvbox.osc.util.AES;
 
 /**
- * 接口密文统一解密：本地内置配置 + 所有远程接收接口（远程配置 / 点播 / 直播 / EPG /
+ * 接口密文统一解密：本地内置配置 + 所有远程接收接口（远程配置 / 点播 / 直播 / EPG（JSON）/
  * 自定义点播 / 升级检查）共用。规则：内容是 json（或 jsonc）直接解析；不是 json
  * 时按密文先解密再加载，解密失败原样返回（由上层解析兜底）。
  *
@@ -35,9 +35,10 @@ public class ConfigCrypto {
         if (s.isEmpty()) {
             return raw;
         }
-        // 明文形态：json / jsonc（允许 // 与 /* 注释）/ 直播 txt 列表
+        // 明文形态：json / jsonc（EPG 已统一为 json）/ 直播 txt 列表；保留 xml 兼容旧 EPG
         char c0 = s.charAt(0);
-        if (c0 == '{' || c0 == '[' || c0 == '/' || s.startsWith("#EXTM3U") || s.contains("#genre#")) {
+        if (c0 == '{' || c0 == '[' || c0 == '/' || c0 == '<'
+                || s.startsWith("#EXTM3U") || s.contains("#genre#")) {
             return raw;
         }
         // TVBox 原生 "2423" CBC 加密格式（ApiConfig.FindResult 自行处理），这里不碰
@@ -76,7 +77,7 @@ public class ConfigCrypto {
         return SECRET_KEY == null ? "" : SECRET_KEY.trim();
     }
 
-    /** 解密结果形态校验：json 或直播 txt（m3u / genre 列表） */
+    /** 解密结果形态校验：json（含 EPG）/ 旧 xml 或直播 txt（m3u / genre 列表） */
     private static boolean looksDecrypted(String plain) {
         if (plain == null) {
             return false;
@@ -86,7 +87,7 @@ public class ConfigCrypto {
             return false;
         }
         char c = t.charAt(0);
-        return c == '{' || c == '[' || t.startsWith("#EXTM3U") || t.contains("#genre#");
+        return c == '{' || c == '[' || c == '<' || t.startsWith("#EXTM3U") || t.contains("#genre#");
     }
 
     /** 是否纯小写 hex 串 */

@@ -17,8 +17,6 @@ import com.lzy.okgo.model.Response;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -30,7 +28,7 @@ import java.util.Set;
  * 应用市场数据加载：
  * <ul>
  *   <li>列表：读 RemoteConfig.appMarket() 的 url 模板（{category}/{sort}/{page}/{pageSize}/{keyword}）；
- *       url 为空时使用内置目录 assets/app_market.json 的 apps 数组，并支持本地过滤/排序/分页。</li>
+ *       url 为空时直接使用配置的 appMarket.apps 数组，并支持本地过滤/排序/分页（APK 内无内置目录）。</li>
  *   <li>详情：detailUrl 模板（{packageName}），为空时直接复用列表字段。</li>
  *   <li>响应兼容根数组、{"code":0,"data":{"total":N,"list":[...]}}、{"data":[...]}、{"list":[...]}。</li>
  * </ul>
@@ -46,7 +44,6 @@ public class AppMarketLoader {
     public static final String SORT_UPDATE = "update";
 
     private static final int DEFAULT_PAGE_SIZE = 24;
-    private static final String LOCAL_ASSET = "app_market.json";
     private static final Handler H = new Handler(Looper.getMainLooper());
     /** 正在下载的包名（仅用于界面「下载中」文案） */
     private static final Set<String> DOWNLOADING = new HashSet<>();
@@ -132,7 +129,7 @@ public class AppMarketLoader {
             loadLocal(context, page, safeCategory, safeSort, safeKeyword, null, callback);
             return;
         }
-        final String url = buildUrl(template, safeCategory, safeSort, page, pageSize(), safeKeyword);
+        final String url = DeviceParams.append(buildUrl(template, safeCategory, safeSort, page, pageSize(), safeKeyword));
         OkGo.<String>get(url)
                 .headers(appHeaders(cfg))
                 .execute(new AbsCallback<String>() {
@@ -188,7 +185,7 @@ public class AppMarketLoader {
             callback.onResult(item, false);
             return;
         }
-        String url = template.replace("{packageName}", Uri.encode(item.packageName));
+        String url = DeviceParams.append(template.replace("{packageName}", Uri.encode(item.packageName)));
         OkGo.<String>get(url)
                 .headers(appHeaders(cfg))
                 .execute(new AbsCallback<String>() {
@@ -272,14 +269,11 @@ public class AppMarketLoader {
         }, "app-market-local").start();
     }
 
-    /** 读取内置目录：优先用配置里的 apps 数组，为空再读 assets/app_market.json */
+    /** 读取本地目录：只使用配置里的 apps 数组（APK 内不再内置任何 json 配置/目录） */
     private static List<AppMarketItem> readLocalApps(Context context) {
         List<AppMarketItem> items = new ArrayList<>();
         JSONObject cfg = RemoteConfig.appMarket();
         JSONArray apps = cfg.optJSONArray("apps");
-        if (apps == null || apps.length() == 0) {
-            apps = readAssetApps(context);
-        }
         if (apps == null) {
             return items;
         }
@@ -293,34 +287,6 @@ public class AppMarketLoader {
             items.add(item);
         }
         return items;
-    }
-
-    private static JSONArray readAssetApps(Context context) {
-        InputStream in = null;
-        try {
-            Context app = context == null ? null : context.getApplicationContext();
-            if (app == null) {
-                return null;
-            }
-            in = app.getAssets().open(LOCAL_ASSET);
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            byte[] buf = new byte[4096];
-            int n;
-            while ((n = in.read(buf)) > 0) {
-                bos.write(buf, 0, n);
-            }
-            JSONObject root = RemoteConfig.parseLoose(new String(bos.toByteArray(), "UTF-8"));
-            return root.optJSONArray("apps");
-        } catch (Throwable ignored) {
-            return null;
-        } finally {
-            if (in != null) {
-                try {
-                    in.close();
-                } catch (Throwable ignored) {
-                }
-            }
-        }
     }
 
     private static boolean matchesKeyword(AppMarketItem item, String keyword) {

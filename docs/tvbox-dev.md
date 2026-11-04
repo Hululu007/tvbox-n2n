@@ -1,7 +1,7 @@
 # TVBox 开发使用文档
 
 > 基于 [takagen99/Box](https://github.com/takagen99/Box)（commit `258a5fe`）内化。
-> 本仓库的定制重点：**hin2n 组网内置模块化**、**配置全部内置进 APK assets JSON（去除远程地址配置）**、**接口密文下发（AES-128-ECB）**、**接口请求携带本机参数（mac/ip/机型/系统版本）**、**Android 4.4（API19）兼容**、首页入口行随列表滚动。
+> 本仓库的定制重点：**hin2n 组网内置模块化**、**应用内无设置页（全部配置由 JSON 下发）**、**APK 不内置配置 JSON（远程/本地地址由代码 CONFIG_URL 指定）**、**内置系统桌面能力**、**接口密文下发（AES-128-ECB）**、**接口请求携带本机参数（mac/ip/系统版本/App版本）**、**Android 4.4（API19）兼容**、首页推荐默认多行。
 > hin2n 模块的细节另见 [hin2n-dev.md](file:///f:/tvbox-n2n/docs/hin2n-dev.md)，配置字段 demo 见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)。
 
 ---
@@ -42,76 +42,80 @@ tvbox-n2n/
 .\gradlew.bat assembleRelease              # 全部 release 变体（CI 同款）
 ```
 
-输出名 `TVBox_<buildType>-<brand>-<mode>-<abi>.apk`（normal 显示为 java，如 `TVBox_release-generic-java-v7a.apk` / `TVBox_release-generic-java-arm64.apk`）。
+输出名 `TKLauncher_<buildType>-<brand>-<mode>-<abi>.apk`（normal 显示为 java，如 `TKLauncher_release-generic-java-v7a.apk` / `TKLauncher_release-generic-java-arm64.apk`）。
 
-## 3. 内置配置（assets JSON，已去远程化）
+## 3. 配置来源（远程 / 本地，代码指定）
 
 ### 3.1 设计
 
-TVBox 的所有定制配置统一来自 APK 内置文件：
-[app/src/main/assets/tvbox-config.json](file:///f:/tvbox-n2n/app/src/main/assets/tvbox-config.json)
+**应用内已移除设置页和全部设置入口**，所有功能设置统一由 JSON 下发。APK 内**不再打包任何默认配置 JSON**（`assets/tvbox-config.json`、`assets/app_market.json` 均已删除）。配置来源由 `RemoteConfig.CONFIG_URL` 在代码中手动指定，支持 `http(s)://`、设备本地文件、`assets/xxx.json`，留空则全部使用代码默认值。
 
-- **没有远程地址、没有网络拉取、没有远程 APK 自动更新**。设置页原「远程配置」卡片改为「内置配置」卡片，只剩「开机启动」「设为桌面」两个开关；原「配置接口」「同步配置」两行 UI 已删除。
-- 需要不同配置（本地定制或"远程"下发）时：**直接改源码里的 assets JSON，重新编译 APK**。
+- 远程配置：`http(s)://` 后台拉取，不阻塞启动；成功后应用并缓存，断网自动用上次缓存兜底；内容可为明文或 `ke` 前缀密文。
+- 本地配置：绝对路径（如 `/sdcard/TKLauncher/config.json`）或 `file:///...`，同步读取；文件不存在时再到应用私有目录查找。
+- APK 资源：`assets/xxx.json` 仅用于确需随包携带配置的场景，不是默认方式。
 - 文件支持 JSONC：`//` 行注释、`/* */` 块注释、尾逗号、UTF-8 BOM（解析器 `RemoteConfig.parseLoose`，注释不会穿透字符串，URL 安全）。
-- App 启动 `App.onCreate` 顺序：`Hawk.init()` → `RemoteConfig.bootstrap(this)` **同步**读取并应用（文件仅几 KB）→ `initParams()` 硬编码默认值兜底（`putDefault` 不覆盖已有值，因此 JSON 的 settings 优先级高于代码兜底）。
-- **assets 文件本身也允许是密文**（仅 ke 前缀模式，见 §3.11）：读文件后先过 `ConfigCrypto.maybeDecrypt` 再 `parseLoose`。
+- App 启动顺序：`Hawk.init()` → `RemoteConfig.bootstrap(this)` 加载主配置 → `initParams()` 代码默认值兜底。远程主配置异步应用；本地/资源主配置同步应用。
 
 ### 3.2 字段与覆盖规则
 
 | 字段 | 落盘规则 |
 |------|----------|
-| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次启动用内置 JSON 覆盖缓存值 |
+| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次加载配置时覆盖缓存值 |
 | `home.recMovies`（首页自定义推荐） | `home` 段内的数组，每次启动随 `home` 一起覆盖：**数组非空时**首页推荐列表直接显示配置的影片（`name`/`pic`/`note`/`id`/`sourceKey`），**不再请求豆瓣**，标题显示「推荐」；配 `id`+`sourceKey` 点击进详情，只配 `name` 点击按片名搜索；空数组/全注释 = 保持原有豆瓣逻辑 |
 | `loadSuccessDuration` / `warningAutoClose` | 前者=点播接口加载成功顶部提示的自动关闭秒数（0=不显示，默认 3，0~60）；后者=免责声明 `warningText` 弹窗的自动关闭秒数（0=不自动关闭，默认 0，0~120，按钮带倒计时） |
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
 | `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
-| `topEntries` / `homeEntries` | 每次启动覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 `[]`（含「数组里只有注释」剥注释后为空）= 删除 Hawk 键、保持内置默认 UI |
-| `api` / `live` / `epg` / `proxy` | **仅当用户从未在 TVBox 内手动配置过该接口**（Hawk 值为空）时写入默认值；手动配置后永不覆盖，四个接口互不影响 |
-| `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记），之后以设置页开关为准；出厂默认开 |
-| `setAsLauncher`（设为系统桌面） | 默认值写入**两轮守卫**：首轮 Hawk `rc_set_launcher_default_set`（老版本已置位则跳过），第二轮 `rc_set_launcher_default_set_v2` 对老设备补写一次（出厂默认改为开启后对存量设备也生效一次）；之后以设置页开关为准 |
+| `topEntries` / `homeEntries` | 每次加载覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 = 保持代码默认 UI（默认不含设置入口） |
+| `api` / `live` / `epg` / `proxy` | **每次加载都以 JSON 为准**（应用内无设置页）；`live`/`epg`/`proxy` 未带协议时自动拼接主接口域名/IP |
+| `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记）；出厂默认开 |
 | `secretKey`（固定密钥模式秘钥） | 每次启动覆盖 Hawk `rc_secret_key`；非空时**优先于** `ConfigCrypto.SECRET_KEY` Java 常量（见 §3.11） |
 | `donate`（捐助界面对象） | 每次启动覆盖 Hawk `rc_donate`；字段缺失或非对象时删除缓存（捐助界面回退内置文案）。子字段：`title`（顶栏标题）/`desc`（介绍，`\n` 换行）/`image`（二维码：http(s)/assets/路径/drawable 名）/`tip`（二维码下方说明文字，空=不显示） |
 | `epgDays`（直播 EPG 显示天数） | 每次启动覆盖 Hawk `rc_epg_days`；读取处 clamp 到 1~9（默认 3=昨天/今天/明天），日期列表以今天为中心（见 §3.15） |
 | `aliLicenseKey`（阿里云播放器 License） | 每次启动覆盖 Hawk `rc_ali_license`；`PlayerHelper.init()` 反射调 `AliPlayerGlobalSettings.setLicenseKey`，消除 AliyunPlayer 5.5+ 未配 License 时的「配置信息初始化失败，请重启app」提示（不配不影响播放） |
-| `settings`（设置页 25 项默认值） | 每项 `putIfAbsent`：**仅当用户从未在设置页改过该项**时写入一次，用户一旦手动更改该项永以用户为准（映射见 `RemoteConfig.applySettingsDefaults`；含 MediaSettingDialog 子项 `IJK_CACHE_PLAY`/`EXO_RENDERER`/`EXO_RENDERER_MODE`/`VOD_PLAYER_PREFERRED` 与 `HOME_DEFAULT_SHOW`/`PLAY_RENDER`/`VIDEO_PURIFY`/`FAST_SEARCH_MODE`/`DEBUG_OPEN`） |
+| `settings`（全部功能设置） | **每次加载强制写入**（设置页已移除，不存在用户手动值）；默认 `homeRecStyle=true`（多行推荐） |
 | `hin2n.bootStart` / `hin2n.staticRoutes` / `hin2n.configs` | **仅首启且组网数据库为空时播种一次**（`Hin2nSeeder`），之后完全以组网界面里的用户操作为准 |
 
-`version` / `apkUrl` / `hin2nUrl` 三个旧字段已废弃（远程更新与外部 hin2n APK 下载均不存在）。
+`version` / `apkUrl` / `hin2nUrl` / `setAsLauncher` 已废弃：远程更新统一走 `upgrade`；桌面能力改为清单直接声明（见 §3.9）。
 
-**远程配置覆盖（`remoteConfigUrl`）**：内置 json 顶层 `remoteConfigUrl` 非空时，`RemoteConfig.bootstrap` 在应用内置配置后另起后台线程 GET 该地址（URL 经 `DeviceParams.append` 拼接本机参数，见 §3.12），响应先过 `ConfigCrypto.maybeDecrypt`（支持密文下发，见 §3.11）、`parseLoose` 后以 `remoteOnly=true` 调用 `apply`——只覆盖 notice/home/tkp2p/entries/topEntries/homeEntries/upgrade/hin2nEntry/themes/theme/api/live/epg/proxy/checkInterval/loadSuccessDuration/warningAutoClose/ua/**secretKey**/**donate**/**epgDays**/**aliLicenseKey** 段；**跳过 `settings`（设置页）、`bootStart`（TVBox 开机自启）、`setAsLauncher` 以及 `hin2n`（n2n 组网，本来也不走 apply）**。成功时把**解密后的明文**写入 Hawk `rc_remote_raw` 作为断网兜底；远程失败或解析异常时，若 `rc_remote_raw` 有缓存则用缓存兜底，否则完全保持内置。UA 使用内置 `ua` 字段，缺省 `Mozilla/5.0 (Linux; Android) TVBox`，连接/读取超时 8 秒。
+**主配置加载**：`RemoteConfig.CONFIG_URL` 为 `http(s)` 时后台 GET（URL 经 `DeviceParams.append` 拼接本机参数），响应先过 `ConfigCrypto.maybeDecrypt`、`parseLoose`，然后 `sConfig=cfg` 并 `apply(ctx,cfg,false)`；成功后把明文写入 `K_REMOTE_RAW` 作为断网兜底。为本地文件或 assets 时同步读取并应用。
 
-**useRemoteConfig 强制覆盖（统一管控模式）**：内置 json 顶层 `useRemoteConfig: true` 且本次远程拉取成功（含 `rc_remote_raw` 缓存兜底应用）时，`apply(remoteOnly=true)` 进入 `forceRemote` 分支：远程 json 强制覆盖 `settings` 全部 25 项（`putBool/putInt/putStr` 跳过 `Hawk.contains` 守卫）、`bootStart`、`setAsLauncher`（并立即 `applyLauncherComponent` 同步别名状态）、`api/live/epg/proxy`（`applyEndpoint` 不再检查用户是否已配置）。`useRemoteConfig=false` 或远程不可访问时行为与上文默认规则完全一致。
+**二次远程覆盖（`remoteConfigUrl`）**：主配置顶层该字段非空时，`bootstrap` 应用主配置后再异步 GET 该地址，以 `remoteOnly=true` 调用 `apply`；默认跳过 `settings`/`bootStart`/`hin2n`，仅覆盖内容/入口/主题/接口等。
+
+**useRemoteConfig**：仅在「二次远程」场景有意义。为 `true` 且远程可访问时，二次远程强制覆盖 `settings` 与 `bootStart`；为 `false` 时二次远程不覆盖设置项。主配置本身（远程或本地）始终以 JSON 为准。
+
+
+
+**useRemoteConfig 强制覆盖（仅二次远程）**：`remoteConfigUrl` 返回的配置在 `useRemoteConfig:true` 时进入 `forceRemote` 分支，强制覆盖 `settings`/`bootStart` 与接口地址；为 `false` 时二次远程不覆盖这些项。
 
 ### 3.3 关键类（`com.github.tvbox.osc.n2n` 包）
 
 | 类 | 职责 |
 |----|------|
-| [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | 读 assets（先 `ConfigCrypto.maybeDecrypt` 再 parseLoose）、apply(app,json,remoteOnly)（remoteOnly=true 时跳过 settings/bootStart/setAsLauncher/hin2n；`useRemoteConfig=true` 且远程可达时进入 forceRemote 强制覆盖分支）；`bootstrap` 同步应用内置 json + `applyLauncherComponent` 同步桌面别名后，若 `remoteConfigUrl` 非空则后台线程拉取（`DeviceParams.append` 拼参数 + 密文自动解密），成功把解密后明文缓存到 Hawk `rc_remote_raw` 兜底；`secretKey()`/`donate()` 暴露秘钥与捐助配置；桌面相关 API：`launcherEnabled/setLauncherEnabled/applyLauncherComponent/isDefaultLauncher/ensureDefaultLauncher/promptChooseLauncher` |
+| [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) | **配置中心**（§3.1/§3.2）：`CONFIG_URL` 常量在代码里手动指定配置来源（`http(s)://` 远程 / 本地文件 / `assets/xxx.json` / 空=全用代码默认值），APK 内不打包任何配置 JSON；`bootstrap(ctx)` 为空则不加载、远程走后台线程 `fetchPrimary`（`DeviceParams.append` 拼参数 + `ConfigCrypto.maybeDecrypt` 自动解密，成功后缓存明文兜底）、本地/资源走 `loadLocalPrimary` 同步读取；`apply(ctx,cfg,remoteOnly)` 中 `api/live/epg/proxy` 每次强制写入 JSON 值，`settings` 每次强制应用默认（设置页已移除），相对接口地址经 `resolveInterfaceUrl` 自动补全主接口协议+域名+目录；`remoteOnly=true` 时跳过 settings/bootStart/hin2n，`useRemoteConfig=true` 且远程可达时进入 forceRemote 强制覆盖分支；若 `remoteConfigUrl` 非空则再异步拉取一次；`secretKey()`/`donate()` 暴露秘钥与捐助配置 |
 | [ConfigCrypto.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ConfigCrypto.java) | **接口密文统一解密**（§3.11）：`maybeDecrypt(raw)` 是 json/明文原样返回，是密文按两种模式（ke 前缀 / 固定密钥）自动识别解密，失败原样返回永不抛异常；**`SECRET_KEY` 常量 = 固定密钥模式的秘钥自定义修改位置** |
 | [DeviceParams.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/DeviceParams.java) | **接口请求本机参数拼接**（§3.12）：`append(url)` 给 http(s) 请求统一拼上 `mac/ip/model/brand/device/sdk/release/app` 查询参数，服务端按 `$_GET['mac']` 等按设备下发 |
 | [Hin2nSeeder.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nSeeder.java) | 首启播种 hin2n 配置；字段别名 `ipMode/fromSupernode`、`localIP/localIpAuto`、`acceptMulticast/dropMulticast`(反义) |
 | [Hin2nEntryState.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nEntryState.java) | 常驻 EventBus 订阅 hin2n 5 个运行事件，折叠为 IDLE/CONNECTING/CONNECTED/ERROR 四态，供入口图标染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色）；变化时 post `ChangedEvent` |
 | [HomeEntry.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/HomeEntry.java) | 首页：hin2n 固定入口（内置模块直进，`applyStateTint` 染色）、`entries` 第三方 App 入口栏、`topEntries` 顶栏整体替换（隐藏 tvWifi/tvFind/tvStyle/tvTheme/tvDrawer/tvN2n/tvHin2n 七个固定图标后动态建项）、公告条、外观/主题应用、输入框/按钮统一样式（`styleInput/styleButton`）；定时 tick 只做界面刷新 |
-| [EntryDispatcher.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/EntryDispatcher.java) | 自定义入口统一分发：`page`（vod/live/search/fastsearch/history/collect/push/setting/drive/apps/hin2n/**system**（系统设置）/**donate**（捐助界面））、`feature`（siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date）、`vod`（开 CustomVodActivity）、`app`（已安装直开，未装且配 url 走 ApkDownloader）；图标解析（http 图片或内置 drawable 名）也在此 |
+| [EntryDispatcher.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/EntryDispatcher.java) | 自定义入口统一分发：`page`（vod/live/search/fastsearch/history/collect/push/drive/apps/hin2n/**system**（系统设置）/**donate**（捐助界面））、`feature`（siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date）、`vod`（开 CustomVodActivity，`url` 经 `RemoteConfig.resolveInterfaceUrl` 补全相对地址）、`app`（已安装直开，未装且配 url 走 ApkDownloader）；图标解析（http 图片或内置 drawable 名）也在此；`page target=setting` 已移除（设置页与全部设置入口均已删除） |
 | [NoticeBar.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeBar.java) | 公告渲染（样式、时段、过期、滚动速度、home/live/vod 显隐）；**三处字号统一**（未配 `fontSize` 时统一用 `@dimen/ts_24` 的 px，配了则统一按 sp，修复首页与点播/直播文字大小不一致）；`ScreenState.expired` 标记：duration 到期隐藏后同内容的周期性重渲染不再重新武装 deadline（修复主界面 ticker 触发 render 导致公告永不消失）；`scrollToken` + `speedRun` 身份比对避免快速换内容时多条滚动循环叠加 |
 | [BootReceiver.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/BootReceiver.java) | BOOT_COMPLETED：hin2n 自连 + 按开关拉起首页 |
 | [UpgradeChecker.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/UpgradeChecker.java) | 进首页后自检升级（公开入口 `check(activity)`）：内联字段或 `checkUrl` 拉取版本信息（拼本机参数 + 支持密文响应）→ 版本号比较（每版本每进程只提示一次）→ TipDialog（`force` 时 `setCancelable(false)` 且不显示取消按钮）→ 确认后交 ApkDownloader |
 | [ApkDownloader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ApkDownloader.java) | 统一下载管线：OkHttp 流式下载到 `getExternalFilesDir`，首页顶部进度条；完成后 FileProvider+`ACTION_INSTALL_PACKAGE`/`ACTION_VIEW` 安装；Android 8+ 缺未知来源权限时先存 `sPendingInstall` 跳设置，`HomeActivity.onResume` 调 `resumePendingInstall(activity)` 自动重装；Activity 已销毁时用 application context 兜底 |
 | [CustomVodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/CustomVodActivity.java) | 自定义点播界面（`ui.activity` 包），复用 `R.layout.activity_vod`；打开时把接口 JSON 的 `sites` 以 `cv_` 前缀**仅内存注入** `ApiConfig`（不覆盖用户首页源），退出时 `removeCustomSources` 并恢复原 home 源；支持 `http(s)://`（拼本机参数 + 密文自动解密）、`assets/`、`file:///绝对路径`（本地内容同样先过 `ConfigCrypto.maybeDecrypt`，**注意：之后用标准 Gson 解析，不剥 JSONC 注释**） |
 | [DonateActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/DonateActivity.java) | 捐助界面（`ui.activity` 包，`type=page target=donate` 入口打开）：读 `RemoteConfig.donate()` 渲染标题（`title`，空=「支持我们」）、项目详细介绍（`desc`，空=内置介绍文案，支持 `\n` 换行）、自定义图片/收款二维码（`image`：http(s) 走 Glide、`assets/` 路径读包内文件、其余按 drawable 资源名解析；缺失或加载失败时图片区隐藏）、二维码下方说明文字（`tip`，空=隐藏）；布局 [activity_donate.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_donate.xml) 复用主题顶栏样式 |
-| [AppMarketLoader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/AppMarketLoader.java) | **应用市场数据层**（§3.17）：读 `RemoteConfig.appMarket()`，`url` 非空走 OkGo（模板占位 + `headers` + `ConfigCrypto.maybeDecrypt`），为空读 `appMarket.apps` → `assets/app_market.json`；`load` 分页、`loadDetail` 详情合并、`installedVersionCode`/下载中状态，失败自动回退本地目录 |
+| [AppMarketLoader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/AppMarketLoader.java) | **应用市场数据层**（§3.17）：读 `RemoteConfig.appMarket()`，`url` 非空走 OkGo（`url`/`detailUrl` 相对地址经 `resolveInterfaceUrl` 补全、模板占位 + `headers` + `DeviceParams.append` + `ConfigCrypto.maybeDecrypt`），为空直接用 `appMarket.apps` 数组（APK 内无 `assets/app_market.json` 兜底）；`load` 分页、`loadDetail` 详情合并、`installedVersionCode`/下载中状态 |
 | [AppMarketItem.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/bean/AppMarketItem.java) | 应用市场条目（`bean` 包）：`fromJson` 容错解析（size 兼容字节数/字符串、screenshots 兼容字符串与对象）、`mergeFrom` 详情非空字段覆盖、`displayName`/`formatDownloads`/`formatSize` |
 
-设置页：[ModelSettingFragment.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/ModelSettingFragment.java) 的 `initRemoteConfig()` 绑定 `llRcBoot`（开机启动，Hawk `n2n_boot_start`）与 `llRcLauncher`（设为桌面，走 `RemoteConfig.setLauncherEnabled` + `promptChooseLauncher`）；「配置地址」行只保留入口不回显已输入地址（tvApi 已删）。布局 `res/layout/fragment_model.xml` 与 `res/layout-v21/fragment_model.xml` 中的卡片标题为「内置配置」。
+设置页：界面与全部入口已移除（首页 `tvN2n`、历史行 `tvSetting`、直播菜单「应用设置」、`EntryDispatcher` 的 `page=setting` 均已删除）。[ModelSettingFragment.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/ModelSettingFragment.java) 代码保留但不可达，其中 `initRemoteConfig()` 仅保留 `llRcBoot`（开机启动，Hawk `n2n_boot_start`），`llRcLauncher` 行固定 `GONE`。全部设置项改由 JSON `settings` 下发（`RemoteConfig.applySettingsDefaults` 每次强制写入）。
 
 ### 3.4 自定义入口机制（topEntries / homeEntries / entries）
 
 - 数据模型：`RemoteConfig.Entry`（name/type/target/pkg/icon/url/theme，`theme` 仅 vod 类型），`RemoteConfig.parseEntries()` 兼容字符串数组等异常输入。
-- **出厂 JSON 即显式列出全部内置入口**（topEntries 7 项 / homeEntries 11 项，默认全显）；想关闭某入口 = 从数组删除该条；把字段整个删除或改成空数组 `[]` = 回退代码内置默认 UI。每次启动按 JSON 覆盖 Hawk 缓存。
+- **配置 JSON 即显式列出全部内置入口**（topEntries 7 项 / homeEntries 11 项，默认全显）；想关闭某入口 = 从数组删除该条；把字段整个删除或改成空数组 `[]` = 回退代码内置默认 UI。每次启动按 JSON 覆盖 Hawk 缓存。
 - 顶栏：`HomeEntry.populate()` 读 `RemoteConfig.topEntries()`——返回 `null` 走内置默认；返回非空（≥1 项）则隐藏 7 个固定图标并按数组顺序动态生成 ImageView 加入顶栏容器，点击统一调 `EntryDispatcher.handle(activity, entry)`。
 - 首页历史行：`UserFragment.rebuildHomeEntriesIfConfigured()` 读 `RemoteConfig.homeEntries()`；非空时移除 `tvUserHome` 行内全部默认卡片并按数组重建（含 `vod` 类型）。该行与推荐列表同处一个 ScrollView，焦点跟随滚动逻辑对动态卡片同样生效；重建行内「历史」卡片保留长按（切推荐模式并重载首页）。
-- `page` 类型 target 全集：`vod`/`live`/`search`/`fastsearch`/`history`/`collect`/`push`/`setting`/`drive`/`apps`/`hin2n`/`system`/`donate`。其中：
+- `page` 类型 target 全集：`vod`/`live`/`search`/`fastsearch`/`history`/`collect`/`push`/`drive`/`apps`/`hin2n`/`system`/`donate`（`setting` 已随设置页移除，配置了也不会跳转）。其中：
   - **`system`**：直接打开安卓系统设置（`Settings.ACTION_SETTINGS`），设备固件裁掉该入口时 Toast 提示「本机无系统设置入口」；用于酒店/门店场景把系统配置入口放进首页。
   - **`donate`**：打开 `DonateActivity` 捐助界面（§3.3），内容来自 json `donate` 段。
 - 图标解析 `EntryDispatcher.resolveIcon()`：`icon` 留空时按入口语义自动选图——`wifi` 按当前网络类型（hm_wifi/hm_lan/hm_mobile/hm_wifi_no）、`styleSwitch` 按 `HOME_REC_STYLE`（hm_left_right/hm_up_down），其余用兜底图标；`styleSwitch` 执行后调 `HomeEntry.refresh()` 重建顶栏使图标状态同步。
@@ -153,19 +157,16 @@ TVBox 的所有定制配置统一来自 APK 内置文件：
 - **全局未捕获异常防护**（2026-10-22）：[App.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/base/App.java) `initCrashHandler()` 在 onCreate 最前面安装 `Thread.setDefaultUncaughtExceptionHandler`——任何线程未捕获异常（含配置接口后主页刷新链路）把堆栈追加写 `filesDir/crash.log`（>512KB 自动重写），后台线程异常尽力 Toast「程序出现异常，即将自动重启」，随后 `killProcess` 自行结束进程，**不交给系统默认 handler，避免弹「tvbox结束运行」**。配套加固：`SourceViewModel.getSort()` type 0/1 的 `onSuccess` 解析（sortXml/sortJson）与 type 3 的 finally 解析块都包了 `try/catch(Throwable)`（解析失败回落 `postValue(null)`）；`HomeActivity` sortResult observer 与 loadConfig error 弹窗加 `isFinishing()/isDestroyed()` 守卫。
 - **点播接口通知 / 公告条（2026-10-23）**：① 首页、点播、直播三处公告字号统一（见 §3.3 NoticeBar 行），`duration` 到期后同内容不再重新显示；② 新增顶层 `loadSuccessDuration`：点播接口首次加载成功时在首页顶部显示非模态提示（不抢焦点、带剩余秒数倒计时），到点自动移除，0=不显示（默认 3）；③ 新增顶层 `warningAutoClose`：点播接口 `warningText` 免责声明弹窗支持 N 秒后自动关闭（按钮显示「确定 (Ns)」倒计时），0=保持原行为必须手动确认（默认 0）；④ 新增 `home.recMovies`：首页自定义推荐影片，配置后不再请求豆瓣（见 §3.2）。
 
-### 3.9 设为系统桌面（setAsLauncher / LauncherAlias）
+### 3.9 内置系统桌面（清单声明 HOME）
 
-- 清单：[AndroidManifest.xml](file:///f:/tvbox-n2n/app/src/main/AndroidManifest.xml) 内 `HomeActivity` 保持原 `LAUNCHER`/`LEANBACK_LAUNCHER` 过滤器不变；另加默认 `android:enabled="false"` 的 `activity-alias`（`.LauncherAlias`，target=HomeActivity，过滤器含 `HOME`+`DEFAULT`）。
-- 开关：`RemoteConfig.applyLauncherComponent(ctx)` 用 `PackageManager.setComponentEnabledSetting(..., DONT_KILL_APP)` 按 Hawk `rc_set_launcher` 启停别名；`bootstrap` 每次启动同步一次，远程 forceRemote 分支下发 `setAsLauncher` 时也立即同步。
-- **出厂默认开启**：`launcherEnabled()` 缺省值为 `true`；json `setAsLauncher` 字段默认值写入走两轮守卫——首轮 `rc_set_launcher_default_set`（兼容旧版本标记），第二轮 `rc_set_launcher_default_set_v2` 对**已安装过的老设备**也补写一次默认值（解决老设备首轮标记已置位导致改默认不生效的问题）；两轮都只写一次，之后用户手动开关永不被覆盖。
-- 启用后用户仍需在系统桌面选择器中确认（Android 不允许应用静默设为默认桌面）：`HomeActivity.onResume` 调 `RemoteConfig.ensureDefaultLauncher(this)`，开关已开但非默认桌面时每进程弹一次选择器；设置页切换开关时立即 `promptChooseLauncher`。
-- **有 root 时不再禁用原桌面**（2026-11-02 调整）：`LauncherHelper.applyAsDefault()` 只执行 `pm set-home-activity <本应用包>`，原桌面组件保持 enabled，用户随时可在系统设置/桌面选择器中切回；成功 Toast 文案同步改为「已把 TVBox 设为默认桌面（原桌面保持可用）」。
-- 取消：停用别名后 Android 自动清除本应用的默认桌面资格。**取消时不再静默依赖系统回退**，而是走 [LauncherHelper.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/LauncherHelper.java) `showLauncherChooser()`：后台枚举全部 `CATEGORY_HOME` 候选桌面（排除自身），主线程弹「选择桌面」列表（SelectDialog，默认选中当前默认桌面）；选定其他桌面后有 root 时 `pm set-home-activity <pkg>` 静默切回（`pm enable` 仅用于兼容旧版本可能禁用过的桌面），无 root 时用 `pm.getLaunchIntentForPackage` 拉起所选桌面并 Toast 引导选「始终」，兜底系统选择器 `RemoteConfig.promptChooseLauncher`。
-- 注意 applicationId 随 flavor 变化（generic=`com.github.tvbox.osc.tk` / hisense=`com.github.hisense.osc.tk`），`ComponentName` 必须用 `ctx.getPackageName()` + 清单展开类名 `com.github.tvbox.osc.LauncherAlias`（别名 `android:name=".LauncherAlias"` 以源码包名展开，与 applicationId 无关）。
+- 清单：[AndroidManifest.xml](file:///f:/tvbox-n2n/app/src/main/AndroidManifest.xml) 的 `HomeActivity` 直接声明 `LAUNCHER` / `LEANBACK_LAUNCHER` / `HOME` / `DEFAULT` 四个 category（参考 MQLauncher 的做法），安装后即成为桌面候选。
+- **不再使用 activity-alias，也不再有 `setAsLauncher` 开关、root 静默设桌面、应用内「选择桌面」列表**；`LauncherHelper.java` 已删除，`RemoteConfig` 中的 launcher 相关方法已移除。
+- 用户按主页键时由 **Android 系统桌面选择器**决定默认桌面；想换回原桌面走系统设置 → 主页/默认应用。
+- applicationId：generic=`TKLauncher`，hisense=`TKLauncher.hisense`（可共存）。
 
-### 3.10 点播切源自动返回首页刷新
+### 3.10 点播切源自动返回首页刷新并重新进入点播
 
-[VodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/VodActivity.java) `showSiteSwitch()` 的 SelectDialog 点击回调：`dialog.dismiss()` → Toast「已切换到「xxx」，即将返回主界面刷新数据」→ 置 `HomeActivity.sRefreshOnResume=true` → `mHandler.postDelayed(finish(), 1500)`（带 `isFinishing/isDestroyed` 守卫）。`HomeActivity.onResume` 检测到标志位后调 `reloadHome()`（CLEAR_TASK 内部重启 + `forceSortRefresh=true` 绕过 sortCache 强刷当前源）。
+[VodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/VodActivity.java) `showSiteSwitch()` 点击回调：Toast「已切换到「xxx」，即将返回主界面刷新并重新进入点播」→ 置 `HomeActivity.sRefreshOnResume=true` 与 `HomeActivity.sReopenVodAfterRefresh=true` → 延迟 `finish()`。`HomeActivity.onResume` 检测到 `sRefreshOnResume` 后 `reloadHome()`（内部重启 + `forceSortRefresh=true`）。新建的 HomeActivity 在 `onCreate` 捕获并清零静态标记（存入实例字段 `reopenVodAfterLoad`，避免旧实例误消费）；`sortResult` 刷新成功且 `absXml != null` 时延迟 300ms 自动 `startActivity(VodActivity)`。
 
 ### 3.11 接口加密协议（ConfigCrypto）
 
@@ -237,8 +238,8 @@ echo bin2hex(aesEncrypt($miniData, $SECRET));   // 纯 hex（偶数长度），�
 
 | # | 位置 | 接口 |
 |---|------|------|
-| 1 | `RemoteConfig.bootstrap()` | assets 内置配置 tvbox-config.json（**仅支持 ke 前缀模式**——解密发生在 `secretKey` 写入 Hawk 之前，固定密钥模式还读不到秘钥） |
-| 2 | `RemoteConfig.fetchAndApply()` | 远程配置 `remoteConfigUrl`（缓存 `rc_remote_raw` 存**解密后明文**，与旧版缓存格式兼容） |
+| 1 | `RemoteConfig.loadLocalPrimary()` / `fetchPrimary()` | 主配置（`CONFIG_URL` 指向本地文件/assets 同步读，或远程异步拉取；远程请求经 `DeviceParams.append` 拼本机参数） |
+| 2 | `RemoteConfig.fetchAndApply()` | 二次远程配置 `remoteConfigUrl`（缓存 `rc_remote_raw` 存**解密后明文**，与旧版缓存格式兼容） |
 | 3 | `ApiConfig` FindResult else 分支 | 点播接口（用户/预置 `api` 地址；`2423` 原生 CBC 格式保持原逻辑不受影响） |
 | 4 | `CustomVodActivity.applyCustomJson()` | 自定义点播接口（http/assets/file 三种来源统一过解密） |
 | 5 | `LivePlayActivity.loadProxyLives()` | 直播接口（解密后交 `TxtSubscribe.parse`，支持 m3u/txt/json） |
@@ -299,6 +300,7 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 **首页中间一行入口即时加载**：`HomeActivity.initView()` 末尾（setLoadSir 之前）立即 `commitNowAllowingStateLoss` 创建 `UserFragment`，不再等点播配置加载完成；`sortResult` 观察者只调 `UserFragment.updateHomeRec(list)` 增量更新推荐数据，不重建入口行。左上角 `tvName` 固定显示 `home.sourceName`（见 §3.8）。
 
 **EPG 本地缓存与多天下发**（[LivePlayActivity](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java) + [EpgCache.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/util/EpgCache.java)）：
+- **统一 JSON 格式**：EPG 接口返回 `{"epg_data":[{"date":"yyyy-MM-dd","start":"HH:mm","end":"HH:mm","title":"..."}]}`，单日格式可省略 `date`；不再使用 XMLTV；
 - 显示天数：json `epgDays`（1~9，默认 3），日期列表以今天为中心生成（`initEpgDateView`），默认选中今天（修复旧版固定 9 天列表却选中索引 1 = 5 天前的问题）；
 - 查询顺序：内存 `hsEpg`（key 统一 `频道名_yyyy-MM-dd`，不再用「昨天/星期x」文案防漂移）→ 磁盘 `EpgCache` → 网络；
 - 网络请求附加 `days=N` 参数（两种 URL 形态 `?ch=&date=` 与 `{name}/{date}` 模板都附加）；服务端支持时一次返回窗口内多天（条目带 `"date":"yyyy-MM-dd"` 字段），`parseAndCacheEpg()` 按天拆分缓存；旧服务端忽略该参数按原单日格式返回，客户端兼容并触发 `prefetchEpgWindow()` 后台单线程串行预取（300ms 间隔）窗口内其余日期；
@@ -318,12 +320,12 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 ### 3.16 启动模式、直播设置入口与 WebView 触摸换台（2026-11-02）
 
 **启动时进直播（开关）**：
-- 复用原有 Hawk 键 `HawkConfig.HOME_DEFAULT_SHOW`（`home_default_show`，`false`=启动进首页，`true`=启动直接进直播），设置页「启动时进直播」（`ModelSettingFragment.llHomeLive`，文案 `mn_live_boot`）使用 cac4ffe 分支的二态开关：点击即翻转 Hawk 值并把右侧文案刷新为「开启 / 关闭」，不再弹出「启动界面」选择框。
+- 复用原有 Hawk 键 `HawkConfig.HOME_DEFAULT_SHOW`（`home_default_show`，`false`=启动进首页，`true`=启动直接进直播），由 JSON `settings.homeDefaultShow` 下发（`RemoteConfig.applySettingsDefaults` 每次启动强制写入）。设置页入口已移除，`ModelSettingFragment.llHomeLive` 保留代码但不可达。
 - [HomeActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/HomeActivity.java) 新增 `jumpToLiveIfNeeded()`：直播模式下 `initData()` 回调 `dataInitOk` 即跳 `LivePlayActivity`（不再等待 Spider jar 加载完成，减少停留在首页的延迟）；`liveModeJumped` 保证每次启动只跳一次，避免 `initData` 多次回调重复打开直播页。
 
-**直播界面设置入口（参照 ku9）**：
-- [LivePlayActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java) 的 `LiveSettingGroup` 分组新增「**应用设置**」（`appSettingItems = ["打开设置"]`，`clickSettingItem` case 5 打开 `SettingActivity`），原「直播地址」「退出直播」索引顺移。
-- 触摸设备额外在直播界面右上角显示齿轮按钮 `tvLiveSettingButton`（[activity_live_play.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_live_play.xml)），`supportsTouch()` 时才 `VISIBLE`，点击直达 `SettingActivity`；TV 遥控器仍用 MENU 打开直播设置。
+**直播界面设置入口**：
+- [LivePlayActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java) 的 `LiveSettingGroup` 原「应用设置」分组已删除（设置页入口全部移除），现仅保留「直播地址」「直播历史」「退出直播」，`clickSettingItem` 索引相应顺移。
+- 触摸设备额外在直播界面右上角显示齿轮按钮 `tvLiveSettingButton`（[activity_live_play.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_live_play.xml)），`supportsTouch()` 时才 `VISIBLE`，点击打开直播设置面板（不再直达 `SettingActivity`）；TV 遥控器仍用 MENU 打开直播设置。
 
 **WebView 直播源触摸换台（手机/逍遥模拟器调不出节目表）**：
 - 根因：`LiveWebViewPlayer` 的 WebView 覆盖在 `mVideoView` 之上并消费触摸事件，`LiveController.singleTap` 收不到点击，导致频道列表/信息栏/设置面板均无法呼出。
@@ -343,7 +345,7 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 - 详情 `AppMarketDetailDialog`（[dialog_app_market_detail.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/dialog_app_market_detail.xml)）：先展示列表字段，再异步 `AppMarketLoader.loadDetail` 用 `AppMarketItem.mergeFrom` 合并详情（仅覆盖非空字段）；按钮状态由 `AppMarketAdapter.getActionState` 计算（安装 / 更新 / 打开 / 下载中）；
 - 下载安装复用 `ApkDownloader.download/install/resumePendingInstall`；`AppMarketLoader.markDownloading/clearDownloading` 维护「下载中」状态避免重复点击；
 - 「管理」Tab 为本机第三方应用：`AppInfo.Sorter.sort` 排序、长按 `toggleDelMode()` 卸载模式；`ensureUpdateIndex` 最多拉 5 页市场目录建立「包名 → versionCode」映射，`bindUpdateBadges` 标记 `AppInfo.updateAvailable`，`AppsAdapter` 显示 `tvUpdateBadge`；
-- 数据层 `AppMarketLoader`：`url` 非空走 OkGo（`{category}/{sort}/{page}/{pageSize}/{keyword}` 模板替换 + `headers` + 响应 `ConfigCrypto.maybeDecrypt`）；`url` 为空读 `appMarket.apps`，再退 `assets/app_market.json`；响应兼容根数组 / `data.list` / `data` 数组 / `list` / `apps`，有 `total` 优先按总数判断 `hasMore`、否则按「本页是否满页」；网络或解析失败一律回退本地目录并提示；
+- 数据层 `AppMarketLoader`：`url` 非空走 OkGo（`{category}/{sort}/{page}/{pageSize}/{keyword}` 模板替换 + `headers` + `DeviceParams.append` + 响应 `ConfigCrypto.maybeDecrypt`，`url`/`detailUrl` 支持相对地址由 `resolveInterfaceUrl` 补全）；`url` 为空直接读 `appMarket.apps`（APK 内已无 `assets/app_market.json`）；响应兼容根数组 / `data.list` / `data` 数组 / `list` / `apps`，有 `total` 优先按总数判断 `hasMore`、否则按「本页是否满页」；网络或解析失败提示错误（不再回退内置目录）；
 - 配置字段与协议见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 的 `appMarket` 段（`url/detailUrl/headers/pageSize/apps`）。
 
 ## 4. hin2n 入口与 TV 界面
@@ -373,11 +375,11 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 
 | 开关 | 存储 | 行为 |
 |------|------|------|
-| TVBox 开机启动 | Hawk `n2n_boot_start`（设置-内置配置卡片切换） | 开机拉起 HomeActivity（出厂默认开） |
+| TVBox 开机启动 | Hawk `n2n_boot_start`（JSON `bootStart` 首启写入默认值） | 开机拉起 HomeActivity（出厂默认开） |
 | hin2n 开机启动 | SP `Hin2n/start_at_boot`（引导页切换） | 开机自动连 n2n VpnService（未授权过 VPN 则跳过） |
 
 两者独立；同一个 BootReceiver 顺序执行，全部 best-effort（Android 10+ 后台启动限制）。
-另有第三个相关开关「设为桌面」（Hawk `rc_set_launcher`，设置-内置配置卡片切换，出厂默认开）：不属于 BootReceiver，机制见 §3.9（activity-alias 启停）；开机自启 + 设为桌面同时打开可实现「开机即进 TVBox 桌面」。
+桌面能力改为清单直接声明（见 §3.9），**不再有「设为桌面」开关**（`rc_set_launcher`、`setAsLauncher`、activity-alias 启停均已移除）；安装后系统即可把它选为桌面，开机自启打开时直接进入 TVBox 桌面。
 
 ## 7. Android 4.4（API19）黑屏修复
 

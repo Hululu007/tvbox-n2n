@@ -29,6 +29,7 @@ import com.github.tvbox.osc.ui.adapter.AppsAdapter;
 import com.github.tvbox.osc.ui.dialog.AppMarketDetailDialog;
 import com.github.tvbox.osc.ui.dialog.BaseDialog;
 import com.github.tvbox.osc.ui.dialog.GridFilterDialog;
+import com.github.tvbox.osc.ui.tv.widget.SearchKeyboard;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
@@ -680,6 +681,7 @@ public class AppsActivity extends BaseActivity {
 
         private final OnSubmitListener submitListener;
         private EditText etKeyword;
+        private SearchKeyboard keyboard;
 
         AppMarketSearchDialog(Context context, String keyword, OnSubmitListener listener) {
             super(context, R.style.CustomDialogStyleDim);
@@ -688,10 +690,30 @@ public class AppsActivity extends BaseActivity {
             setCanceledOnTouchOutside(false);
 
             etKeyword = findViewById(R.id.etMarketKeyword);
+            keyboard = findViewById(R.id.keyBoardMarket);
             if (!TextUtils.isEmpty(keyword)) {
                 etKeyword.setText(keyword);
                 etKeyword.setSelection(keyword.length());
             }
+            // TV 适配：屏幕内 A-Z/0-9 键盘，支持按首字母搜索（无需软键盘/遥控器数字键）
+            keyboard.setOnSearchKeyListener(new SearchKeyboard.OnSearchKeyListener() {
+                @Override
+                public void onSearchKey(int pos, String key) {
+                    if (pos == 0) {
+                        etKeyword.setText("");
+                    } else if (pos == 1) {
+                        String text = etKeyword.getText().toString();
+                        if (text.length() > 0) {
+                            etKeyword.setText(text.substring(0, text.length() - 1));
+                            etKeyword.setSelection(etKeyword.getText().length());
+                        }
+                    } else if (!TextUtils.isEmpty(key)) {
+                        String text = etKeyword.getText().toString() + key;
+                        etKeyword.setText(text);
+                        etKeyword.setSelection(text.length());
+                    }
+                }
+            });
             findViewById(R.id.btnMarketSearch).setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
@@ -725,12 +747,16 @@ public class AppsActivity extends BaseActivity {
                 return;
             }
             etKeyword.requestFocus();
-            if (getContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN)) {
+            boolean touch = getContext().getPackageManager().hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
+            if (touch) {
                 InputMethodManager imm = (InputMethodManager) getContext()
                         .getSystemService(Context.INPUT_METHOD_SERVICE);
                 if (imm != null) {
                     imm.showSoftInput(etKeyword, InputMethodManager.SHOW_IMPLICIT);
                 }
+            } else if (keyboard != null) {
+                // 非触屏 TV：焦点交给屏幕键盘，方向键即可选择字母/数字
+                keyboard.requestFocus();
             }
         }
 

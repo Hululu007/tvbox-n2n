@@ -379,7 +379,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         initHomeHotVod(homeHotVodAdapter);
 
         // Swifly: Home Style
-        if (Hawk.get(HawkConfig.HOME_REC_STYLE, false)) {
+        if (Hawk.get(HawkConfig.HOME_REC_STYLE, true)) {
             tvHotListForGrid.setVisibility(View.VISIBLE);
             tvHotListForLine.setVisibility(View.GONE);
         } else {
@@ -413,7 +413,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         int iconMargin = res.getDimensionPixelSize(R.dimen.vs_3);
         int tvPad = res.getDimensionPixelSize(R.dimen.vs_3);
         for (final RemoteConfig.Entry e : entries) {
-            // 设置入口已由首页顶栏统一承载，历史一行不再生成设置卡片
+            // 设置入口已全面移除，历史一行不再生成设置卡片
             if ("page".equals(e.type) && "setting".equals(e.target)) {
                 continue;
             }
@@ -627,8 +627,6 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             jumpActivity(LivePlayActivity.class);
         } else if (v.getId() == R.id.tvSearch) {
             jumpActivity(SearchActivity.class);
-        } else if (v.getId() == R.id.tvSetting) {
-            jumpActivity(SettingActivity.class);
         } else if (v.getId() == R.id.tvHistory) {
             jumpActivity(HistoryActivity.class);
         } else if (v.getId() == R.id.tvPush) {

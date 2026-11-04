@@ -108,13 +108,13 @@ Android 10+ 部分 TV 固件限制后台拉起页面/前台服务，属系统行
 
 ## 6. 出厂配置在哪改
 
-出厂配置（含默认组网条目的全部 28 个字段、静态路由、开机开关、入口显隐）写死在源码：
+出厂配置（含默认组网条目的全部 28 个字段、静态路由、开机开关、入口显隐）由主配置 JSON 下发：
 
-[app/src/main/assets/tvbox-config.json](file:///f:/tvbox-n2n/app/src/main/assets/tvbox-config.json) 的 `hin2n` 段。
+配置 JSON 的 `hin2n` 段（APK 内不再内置示例文件）；配置来源由 [RemoteConfig.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java) 的 `CONFIG_URL` 常量指定（远程 `http(s)://` / 本地文件 / `assets/xxx.json`）。
 
-- 该文件支持 `//`、`/* */` 注释与尾逗号（JSONC）；
+- JSON 支持 `//`、`/* */` 注释与尾逗号（JSONC）；
 - **仅在应用首次启动（组网数据库为空）时播种一次**，之后以用户在界面中的增删改为准；
-- 已去除「远程地址配置」，需要不同的出厂/定制配置时，直接改此文件后重新编译 APK。
+- 已去除「远程地址配置」，需要不同的出厂/定制配置时，改 `CONFIG_URL` 指向的配置内容后重新编译 APK。
 
 字段逐项 demo 见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)。
 

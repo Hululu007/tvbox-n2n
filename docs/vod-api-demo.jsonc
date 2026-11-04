@@ -6,8 +6,8 @@
 //   · 多源：保留 "sites" 数组中的多个站点对象即可，数组第一个未隐藏(hide=0)的站
 //     就是进入点播界面时默认加载的源；点界面左上角源名可在源之间切换，
 //     每次切换都会强制刷新列表（绕过缓存）并弹出「切换源：xxx」提示；
-//   · 作为默认点播接口：填到内置配置 app/src/main/assets/tvbox-config.json 的 "api"
-//     字段，或用户在 设置→接口配置→点播接口 手动填写（URL 或 assets/xxx.json 均可）；
+//   · 作为默认点播接口：填到主配置 JSON 的 "api" 字段（配置来源由
+//     RemoteConfig.CONFIG_URL 指定：远程 http(s) / 设备本地文件 / assets/xxx.json，APK 内不再内置配置）；
 //   · 作为自定义点播界面（影院）的独立数据源：填到 topEntries/homeEntries 中
 //     type="vod" 入口的 "target" 字段，还可加 "theme" 指定该界面独立主题；
 //   · 本文件带 // 注释仅供说明，实际使用前删除全部注释即为标准 .json。

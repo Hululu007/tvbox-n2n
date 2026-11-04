@@ -76,6 +76,12 @@ public class HomeActivity extends BaseActivity {
     /** 点播界面切源后返回主界面时置位：onResume 检测并强制刷新首页数据 */
     public static boolean sRefreshOnResume = false;
 
+    /** 切源回到首页刷新完成后，自动重新进入点播（保留静态标记，reloadHome 重建 Activity 后仍有效） */
+    public static boolean sReopenVodAfterRefresh = false;
+
+    /** 本实例创建时捕获的「刷新后自动进点播」标记，避免旧实例误消费静态标记 */
+    private boolean reopenVodAfterLoad = false;
+
     private LinearLayout topLayout;
     private LinearLayout contentLayout;
     private TextView tvName;
@@ -137,6 +143,9 @@ public class HomeActivity extends BaseActivity {
             Bundle bundle = intent.getExtras();
             useCacheConfig = bundle.getBoolean("useCache", false);
         }
+        // 刷新后自动进点播：由新创建的首页实例捕获并消费静态标记
+        reopenVodAfterLoad = sReopenVodAfterRefresh;
+        sReopenVodAfterRefresh = false;
         initData();
     }
 
@@ -187,8 +196,8 @@ public class HomeActivity extends BaseActivity {
             @Override
             public void onClick(View view) {
                 try {
-                    Hawk.put(HawkConfig.HOME_REC_STYLE, !Hawk.get(HawkConfig.HOME_REC_STYLE, false));
-                    if (Hawk.get(HawkConfig.HOME_REC_STYLE, false)) {
+                    Hawk.put(HawkConfig.HOME_REC_STYLE, !Hawk.get(HawkConfig.HOME_REC_STYLE, true));
+                    if (Hawk.get(HawkConfig.HOME_REC_STYLE, true)) {
                         UserFragment.tvHotListForGrid.setVisibility(View.VISIBLE);
                         UserFragment.tvHotListForLine.setVisibility(View.GONE);
                         Toast.makeText(HomeActivity.this, getString(R.string.hm_style_grid), Toast.LENGTH_SHORT).show();
@@ -210,15 +219,10 @@ public class HomeActivity extends BaseActivity {
                 jumpActivity(AppsActivity.class);
             }
         });
-        // Button : Settings >> To go into Settings --------------------
-        // 远程配置入口（收藏/应用与设置之间），直达设置页「设置其他」的远程配置卡片
-        tvN2n.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Intent n2nIntent = new Intent(HomeActivity.this, SettingActivity.class);
-                startActivity(n2nIntent);
-            }
-        });
+        // Button : Settings >> 已按需求移除应用内设置入口，全部配置改由 JSON 下发。
+        tvN2n.setVisibility(View.GONE);
+        tvN2n.setOnClickListener(null);
+        tvN2n.setFocusable(false);
         // Button : Theme >> 一键切换主题配色（远程 JSON 也可下发默认主题）
         findViewById(R.id.tvTheme).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -349,6 +353,20 @@ public class HomeActivity extends BaseActivity {
                     showSuccess();
                     // takagen99 : Switch to show / hide source title
                     applySourceName();
+                    // 点播切源 → 返回首页刷新 → 刷新完成后自动重新进入点播
+                    if (reopenVodAfterLoad) {
+                        reopenVodAfterLoad = false;
+                        if (absXml != null && !isFinishing() && !isDestroyed()) {
+                            mHandler.postDelayed(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (!isFinishing() && !isDestroyed()) {
+                                        startActivity(new Intent(HomeActivity.this, VodActivity.class));
+                                    }
+                                }
+                            }, 300);
+                        }
+                    }
                 } catch (Throwable ignored) {
                 }
             }
@@ -429,7 +447,7 @@ public class HomeActivity extends BaseActivity {
         }
 
         // takagen99: Set Style either Grid or Line
-        if (Hawk.get(HawkConfig.HOME_REC_STYLE, false)) {
+        if (Hawk.get(HawkConfig.HOME_REC_STYLE, true)) {
             tvStyle.setImageResource(R.drawable.hm_up_down);
         } else {
             tvStyle.setImageResource(R.drawable.hm_left_right);
@@ -771,8 +789,8 @@ public class HomeActivity extends BaseActivity {
             reloadHome();
         }
 
-        // 「设为系统桌面」开关已开但还不是默认桌面时，每进程弹一次系统桌面选择器
-        com.github.tvbox.osc.n2n.RemoteConfig.ensureDefaultLauncher(this);
+        // 桌面模式在清单中直接声明 HOME（参考 MQLauncher），不再在应用内引导选择桌面
+
     }
 
     @Override

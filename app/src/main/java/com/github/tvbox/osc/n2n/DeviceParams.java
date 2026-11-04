@@ -87,6 +87,26 @@ public class DeviceParams {
         }
     }
 
+    /** 本机 MAC（供 OkHttp 全局请求头使用） */
+    public static String getMac() {
+        return mac();
+    }
+
+    /** 本机 IPv4（供 OkHttp 全局请求头使用） */
+    public static String getIp() {
+        return localIp();
+    }
+
+    /** 本应用版本名 */
+    public static String getAppVersion() {
+        return appVersion();
+    }
+
+    /** 系统版本描述，如 "14 (API 34)" */
+    public static String getSystemVersion() {
+        return Build.VERSION.RELEASE + " (API " + Build.VERSION.SDK_INT + ")";
+    }
+
     /** 本机 MAC：第一个非回环、非虚拟且有硬件地址的网卡；失败兜底 ANDROID_ID */
     private static String mac() {
         if (sMacCache != null) {

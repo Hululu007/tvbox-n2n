@@ -53,6 +53,9 @@
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">
 
+        <!-- 桌面：参考 MQLauncher 直接在主 Activity 声明 HOME/DEFAULT，
+             安装后即出现在系统桌面选择器，按 HOME 键可直接进入本应用；
+             不再提供应用内「选择桌面/设为桌面」开关。 -->
         <activity
             android:name=".ui.activity.HomeActivity"
             android:screenOrientation="sensorLandscape"
@@ -63,22 +66,10 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
-            </intent-filter>
-        </activity>
-
-        <!-- 设为系统桌面：默认停用；RemoteConfig.applyLauncherComponent 按开关动态启停。
-             停用状态下不出现在系统桌面选择器；取消后系统自动回退原桌面。 -->
-        <activity-alias
-            android:name=".LauncherAlias"
-            android:targetActivity=".ui.activity.HomeActivity"
-            android:enabled="false"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-        </activity-alias>
+        </activity>
 
         <activity
             android:name=".ui.activity.VodActivity"

@@ -1,90 +1,72 @@
 // ============================================================================
-// TVBox-n2n 内置配置 · 全量参考（JSONC 注释版）
+// TKLauncher 配置示例 · 全量参考（JSONC 注释版）
 // ----------------------------------------------------------------------------
-// 本文件是 app/src/main/assets/tvbox-config.json 的「带注释全量 demo」，
-// 两者结构保持一致；出厂内置文件以 app/src/main/assets/tvbox-config.json 为准。
-//
-// 【配置方式（已无远程地址配置）】
-//   1. 复制本文件内容到 app/src/main/assets/tvbox-config.json（该文件本身就支持注释）；
-//   2. 按需修改后重新编译安装 APK 即可；App 每次启动同步读取，无需联网。
-//   3. 解析器兼容 JSONC：// 行注释、/* 块注释、尾逗号、UTF-8 BOM；
+// 【配置方式（APK 内不再内置任何配置 json）】
+//   1. 把本文件放到远程服务器（推荐，可热更新）或设备本地文件；
+//   2. 打开 app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java，
+//      修改 CONFIG_URL 常量：http(s)://远程地址 / /sdcard/xxx.json / assets/xxx.json；
+//   3. 重新编译安装；留空 CONFIG_URL 表示全部使用程序默认值。
+//   4. 解析器兼容 JSONC：// 行注释、/* 块注释、尾逗号、UTF-8 BOM；
 //      注释不会穿透字符串（URL 里出现 // 不受影响）。
 //
 // 【覆盖/生效规则】
 //   · notice/home/tkp2p/theme/themes/entries/topEntries/homeEntries/upgrade/
-//     hin2nEntry/checkInterval/ua/secretKey/donate：每次启动按本文件应用（改完重装即生效）；
-//   · api/live/epg/proxy：仅当用户从未在 TVBox 内手动配置过对应接口时作为默认值，
-//       用户一旦手动配置，该接口不再被文件覆盖（四项互不影响）；
-//   · bootStart（TVBox 开机自启）：只作默认值写入一次，之后以设置页开关为准（出厂默认开）；
-//   · setAsLauncher（设为系统桌面）：默认值写入走两轮守卫（首轮 + 对老设备补写一轮，
-//       出厂默认开启后存量设备升级也生效一次），之后以设置页开关为准（出厂默认开）；
-//   · settings（设置页默认值）：仅当用户从未在设置页修改过该项时写入一次，
-//       用户一旦在设置页更改，该项永远以用户设定为准；
-//   · useRemoteConfig=true 且远程接口（remoteConfigUrl）可正常访问时例外：
-//       远程 json 强制覆盖 settings 全部项 + bootStart + setAsLauncher + api/live/epg/proxy
-//       （用户的手动修改也会被远程值覆盖）；远程访问失败或开关为 false 时仍按上述本地规则；
+//     hin2nEntry/checkInterval/ua/secretKey/donate：每次加载按 JSON 应用；
+//   · api/live/epg/proxy：应用内无设置页，每次加载都以 JSON 为准；
+//   · bootStart（TVBox 开机自启）：只作默认值写入一次（默认开）；
+//   · settings（全部功能设置）：每次加载强制生效（设置页已移除，不存在用户手动值）；
+//   · remoteConfigUrl + useRemoteConfig：可选的二次远程覆盖，详见字段注释；
 //   · hin2n.bootStart/staticRoutes/configs：仅应用首次启动（组网数据库为空）时
-//       播种一次，之后以组网界面内的用户增删改为准；
+//     播种一次，之后以组网界面内的用户增删改为准；
 //   · 所有字段均可选，不写即保持默认。
 //
 // 【接口加密下发（对接方必读）】
-//   本系统所有接收接口（本内置配置 / 远程配置 remoteConfigUrl / 点播 api / 直播 live /
-//   EPG / 自定义点播 type=vod 的 target / 升级检查 upgrade.checkUrl）均支持密文下发：
-//   内容是 json（或 jsonc / 直播 txt）直接解析，不是 json 自动解密后加载，用户无感知。
+//   本系统所有接收接口（主配置（远程/本地）/ 远程配置 remoteConfigUrl / 点播 api /
+//   直播 live / EPG / 自定义点播 type=vod 的 target / 应用市场 appMarket /
+//   升级检查 upgrade.checkUrl）均支持密文下发：
+//   内容是 json（EPG 也是 JSON；直播为 txt；兼容 jsonc）直接解析，不是 json 自动解密后加载，用户无感知。
 //   支持两种密文形态（自动识别）：
 //     ① ke 前缀模式（推荐，App 端零配置）：
 //        密文 = ke(19 位小写 hex) + bin2hex(AES-128-ECB(数据, ke 前 16 位))
 //        ke = substr(md5(time() . 自定义串), 13) —— 密钥随密文自带，
-//        完整 PHP 加密端示例见 docs/tvbox-dev.md §3.11；
+//        完整 PHP 加密端示例见 docs/php-demo/tvbox_crypto.php；
 //     ② 固定密钥模式：
 //        密文 = bin2hex(AES-128-ECB(数据, 秘钥前 16 字节))（纯 hex、偶数长度），
 //        秘钥取本文件 "secretKey" 字段（非空优先），空时回退 Java 源码
 //        ConfigCrypto.java 中的 SECRET_KEY 常量（编译期自定义位置）。
 //   判定规则：trim 后以 { [ / 开头或含 #EXTM3U/#genre# = 明文；2423 前缀 = TVBox 原生
 //   CBC 格式不处理；其余纯小写 hex 才尝试解密，解密结果需以 { [ 开头或含直播标记。
-//   注意：assets 内置文件本身只允许明文或 ① ke 前缀模式加密（固定密钥模式解密发生在
-//   secretKey 落盘之前，读不到秘钥）。
+//   固定密钥模式需要 service 端与客户端一致；ke 前缀模式更便于轮换密钥。
 //
 // 【接口请求携带本机参数（对接方必读）】
 //   所有远程接口请求发起前，自动在 URL 查询串拼接本机信息（URLEncoder 编码，
 //   已存在同名参数不重复添加，assets/file 等本地路径不拼接）：
 //     mac=本机MAC（eth0/wlan0优先，冒号大写，失败兜底ANDROID_ID） &ip=本机IPv4
 //     &model=机型 &brand=品牌 &device=设备名 &sdk=API级别 &release=系统版本 &app=应用版本
-//   服务端用 $_GET['mac'] 等即可按设备下发不同数据（例如酒店按盒子下发专属片单）。
+//   同时所有 OkGo 请求统一携带请求头：
+//     X-Device-Mac / X-Device-Ip / X-OS-Version / X-App-Version
+//   服务端用 $_GET['mac'] 或请求头即可按设备下发不同数据（例如酒店按盒子下发专属片单）。
 //
 // 【颜色格式】统一使用 #RRGGBB 或 #AARRGGBB（AA=透明度十六进制，如 B3≈70%）。
-// 【已删除字段】version / apkUrl / hin2nUrl（远程更新与外部 hin2n APK 已废弃）。
+// 【已删除字段】version / apkUrl / hin2nUrl / setAsLauncher（桌面能力改为清单直接声明）。
 // ============================================================================
 {
-  // ==================== 远程配置接口 ====================
-  // 远程 json 地址：配置后启动时会拉取远程 json（URL 自动拼接 mac/ip 等本机参数），
-  // 覆盖「除设置页(settings) 和 n2n(hin2n) 之外」的所有段（notice/home/tkp2p/themes/
-  // entries/topEntries/homeEntries/upgrade/api/live/epg/proxy/secretKey/donate 等）。
-  // 响应支持密文下发（见文件头【接口加密下发】）；成功时把解密后明文缓存为本机断网兜底。
-  // 设置页与 n2n 的配置永远只读写本地内置 json，不被远程覆盖。
-  // 留空或远程无法访问时全部使用本文件内置配置。
+  // ==================== 二次远程配置（可选） ====================
+  // 主配置本身推荐直接放在远程（RemoteConfig.CONFIG_URL 填远程地址）。
+  // 若主配置为本地文件，可在此填写二次远程地址：启动时应用本地配置后再拉取远程，
+  // 以 remoteOnly 模式覆盖内容/入口/主题/接口等（默认不覆盖 settings/bootStart/hin2n）。
+  // 响应支持密文；成功时缓存明文作为断网兜底；留空=不启用二次远程。
   "remoteConfigUrl": "",
 
-  // 是否使用远程 json 覆盖「配置界面的所有配置」（设置页 settings 全部项 + bootStart
-  // + setAsLauncher + api/live/epg/proxy 接口地址）。
-  // true 且远程接口正常访问时：远程值强制覆盖用户在设置页的手动修改（适合统一管控的
-  // 酒店/门店场景）；false（默认）：远程不碰用户设置，上述项只在用户未配置时作为默认值。
+  // 二次远程是否强制覆盖 settings（全部功能设置）与 bootStart：
+  // true=统一管控模式（远程值覆盖一切）；false=二次远程不碰设置项。
   "useRemoteConfig": false,
-
-  // 设为系统桌面：true 时把 TVBox 注册为系统桌面候选（设为默认桌面，开机/按主页键
-  // 进入 TVBox；原来的系统桌面保持启用、不被禁用）。出厂默认开启：默认值经两轮守卫写入
-  // （对老设备也补写一次），之后以「设置 → 设为桌面」开关为准；取消后自动停用桌面入口并
-  // 弹出「选择桌面」列表，选中的桌面应用会被启用并设为默认桌面（开机自动启动，root 静默
-  // 完成/无 root 拉起后按提示确认）。
-  // useRemoteConfig=true 时远程可强制覆盖。
-  "setAsLauncher": true,
 
   // ==================== 接口加密秘钥（可选） ====================
   // 固定密钥模式的秘钥（所有接收接口通用，详见文件头【接口加密下发】）：
-  //   密文 = bin2hex(AES-128-ECB(数据, 秘钥前16字节))；每次启动覆盖缓存。
+  //   密文 = bin2hex(AES-128-ECB(数据, 秘钥前16字节))；每次加载覆盖缓存。
   //   非空时优先于 Java 源码 ConfigCrypto.java 的 SECRET_KEY 常量；留空 = 用 SECRET_KEY。
-  // ke 前缀模式无需本字段（密钥随密文自带）。本字段可被远程 json 覆盖，便于统一换秘钥。
-  // 注意：本 assets 文件本身只允许明文或 ke 前缀模式加密，不要用固定密钥模式加密本文件。
+  // ke 前缀模式无需本字段（密钥随密文自带）。本字段可被二次远程覆盖，便于统一换秘钥。
   "secretKey": "",
 
   // ==================== 捐助界面 ====================
@@ -130,7 +112,7 @@
     "textColor": "",                    // 顶栏文字（日期/标题）颜色，空=白色
     "alpha": 100,                       // 入口卡片透明度 0-100
     "inputBgColor": "",                 // 输入框底色，空=主题半透明色
-                                        //   （设置页接口地址行、接口配置弹窗 4 个输入框）
+                                        //   （输入框、按钮等界面元素）
     "buttonBgColor": "",                // 按钮底色，空=主题半透明色
                                         //   （接口配置弹窗「确定 / 存储权限」按钮）
     // 首页自定义推荐影片：数组非空时，首页「豆瓣热播」直接显示这里配置的影片，
@@ -195,13 +177,14 @@
     //    "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
   ],
 
-  // ==================== 接口地址（仅作未配置时的默认值） ====================
-  // 只在用户从未在 TVBox 内手动配置过该接口时写入一次；手动配置后永不覆盖（四项互不影响）。
-  // 接口均支持密文下发（见文件头【接口加密下发】），远程请求自动携带 mac/ip 等本机参数。
+  // ==================== 接口地址（JSON 是唯一配置来源） ====================
+  // 应用内无设置页，每次加载都以 JSON 为准。接口均支持密文下发，远程请求自动携带
+  // 本机参数。live/epg/proxy/upgrade/appMarket/自定义点播若未写 http(s)://，
+  // 自动拼接主接口 api 的协议 + 域名/IP。
   "api": "",                           // 点播源接口（JSON 格式见 docs/vod.config.example.json）；
                                        //   留空且配置了 live 时可作纯直播盒子（不弹「源地址为空」）
   "live": "",                          // 直播源接口（txt / m3u / json）
-  "epg": "",                           // 节目单接口（留空用内置默认 https://epg.112114.xyz/）
+  "epg": "",                           // 节目单接口（JSON 格式，支持多天下发；留空用内置默认 https://epg.112114.xyz/）
   "proxy": "",                         // 代理地址
 
   // ==================== 直播 EPG 节目表 ====================
@@ -217,7 +200,7 @@
   // 内置阿里云播放器 SDK 5.5+ 强制校验 License：未配置时播放页会弹
   // 「配置信息初始化失败，请重启app」提示（不影响播放，但体验差）。
   // 到阿里云控制台申请播放器 License 后把 License Key 填这里即可消除提示；
-  // 不用阿里播放器（设置页播放器类型不选「阿里」）可留空。
+  // 不用阿里播放器（settings.playType 不选「阿里」）可留空。
   "aliLicenseKey": "",
 
   // ==================== 全局 ====================
@@ -227,23 +210,22 @@
   "warningAutoClose": 0,               // 点播接口免责声明（warningText）弹窗：多少秒后自动关闭
                                        //   （0=不自动关闭，必须手动点确定；范围 0~120）
   "ua": "",                            // 全局 UA（OkHttp 请求 + webview/tkp2p 直播页）；空=内置浏览器 UA
-  "bootStart": true,                   // TVBox 开机自启（出厂默认开；设置-内置配置 中可切换；
-                                       //   默认值只写一次，显式写 false 可默认禁用）
+  "bootStart": true,                   // TVBox 开机自启（出厂默认开；仅作默认值写入一次，
+                                       //   显式写 false 可默认禁用）
   "hin2nEntry": true,                  // 首页是否显示「组网」固定入口（仅当 topEntries/homeEntries
                                        // 未配置或为空数组时生效；数组非空时以数组内容为准）
 
-  // ==================== 设置页默认值（settings） ====================
-  // 对应「设置」页各项开关的出厂默认值：仅当用户从未在设置页修改过该项时写入一次，
-  // 用户一旦手动更改，该项永远以用户设定为准（重装/升级也不会覆盖）。
-  // 删除本段 = 全部走代码内置默认（与本段下面列出的值一致）。
+  // ==================== 全部功能设置（settings） ====================
+  // 应用内已移除设置页，本段是全部功能设置的唯一来源：每次加载都强制按 JSON 生效。
+  // 删除本段 = 全部走代码内置默认（与本段下面的值基本一致）。
+  // 其中 homeRecStyle 默认 true（首页推荐多行网格显示）。
   "settings": {
     // ---- 首页选项 ----
     "homeShowSource": true,            // 数据源显示：true=首页显示当前源名称，false=隐藏
     "homeSearchPosition": false,       // 搜索按钮位置：true=上方（顶栏），false=下方（历史行）
-    "homeMenuPosition": true,          // 设置按钮位置：true=上方（顶栏），false=下方（历史行）
     "homeRec": 1,                      // 首页推荐内容：0=豆瓣热播 1=站点推荐 2=观看历史
     "homeNum": 4,                      // 历史条数：0=20条 1=40条 2=60条 3=80条 4=100条
-    "homeRecStyle": false,             // 首页多行网格：true=多行 false=单行横滑（默认）
+    "homeRecStyle": true,              // 首页多行网格：true=多行（默认） false=单行横滑
     "homeDefaultShow": false,          // 启动时进直播：false=关闭（进入首页） true=开启（直接进入直播）
     "showPreview": true,               // 小窗预览：true=浏览列表时右下角小窗试看
     // ---- 播放器选项 ----
@@ -252,7 +234,7 @@
     "playType": 1,                     // 默认播放器：0=系统 1=IJK 2=Exo 3=MX 4=Reex 5=Kodi
     "ijkCodec": "硬解码",               // IJK 解码方式："软解码" | "硬解码"
     "ijkCachePlay": false,             // IJK 边播边缓存：true=开启 false=关闭
-    "exoRenderer": 0,                  // Exo 扩展渲染器索引（0 起，对应 设置-播放器设置 列表顺序）
+    "exoRenderer": 0,                  // Exo 扩展渲染器索引（0 起）
     "exoRendererMode": 1,              // Exo 渲染器模式索引（0 起，同上）
     "vodPlayerPreferred": 0,           // 点播首选播放器索引（0 起，同上）
     "playRender": 0,                   // 渲染方式：0=TextureView 1=SurfaceView
@@ -264,7 +246,7 @@
     "parseWebview": true,              // 嗅探内核：true=系统 WebView false=XWalkView
     "dohUrl": 0,                       // 安全 DNS：0=关闭 1=腾讯 2=阿里 3=360 4=Google 5=AdGuard 6=Quad9
     "fastSearchMode": false,           // 聚合搜索（快搜）：true=多源聚合 false=单源
-    "debugOpen": false                 // 调试模式：true=开启 false=关闭（开启后设置页显示调试入口）
+    "debugOpen": false                 // 调试模式：true=开启 false=关闭
   },
 
   // ==================== TVBox 自检升级（秒开酒店 IPTV 桌面风格） ====================
@@ -274,7 +256,7 @@
   // 不配 url（或 versionCode<=0）则不提示；整段删除即关闭升级检查。
   "upgrade": {
     "checkUrl": "",                    // 远程版本信息地址（优先），返回与本段同结构的 json（可密文）；
-                                       //   如 "https://example.com/tvbox-version.json"
+                                       //   支持相对地址：如 "upgrade/version.json" 自动拼接主接口域名
     "versionCode": 0,                  // 内联模式（无 checkUrl 时）：新版本号，> 当前版本才提示
     "versionName": "",                 // 新版本名（仅显示用，如 "1.0.2"）
     "url": "",                         // 新版 APK 下载地址（必填，否则不提示）
@@ -287,9 +269,9 @@
   // 支持分类浏览、关键词搜索、详情（简介/截图/版本/大小）、APK 下载安装、
   // 已安装应用更新提示与卸载管理。
   // 数据来源二选一：
-  //   ① 配置 url（第三方接口，见下）；
-  //   ② url 留空 → 读取下面的 apps 内置数组；apps 为空 → 读取 assets/app_market.json
-  //      （出厂为空目录，需自行补充条目后才会有内容）。
+  //   ① 配置 url（第三方接口，见下，支持相对地址）；
+  //   ② url 留空 → 读取下面的 apps 数组（APK 内不再内置 app_market.json）。
+  // TV 搜索：搜索弹窗内置 A-Z/0-9 屏幕键盘，方向键 + OK 输入，支持按应用首字母搜索。
   // url 模板占位符：{category}(all|app|game) {sort}(recommend|download|update)
   //                 {page}(从 1 开始) {pageSize}(默认 24) {keyword}(已 URL 编码)
   // 响应兼容：根数组 / {"data":{"total":N,"list":[...]}} / {"data":[...]} /
@@ -299,11 +281,11 @@
   // detailUrl 模板占位符：{packageName}；留空直接用列表字段。
   // headers 为可选请求头（如鉴权 Token）；接口响应同样支持密文下发与本机参数拼接。
   "appMarket": {
-    "url": "",                         // 列表接口地址模板；空=使用下方 apps / assets/app_market.json
+    "url": "",                         // 列表接口地址模板；空=使用下方 apps 数组
     "detailUrl": "",                   // 详情接口地址模板（可选）；空=直接用列表字段
     "headers": {},                     // 可选请求头，如 {"X-Token":"..."}
     "pageSize": 24,                    // 每页条数（1~100）
-    "apps": []                         // 内置兜底目录；空数组则读 assets/app_market.json
+    "apps": []                         // 直接下发的应用数组（无接口时使用）
   },
 
   // ==================== hin2n 组网（独立 App，包名 wang.switchy.hin2n） ====================
