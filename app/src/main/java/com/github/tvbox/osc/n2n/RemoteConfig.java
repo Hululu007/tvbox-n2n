@@ -865,26 +865,32 @@ public class RemoteConfig {
             Hawk.delete(K_HOME_ENTRIES);
         }
         if (j.has("upgrade") && j.optJSONObject("upgrade") != null) {
-            JSONObject up = new JSONObject(j.optJSONObject("upgrade").toString());
-            // 升级检查接口支持相对地址
-            if (up.has("checkUrl")) {
-                up.put("checkUrl", resolveInterfaceUrl(up.optString("checkUrl", "")));
+            try {
+                JSONObject up = new JSONObject(j.optJSONObject("upgrade").toString());
+                // 升级检查接口支持相对地址
+                if (up.has("checkUrl")) {
+                    up.put("checkUrl", resolveInterfaceUrl(up.optString("checkUrl", "")));
+                }
+                Hawk.put(K_UPGRADE, up.toString());
+            } catch (Throwable ignored) {
             }
-            Hawk.put(K_UPGRADE, up.toString());
         }
         // 应用市场配置：本地/远程均可下发；空对象或 null 时清除（界面为空，APK 内无内置目录）
         if (j.has("appMarket") && j.optJSONObject("appMarket") != null) {
             JSONObject market = j.optJSONObject("appMarket");
             if (market.length() > 0) {
-                JSONObject resolved = new JSONObject(market.toString());
-                // 应用市场接口同样支持相对地址（默认拼接主接口域名/IP）
-                if (resolved.has("url")) {
-                    resolved.put("url", resolveInterfaceUrl(resolved.optString("url", "")));
+                try {
+                    JSONObject resolved = new JSONObject(market.toString());
+                    // 应用市场接口同样支持相对地址（默认拼接主接口域名/IP）
+                    if (resolved.has("url")) {
+                        resolved.put("url", resolveInterfaceUrl(resolved.optString("url", "")));
+                    }
+                    if (resolved.has("detailUrl")) {
+                        resolved.put("detailUrl", resolveInterfaceUrl(resolved.optString("detailUrl", "")));
+                    }
+                    Hawk.put(K_APP_MARKET, resolved.toString());
+                } catch (Throwable ignored) {
                 }
-                if (resolved.has("detailUrl")) {
-                    resolved.put("detailUrl", resolveInterfaceUrl(resolved.optString("detailUrl", "")));
-                }
-                Hawk.put(K_APP_MARKET, resolved.toString());
             } else {
                 Hawk.delete(K_APP_MARKET);
             }
