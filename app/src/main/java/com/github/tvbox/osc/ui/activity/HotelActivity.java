@@ -18,8 +18,7 @@ import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.n2n.EntryDispatcher;
 import com.github.tvbox.osc.n2n.RemoteConfig;
 import com.github.tvbox.osc.util.ImgUtil;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -455,7 +454,7 @@ public class HotelActivity extends BaseActivity {
             return null;
         }
         try {
-            JsonObject obj = new JsonParser().parse(json).getAsJsonObject();
+            JSONObject obj = new JSONObject(json);
             RemoteConfig.Screen s = RemoteConfig.Screen.from(obj);
             // 插件未提供字段时回退主接口内联配置
             if (s.id.isEmpty()) s.id = screen.id;

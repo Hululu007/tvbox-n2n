@@ -4,7 +4,7 @@ import android.app.Activity;
 
 import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.bean.VodInfo;
-import com.github.tvbox.osc.room.RoomDataManger;
+import com.github.tvbox.osc.cache.RoomDataManger;
 import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.util.UA;
 import com.google.gson.Gson;
