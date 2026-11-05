@@ -142,8 +142,6 @@ public class HomeActivity extends BaseActivity {
         this.tvStyle = findViewById(R.id.tvStyle);
         this.tvDraw = findViewById(R.id.tvDrawer);
         this.tvN2n = findViewById(R.id.tvN2n);
-        // 首页扩展：hin2n 入口 / 自定义入口栏 / 滚动公告
-        com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
         this.tvDate = findViewById(R.id.tvDate);
         this.contentLayout = findViewById(R.id.contentLayout);
         // 首页左上角名称：仅作为标题展示，不再作为「切换点播源」入口。
@@ -233,6 +231,13 @@ public class HomeActivity extends BaseActivity {
         // 立即切成成功态：保证 LoadSir 注册后内容区（含「历史」入口行）从首帧就可见，
         // 与顶部标题行同一时机加载。
         showSuccess();
+        // 首页扩展（hin2n 入口 / 自定义入口栏 / 滚动公告）：放在内容区创建之后并整段兜底，
+        // 扩展初始化异常不能中断 initView，否则 UserFragment 未创建、内容区空白表现为黑屏
+        try {
+            com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
     }
 
     //站点切换

@@ -1,6 +1,7 @@
 package com.github.tvbox.osc.n2n;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
@@ -60,14 +61,36 @@ public class HomeEntry {
         }
         // ---- 公告/入口/外观：先用缓存渲染，再后台拉取最新配置 ----
         populate(act);
-        RemoteConfig.fetchAuto(act, new RemoteConfig.Callback() {
+        // 远程配置拉取必须放到后台线程（原先在主线程同步请求）：httpGet 的连接/读取超时
+        // 各 8 秒，配置服务器不可达时会在 onCreate/onResume 阻塞首帧绘制，表现为
+        // 「打开主界面全黑、无任何图标文字」。回调改回主线程再刷新界面。
+        final WeakReference<Activity> ref = new WeakReference<>(act);
+        final Context appCtx = act.getApplicationContext();
+        new Thread(new Runnable() {
             @Override
-            public void onDone(boolean success) {
-                if (!act.isFinishing() && !act.isDestroyed()) {
-                    try { populate(act); } catch (Throwable ignored) {}
+            public void run() {
+                try {
+                    RemoteConfig.fetchAuto(appCtx, new RemoteConfig.Callback() {
+                        @Override
+                        public void onDone(boolean success) {
+                            final Activity a = ref.get();
+                            if (a == null || a.isFinishing() || a.isDestroyed()) {
+                                return;
+                            }
+                            a.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    if (!a.isFinishing() && !a.isDestroyed()) {
+                                        try { populate(a); } catch (Throwable ignored) {}
+                                    }
+                                }
+                            });
+                        }
+                    });
+                } catch (Throwable ignored) {
                 }
             }
-        });
+        }, "home-entry-fetch").start();
         // ---- 定时检查 JSON 接口并刷新显示内容 ----
         startTicker(act);
     }
@@ -275,16 +298,34 @@ public class HomeEntry {
                     tickRun = null;
                     return;
                 }
+                // 同 refresh：定时刷新也在后台线程请求，避免主线程被网络超时阻塞导致界面卡死
+                final Context appCtx = a.getApplicationContext();
                 try {
-                    RemoteConfig.fetchAuto(a, new RemoteConfig.Callback() {
+                    new Thread(new Runnable() {
                         @Override
-                        public void onDone(boolean success) {
-                            Activity a2 = ref.get();
-                            if (a2 != null && !a2.isFinishing() && !a2.isDestroyed()) {
-                                try { populate(a2); } catch (Throwable ignored) {}
+                        public void run() {
+                            try {
+                                RemoteConfig.fetchAuto(appCtx, new RemoteConfig.Callback() {
+                                    @Override
+                                    public void onDone(boolean success) {
+                                        final Activity a2 = ref.get();
+                                        if (a2 == null || a2.isFinishing() || a2.isDestroyed()) {
+                                            return;
+                                        }
+                                        a2.runOnUiThread(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                if (!a2.isFinishing() && !a2.isDestroyed()) {
+                                                    try { populate(a2); } catch (Throwable ignored) {}
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
+                            } catch (Throwable ignored) {
                             }
                         }
-                    });
+                    }, "home-entry-tick-fetch").start();
                 } catch (Throwable ignored) {}
                 if (tickRun != null) {
                     TICKER.postDelayed(this, RemoteConfig.checkIntervalMinutes() * 60000L);

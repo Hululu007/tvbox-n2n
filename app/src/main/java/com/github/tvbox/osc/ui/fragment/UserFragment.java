@@ -123,13 +123,15 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         applyEntryIconColor();
 
         // takagen99: Initialize Icon Placement
-        if (!Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
-            tvSearch.setVisibility(View.VISIBLE);
-        } else {
-            tvSearch.setVisibility(View.GONE);
+        // 空值保护：init() 若因远程配置/布局异常未完成，这里不能 NPE（否则整个首页空黑）
+        if (tvSearch != null) {
+            tvSearch.setVisibility(Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)
+                    ? View.GONE : View.VISIBLE);
         }
         // 点播界面的设置入口统一由顶栏 tvN2n 承载，历史一行不再显示设置入口
-        tvSetting.setVisibility(View.GONE);
+        if (tvSetting != null) {
+            tvSetting.setVisibility(View.GONE);
+        }
 
         super.onFragmentResume();
         if (Hawk.get(HawkConfig.HOME_REC, 0) == 2 && homeHotVodAdapter != null) {
@@ -168,7 +170,9 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         tvHistory = findViewById(R.id.tvHistory);
         tvPush = findViewById(R.id.tvPush);
         tvHin2nHome = findViewById(R.id.tvHin2nHome);
-        tvHin2nHome.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
+        if (tvHin2nHome != null) {
+            tvHin2nHome.setVisibility(RemoteConfig.hin2nEntryEnabled() ? View.VISIBLE : View.GONE);
+        }
         // 点播界面/设置入口已由顶栏 tvN2n 统一承载，历史一行不再重复显示
         if (tvSetting != null) {
             tvSetting.setVisibility(View.GONE);
