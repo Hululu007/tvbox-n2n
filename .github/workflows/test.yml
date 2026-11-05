@@ -47,8 +47,9 @@ jobs:
           fi
       - name: Compress Source
         run: |
-          # hin2n 是独立可安装 App 模块（hin2n/Hin2n_android，applicationId wang.switchy.hin2n），源码必须打入源码包
-          tar -cJf sourceCode-${{ env.tag }}.tar.xz --exclude=.git --exclude=.github --exclude=docs app hin2n pyramid quickjs xwalk gradle build.gradle gradle.properties settings.gradle gradlew gradlew.bat LICENSE .gitignore
+          # hin2n 组网 App 已拆分为独立可安装 App（applicationId wang.switchy.hin2n），源码在独立仓库；
+          # 本仓库只保留首页入口（按包名拉起，未安装时按 hin2n.apkUrl 下载安装），因此源码包不再包含 hin2n 目录
+          tar -cJf sourceCode-${{ env.tag }}.tar.xz --exclude=.git --exclude=.github --exclude=docs app pyramid quickjs xwalk gradle build.gradle gradle.properties settings.gradle gradlew gradlew.bat LICENSE .gitignore
 
       - name: Setup Python
         uses: actions/setup-python@v7

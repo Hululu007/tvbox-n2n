@@ -6,6 +6,11 @@
   //       "api": "https://你的域名/vod.config.json"
   //       （主配置来源由 RemoteConfig.CONFIG_URL 指定，APK 内不内置配置文件）；
   //    2. 也可作为首页自定义入口（topEntries/homeEntries 中 type="vod"）的独立影院数据源；
+  //  相对地址：本文件内所有 "./" 相对路径（spider/api/jar/playUrl/ext）都以本接口自身
+  //   URL 目录为基准解析，例如接口地址 http://cdn.x.com/vod/api.json 时
+  //  "./kjtw.jar" → http://cdn.x.com/vod/kjtw.jar，"/kjtw.jar" → http://cdn.x.com/kjtw.jar；
+  //  切源行为：点播界面切换源时先重新加载该源的 jar/js/py 插件（丢弃旧 Spider），
+  //  再强制刷新分类；进入点播/切源期间显示启动等待画面（主配置 vodSplash 可配置）。
   //  注意：本示例带 // 注释仅用于说明；接口 JSON 走标准解析，实际使用时请去掉注释。
   // ========================================================================
 

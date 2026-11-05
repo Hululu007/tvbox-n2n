@@ -250,6 +250,11 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
                     }
                     Toast.makeText(mContext, getString(R.string.hm_hist_del), Toast.LENGTH_SHORT).show();
                 } else if (vod.id != null && !vod.id.isEmpty()) {
+                    // 首页不再加载点播接口：未进过点播界面时源列表为空，直接提示先加载接口
+                    if (ApiConfig.get().getSourceBeanList().isEmpty()) {
+                        Toast.makeText(mContext, "请先进入点播界面加载接口", Toast.LENGTH_SHORT).show();
+                        return;
+                    }
                     Bundle bundle = new Bundle();
                     bundle.putString("id", vod.id);
                     bundle.putString("sourceKey", vod.sourceKey);

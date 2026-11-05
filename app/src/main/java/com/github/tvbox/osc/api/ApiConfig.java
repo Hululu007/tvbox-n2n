@@ -21,7 +21,6 @@ import com.github.tvbox.osc.bean.LiveChannelItem;
 import com.github.tvbox.osc.bean.ParseBean;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.server.ControlManager;
-import com.github.tvbox.osc.ui.activity.HomeActivity;
 import com.github.tvbox.osc.util.AES;
 import com.github.tvbox.osc.util.AdBlocker;
 import com.github.tvbox.osc.util.DefaultConfig;
@@ -54,6 +53,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -82,6 +83,8 @@ public class ApiConfig {
     // PlayerHelper.updateCfg → getIJKCodec 也会被调用，空列表取 get(0) 会直接崩溃闪退。
     private List<IJKCode> ijkCodes = new ArrayList<>();
     private String spider = null;
+    /** 点播接口配置是否已在本进程内解析成功（主界面不再加载点播接口，由点播界面按需加载） */
+    private volatile boolean loaded = false;
     public String wallpaper = "";
     public JsonArray livePlayHeaders;
     private final SourceBean emptyHome = new SourceBean();
@@ -154,7 +157,8 @@ public class ApiConfig {
 
     public void loadConfig(boolean useCache, LoadConfigCallback callback, Activity activity) {
         // Embedded Source : Update in Strings.xml if required
-        String apiUrl = Hawk.get(HawkConfig.API_URL, HomeActivity.getRes().getString(R.string.app_source));
+        // 点播界面调用时 HomeActivity 可能尚未 setRes（如从入口直达），优先用 App 资源
+        String apiUrl = Hawk.get(HawkConfig.API_URL, App.getInstance().getString(R.string.app_source));
         if (apiUrl.isEmpty()) {
             // 未配置点播接口：若已配置直播接口，走静默跳过（错误码 "-1"，HomeActivity 收到后直接
             // 标记初始化完成、不再弹「源地址为空」对话框），让用户可以只把本应用当直播客户端用；
@@ -516,6 +520,14 @@ public class ApiConfig {
         }
 //        pyLoader.setConfig(jsonStr);
         JsonObject infoJson = new Gson().fromJson(jsonStr, JsonObject.class);
+        loaded = false;
+        // 重新加载点播接口时以新配置为准：清掉旧的主配置源（保留自定义点播界面注入的 cv_ 源）
+        List<String> oldKeys = new ArrayList<>(sourceBeanList.keySet());
+        for (String k : oldKeys) {
+            if (k != null && !k.startsWith(CUSTOM_SRC_PREFIX)) {
+                sourceBeanList.remove(k);
+            }
+        }
         jarCache = DefaultConfig.safeJsonString(infoJson, "jarCache", "true");
         // spider
         spider = DefaultConfig.safeJsonString(infoJson, "spider", "");
@@ -558,10 +570,12 @@ public class ApiConfig {
         if (sourceBeanList != null && sourceBeanList.size() > 0) {
             String home = Hawk.get(HawkConfig.HOME_API, "");
             SourceBean sh = getSource(home);
-            if (sh == null || sh.getHide() == 1)
-                setSourceBean(firstSite);
-            else
+            if (sh == null || sh.getHide() == 1) {
+                // 全部站点都被 hide 时 firstSite 为空，不再写首页源（避免空指针），由点播界面报「无可用源」
+                if (firstSite != null) setSourceBean(firstSite);
+            } else {
                 setSourceBean(sh);
+            }
         }
         // 需要使用vip解析的flag
         vipParseFlags = DefaultConfig.safeJsonStringList(infoJson, "flags");
@@ -854,6 +868,8 @@ public class ApiConfig {
                 ijkCodes = fromConfig;
             }
         }
+        // 全部字段解析完成才算加载成功（失败时保持 false，点播界面重试会重新拉取接口）
+        loaded = true;
     }
 
     /**
@@ -990,6 +1006,100 @@ public class ApiConfig {
         }
     }
 
+    /** 点播接口配置是否已在本进程解析成功（未加载时点播界面先加载接口再拉数据） */
+    public boolean isConfigLoaded() {
+        return loaded;
+    }
+
+    /**
+     * 切源/进入点播前预加载该源对应的插件（jar / js / py），并丢弃该源旧的 Spider 实例。
+     *
+     * <p>背景：点播接口里的站点可以来自不同的 jar/js/py 插件，主界面已不再统一加载点播配置，
+     * 如果等 getSort 时再惰性加载，首次切换会同步下载/初始化插件（几秒甚至超时），表现为
+     * 列表无数据或切源瞬间闪退。这里在等待界面期间先在后台把插件准备好，再拉分类数据。</p>
+     *
+     * <p>type=3 的站点：api 以 .js 结尾=QuickJS、含 .py=Python、其余=jar 类名；
+     * jar 为空的 csp_ 站点依赖本接口的全局 spider jar，先确保该 jar 已加载。
+     * 非 Spider 站点（type=0/1/4 接口）无需加载插件，直接回调。</p>
+     *
+     * @param sourceBean 目标源（可为 null，直接回调）
+     * @param onReady    插件就绪后回主线程回调（调用方在此开始 getSort）
+     */
+    public void prepareSource(final SourceBean sourceBean, final Runnable onReady) {
+        final Runnable done = new Runnable() {
+            @Override
+            public void run() {
+                if (onReady != null) onReady.run();
+            }
+        };
+        if (sourceBean == null) {
+            postMain(done);
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (sourceBean.getType() == 3) {
+                        String key = sourceBean.getKey();
+                        if (key != null) {
+                            // 切源=刷新插件：丢弃该源曾创建的 Spider，按最新配置重新实例化
+                            jarLoader.remove(key);
+                            jsLoader.remove(key);
+                            pyLoader.remove(key);
+                        }
+                        String api = sourceBean.getApi() == null ? "" : sourceBean.getApi().trim();
+                        boolean isJs = api.endsWith(".js") || api.contains(".js?");
+                        boolean isPy = api.contains(".py");
+                        if (!isJs && !isPy) {
+                            String jar = sourceBean.getJar() == null ? "" : sourceBean.getJar().trim();
+                            if (jar.isEmpty()) {
+                                // api 只写 csp_ 类名的站点：依赖接口级全局 spider jar
+                                String mainJar = getSpider();
+                                if (!mainJar.isEmpty()) {
+                                    ensureMainJar(mainJar);
+                                }
+                            }
+                        }
+                        // 实际加载插件（jar=下载+DexClassLoader；js=脚本引擎；py=Python 运行时）
+                        getCSP(sourceBean);
+                    }
+                } catch (Throwable th) {
+                    // 插件加载失败不阻塞分类请求：后续 getSort 仍会按原逻辑重试/返回空
+                    th.printStackTrace();
+                }
+                postMain(done);
+            }
+        }, "vod-plugin-prepare").start();
+    }
+
+    /** 同步等待接口级 spider jar 加载完成（可在后台线程调用；回调由 loadJar 回投主线程） */
+    private boolean ensureMainJar(String jar) {
+        final CountDownLatch latch = new CountDownLatch(1);
+        try {
+            loadJar(true, jar, new LoadConfigCallback() {
+                @Override
+                public void success() {
+                    latch.countDown();
+                }
+
+                @Override
+                public void retry() {
+                    latch.countDown();
+                }
+
+                @Override
+                public void error(String msg) {
+                    latch.countDown();
+                }
+            });
+            return latch.await(20, TimeUnit.SECONDS);
+        } catch (Throwable th) {
+            th.printStackTrace();
+            return false;
+        }
+    }
+
     public Spider getPyCSP(String url) {
         return pyLoader.getSpider(MD5.string2MD5(url), url, "");
     }
@@ -1040,13 +1150,26 @@ public class ApiConfig {
      * 不影响 app 其它配置。返回注入成功的源列表（保持 json 中的顺序）。
      */
     public synchronized List<SourceBean> injectCustomSources(String jsonStr) {
+        return injectCustomSources(jsonStr, "");
+    }
+
+    /**
+     * 带接口地址的自定义点播解析：configUrl 为该数据接口的实际请求地址（http(s)），
+     * 用于把配置内的相对地址（spider / api / jar / playUrl / ext 里的 "./"）解析成绝对地址。
+     * 这样远程接口（如 /xw/xxx 下发的多源配置）里的 "./py/x.py"、"./js/drpy2.min.js" 等
+     * 各类源（type=0 Xml / 1 Json / 3 Spider / 4 Json 扩展）都能在独立点播界面正常切换。
+     */
+    public synchronized List<SourceBean> injectCustomSources(String jsonStr, String configUrl) {
         removeCustomSources();
         List<SourceBean> out = new ArrayList<>();
+        String base = configBase(configUrl);
         try {
             JsonObject infoJson = new Gson().fromJson(jsonStr, JsonObject.class);
             JsonArray sites = infoJson.has("video")
                     ? infoJson.getAsJsonObject("video").getAsJsonArray("sites")
                     : infoJson.get("sites").getAsJsonArray();
+            // 本接口自己的全局 Spider jar（相对地址按接口所在目录解析）
+            String spider = resolvePathWithMd5(base, DefaultConfig.safeJsonString(infoJson, "spider", ""));
             int idx = 0;
             for (JsonElement opt : sites) {
                 try {
@@ -1058,18 +1181,25 @@ public class ApiConfig {
                     sb.setName(obj.has("name") ? obj.get("name").getAsString().trim() : siteKey);
                     // 缺 type/api 的站点按 type=0 / 空串兜底，单个站点解析失败不影响其它站点注入
                     sb.setType(DefaultConfig.safeJsonInt(obj, "type", 0));
-                    sb.setApi(obj.has("api") && !obj.get("api").isJsonNull() ? obj.get("api").getAsString().trim() : "");
+                    String api = obj.has("api") && !obj.get("api").isJsonNull() ? obj.get("api").getAsString().trim() : "";
+                    sb.setApi(resolvePathWithMd5(base, api));
                     sb.setSearchable(DefaultConfig.safeJsonInt(obj, "searchable", 1));
                     sb.setQuickSearch(DefaultConfig.safeJsonInt(obj, "quickSearch", 1));
                     sb.setFilterable(siteKey.startsWith("py_") ? 1 : DefaultConfig.safeJsonInt(obj, "filterable", 1));
                     sb.setHide(DefaultConfig.safeJsonInt(obj, "hide", 0));
-                    sb.setPlayerUrl(DefaultConfig.safeJsonString(obj, "playUrl", ""));
-                    sb.setExt(DefaultConfig.safeJsonString(obj, "ext", ""));
-                    sb.setJar(DefaultConfig.safeJsonString(obj, "jar", ""));
+                    sb.setPlayerUrl(resolvePathWithMd5(base, DefaultConfig.safeJsonString(obj, "playUrl", "")));
+                    sb.setExt(resolveExtPaths(base, DefaultConfig.safeJsonString(obj, "ext", "")));
+                    sb.setJar(resolvePathWithMd5(base, DefaultConfig.safeJsonString(obj, "jar", "")));
                     sb.setPlayerType(DefaultConfig.safeJsonInt(obj, "playerType", -1));
                     sb.setCategories(DefaultConfig.safeJsonStringList(obj, "categories"));
                     sb.setClickSelector(DefaultConfig.safeJsonString(obj, "click", ""));
                     sb.setStyle(DefaultConfig.safeJsonString(obj, "style", ""));
+                    // type=3 且 api 只写类名（csp_xxx）的站点：自身没配 jar 时用本接口的 spider，
+                    // 避免回落到主配置的全局 jar 而出现类不存在 / 串源
+                    if (sb.getType() == 3 && !spider.isEmpty() && sb.getJar().isEmpty()
+                            && sb.getApi().startsWith("csp_")) {
+                        sb.setJar(spider);
+                    }
                     sourceBeanList.put(injectKey, sb);
                     out.add(sb);
                 } catch (Throwable perSite) {
@@ -1079,6 +1209,77 @@ public class ApiConfig {
         } catch (Throwable ignored) {
         }
         return out;
+    }
+
+    /** 数据接口地址的目录基准（去掉 query/fragment；无路径时补 "/"；非 http(s) 返回空） */
+    private String configBase(String url) {
+        if (url == null) {
+            return "";
+        }
+        String u = url.trim();
+        if (u.isEmpty() || (!u.startsWith("http://") && !u.startsWith("https://"))) {
+            return "";
+        }
+        int cut = u.length();
+        int q = u.indexOf('?');
+        if (q >= 0) cut = Math.min(cut, q);
+        int f = u.indexOf('#');
+        if (f >= 0) cut = Math.min(cut, f);
+        u = u.substring(0, cut);
+        int schemeEnd = u.indexOf("://");
+        if (u.indexOf('/', schemeEnd + 3) < 0) {
+            return u + "/";
+        }
+        return u.substring(0, u.lastIndexOf('/') + 1);
+    }
+
+    /** "./" 相对地址 → 基准目录；"/" 绝对路径 → 协议+域名；其余（完整 URL / clan / assets / file）原样 */
+    private String resolvePath(String base, String value) {
+        if (value == null) {
+            return "";
+        }
+        String v = value.trim();
+        if (base.isEmpty() || v.isEmpty()) {
+            return value;
+        }
+        if (v.startsWith("clan://") || v.startsWith("assets/") || v.startsWith("file://")
+                || v.contains("://")) {
+            return value;
+        }
+        if (v.startsWith("./")) {
+            return base + v.substring(2);
+        }
+        if (v.startsWith("/")) {
+            int schemeEnd = base.indexOf("://");
+            if (schemeEnd < 0) {
+                return value;
+            }
+            return base.substring(0, schemeEnd + 3) + v.substring(1);
+        }
+        return value;
+    }
+
+    /** 兼容 jar/spider 的 ";md5;" 后缀：只解析地址部分，md5 原样保留 */
+    private String resolvePathWithMd5(String base, String value) {
+        if (value == null) {
+            return "";
+        }
+        int md5 = value.indexOf(";md5;");
+        if (md5 >= 0) {
+            return resolvePath(base, value.substring(0, md5)) + value.substring(md5);
+        }
+        return resolvePath(base, value);
+    }
+
+    /** ext 可能是路径字符串，也可能是 JSON 对象字符串：只把 "./" 形式的相对路径替换成接口目录 */
+    private String resolveExtPaths(String base, String ext) {
+        if (base.isEmpty() || ext == null || ext.isEmpty() || !ext.contains("./")) {
+            return ext;
+        }
+        if (ext.startsWith("./")) {
+            return resolvePath(base, ext);
+        }
+        return ext.replace("\"./", "\"" + base);
     }
 
     /** 移除全部自定义点播界面注入的源（退出自定义点播界面时调用） */
@@ -1122,7 +1323,9 @@ public class ApiConfig {
     }
 
     public List<String> getVipParseFlags() {
-        return vipParseFlags;
+        // 点播接口未加载时（主界面已不再加载点播配置）返回空列表，
+        // 避免播放器里 getVipParseFlags().contains(...) 直接空指针闪退
+        return vipParseFlags == null ? new ArrayList<String>() : vipParseFlags;
     }
 
     public SourceBean getHomeSourceBean() {

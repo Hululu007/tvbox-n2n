@@ -278,7 +278,8 @@ public class HomeActivity extends BaseActivity {
         dir = getExternalCacheDir();
         FileUtils.recursiveDelete(dir);
         Toast.makeText(HomeActivity.this, getString(R.string.hm_cache_del), Toast.LENGTH_SHORT).show();
-        if (dataInitOk && jarInitOk) {
+        if (dataInitOk && jarInitOk && ApiConfig.get().isConfigLoaded()
+                && ApiConfig.get().getHomeSourceBean() != null) {
             String cspCachePath = FileUtils.getFilePath() + "/csp/";
             String jar = ApiConfig.get().getHomeSourceBean().getJar();
             String jarUrl = !jar.isEmpty() ? jar : ApiConfig.get().getSpider();
@@ -391,173 +392,84 @@ public class HomeActivity extends BaseActivity {
             tvStyle.setImageResource(R.drawable.hm_left_right);
         }
 
-        if (dataInitOk) {
-            // 启动时进直播=开启：点播接口配置就绪即进入直播（不等待 Spider jar 加载），
-            // 避免先停留在首页只能靠后续 jar 加载完成才跳转的延迟。
-            jumpToLiveIfNeeded();
+        // 首页只依赖主接口（主配置 RemoteConfig），点播接口的所有字段/插件/提示均延迟到点播界面加载。
+        // 主接口仍在加载中：等结果回调后再决定；主接口失败且无缓存：直接弹全屏报错，不再加载首页内容。
+        if (!dataInitOk) {
+            int state = com.github.tvbox.osc.n2n.RemoteConfig.primaryState();
+            if (state == com.github.tvbox.osc.n2n.RemoteConfig.PRIMARY_LOADING) {
+                addPrimaryListenerOnce();
+                return;
+            }
+            if (state == com.github.tvbox.osc.n2n.RemoteConfig.PRIMARY_FAIL) {
+                showPrimaryConfigError();
+                return;
+            }
+            dataInitOk = true;
+            jarInitOk = true;
         }
-
-        if (dataInitOk && jarInitOk) {
-            // 主页面已去除对点播接口的全部引用：点播分类/推荐数据由点播界面自身加载，
-            // 首页推荐改由主接口（远程配置 home.recMovies）提供，这里无需再请求点播数据
-            return;
-        }
-        // 首帧不再用 LoadSir 遮住内容区（原 tvNameAnimation + showLoading）：
-        // 顶部标题行、扩展入口栏、中间「历史/点播/直播/...」入口行、公告条都在启动时一起渲染，
-        // 与顶部行加载方式一致；首页推荐由主接口配置直接提供，不再等待点播接口数据。
-        tvName.clearAnimation();
-        if (dataInitOk && !jarInitOk) {
-            if (!ApiConfig.get().getSpider().isEmpty()) {
-                ApiConfig.get().loadJar(useCacheConfig, ApiConfig.get().getSpider(), new ApiConfig.LoadConfigCallback() {
-                    @Override
-                    public void success() {
-                        jarInitOk = true;
-                        mHandler.postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                // 原「加载成功」Toast 统一替换为可配置秒数的顶部通知（见 showLoadSuccessNotice）
-                                initData();
-                            }
-                        }, 50);
-                    }
-
-                    @Override
-                    public void retry() {
-
-                    }
-
-                    @Override
-                    public void error(String msg) {
-                        jarInitOk = true;
-                        dataInitOk = true;
-                        mHandler.postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                if ("".equals(msg))
-                                    Toast.makeText(HomeActivity.this, getString(R.string.hm_notok), Toast.LENGTH_SHORT).show();
-                                else
-                                    Toast.makeText(HomeActivity.this, msg, Toast.LENGTH_SHORT).show();
-                                initData();
-                            }
-                        },50);
-                    }
-                });
-            }
-            return;
-        }
-        ApiConfig.get().loadConfig(useCacheConfig, new ApiConfig.LoadConfigCallback() {
-            TipDialog dialog = null;
-
-            @Override
-            public void retry() {
-                mHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        initData();
-                    }
-                });
-            }
-
-            @Override
-            public void success() {
-                dataInitOk = true;
-                if (ApiConfig.get().getSpider().isEmpty()) {
-                    jarInitOk = true;
-                }
-                mHandler.postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        initData();
-                        // 点播接口（配置）加载成功通知：秒数由 json "loadSuccessDuration" 配置，
-                        // 到点自动关闭；0 表示不显示。仅在本次真正走了接口加载（非缓存）时提示，
-                        // 与原先「加载成功」Toast 的触发时机保持一致，避免每次启动都打扰用户。
-                        if (!useCacheConfig) {
-                            showLoadSuccessNotice();
-                        }
-                        showWarningTextOnce();
-                        // 首页初始化完成，清除「配置加载中」标记（异常退出时保留以便下次自愈）
-                        com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
-                        // 远程升级检查：延迟片刻，避免与免责声明弹窗叠加
-                        mHandler.postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                if (!isFinishing() && !isDestroyed()) {
-                                    com.github.tvbox.osc.n2n.UpgradeChecker.check(HomeActivity.this);
-                                }
-                            }
-                        }, 3000);
-                    }
-                }, 50);
-            }
-
-            @Override
-            public void error(String msg) {
-                if (msg.equalsIgnoreCase("-1")) {
-                    mHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            dataInitOk = true;
-                            jarInitOk = true;
-                            initData();
-                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
-                        }
-                    });
-                    return;
-                }
-                mHandler.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (isFinishing() || isDestroyed())
-                            return;
-                        if (dialog == null)
-                            dialog = new TipDialog(HomeActivity.this, msg, getString(R.string.hm_retry), getString(R.string.hm_cancel), new TipDialog.OnListener() {
-                                @Override
-                                public void left() {
-                                    mHandler.post(new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            initData();
-                                            dialog.hide();
-                                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
-                                        }
-                                    });
-                                }
-
-                                @Override
-                                public void right() {
-                                    dataInitOk = true;
-                                    jarInitOk = true;
-                                    mHandler.post(new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            initData();
-                                            dialog.hide();
-                                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
-                                        }
-                                    });
-                                }
-
-                                @Override
-                                public void cancel() {
-                                    dataInitOk = true;
-                                    jarInitOk = true;
-                                    mHandler.post(new Runnable() {
-                                        @Override
-                                        public void run() {
-                                            initData();
-                                            dialog.hide();
-                                            com.github.tvbox.osc.n2n.ConfigGuard.done(HomeActivity.this);
-                                        }
-                                    });
-                                }
-                            });
-                        if (!dialog.isShowing())
-                            dialog.show();
-                    }
-                });
-            }
-        }, this);
+        jumpToLiveIfNeeded();
+        upgradeCheckOnce();
     }
+
+    /** 主接口结果监听只注册一次（主题切换重启时进程内状态已为 OK，不再重复注册） */
+    private boolean primaryListenerAdded = false;
+
+    private void addPrimaryListenerOnce() {
+        if (primaryListenerAdded) {
+            return;
+        }
+        primaryListenerAdded = true;
+        com.github.tvbox.osc.n2n.RemoteConfig.addPrimaryListener(new com.github.tvbox.osc.n2n.RemoteConfig.PrimaryListener() {
+            @Override
+            public void onPrimaryResult(int state) {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        if (state == com.github.tvbox.osc.n2n.RemoteConfig.PRIMARY_FAIL) {
+                            showPrimaryConfigError();
+                        } else {
+                            initData();
+                        }
+                    }
+                });
+            }
+        });
+    }
+
+    /** 主接口无法加载/访问且无本地缓存：全屏报错，阻止进入其它界面 */
+    private void showPrimaryConfigError() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        // 保留进程给报错界面（否则 HomeActivity.onDestroy 会直接退出 App，报错页无法展示）
+        sSkipAppExit = true;
+        Intent intent = new Intent(this, ConfigErrorActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        startActivity(intent);
+        finish();
+    }
+
+    /** 每次进程只做一次远程升级检查（原逻辑跟在点播接口加载成功后，现改为主接口就绪后） */
+    private static boolean sUpgradeChecked = false;
+
+    private void upgradeCheckOnce() {
+        if (sUpgradeChecked) {
+            return;
+        }
+        sUpgradeChecked = true;
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (!isFinishing() && !isDestroyed()) {
+                    com.github.tvbox.osc.n2n.UpgradeChecker.check(HomeActivity.this);
+                }
+            }
+        }, 3000);
+    }
+
 
     /** 免责声明是否已在本进程内弹过（每次启动只弹一次） */
     private static boolean sWarningShown = false;

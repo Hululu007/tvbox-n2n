@@ -53,6 +53,14 @@ public class pyLoader implements IPyLoader {
     }
 
     @Override
+    public void remove(String key) {
+        if (key != null) {
+            spiders.remove(key);
+            Log.i("PyLoader", "echo-remove spider: " + key);
+        }
+    }
+
+    @Override
     public void setConfig(String jsonStr) {
         if (jsonStr != null && !jsonStr.equals(lastConfig)) {
             PythonLoader loader = ensureLoader();

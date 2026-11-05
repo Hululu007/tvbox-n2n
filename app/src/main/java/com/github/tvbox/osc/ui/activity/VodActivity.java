@@ -9,6 +9,7 @@ import android.view.ViewGroup;
 import android.view.animation.AccelerateInterpolator;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -25,22 +26,27 @@ import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.AbsSortXml;
+import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.bean.MovieSort;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.ui.adapter.HomePageAdapter;
 import com.github.tvbox.osc.ui.adapter.SelectDialogAdapter;
 import com.github.tvbox.osc.ui.adapter.SortAdapter;
 import com.github.tvbox.osc.ui.dialog.SelectDialog;
+import com.github.tvbox.osc.ui.dialog.TipDialog;
 import com.github.tvbox.osc.ui.fragment.GridFragment;
 import com.github.tvbox.osc.ui.tv.widget.DefaultTransformer;
 import com.github.tvbox.osc.ui.tv.widget.FixedSpeedScroller;
 import com.github.tvbox.osc.ui.tv.widget.NoScrollViewPager;
 import com.github.tvbox.osc.util.DefaultConfig;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
+import com.github.tvbox.osc.util.ImgUtil;
+import com.github.tvbox.osc.util.HawkConfig;
 import com.github.tvbox.osc.viewmodel.SourceViewModel;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
 import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
+import com.orhanobut.hawk.Hawk;
 
 import org.jetbrains.annotations.NotNull;
 
@@ -75,6 +81,23 @@ public class VodActivity extends BaseActivity {
     private View currentView = null;
     private final Handler mHandler = new Handler();
     private long mExitTime = 0;
+    /** 当前等待的分类结果所属源 key：切源后丢弃上一源迟到的响应（type=3 的 Spider 无法中断） */
+    private String pendingSortKey = "";
+
+    /** 启动等待画面（主接口可下发图片/文案/背景色/最短展示时长；切源时同样展示） */
+    private View splashView;
+    private ImageView splashImage;
+    private ProgressBar splashProgress;
+    private TextView splashText;
+    private TextView splashRetry;
+    private boolean splashShowing = false;
+    private long splashShowTime = 0;
+
+    /** 点播首分类「热播推荐」数据（主接口 home.recMovies 优先，其次点播接口 homeContent videoList） */
+    private final List<Movie.Video> recommendVideos = new ArrayList<>();
+
+    /** 防止重复触发接口加载 */
+    private boolean configLoading = false;
     private final Runnable mRunnable = new Runnable() {
         @SuppressLint({"DefaultLocale", "SetTextI18n"})
         @Override
@@ -97,7 +120,7 @@ public class VodActivity extends BaseActivity {
     protected void init() {
         initView();
         initViewModel();
-        initData();
+        startEntry();
     }
 
     private void initView() {
@@ -106,6 +129,19 @@ public class VodActivity extends BaseActivity {
         this.contentLayout = findViewById(R.id.contentLayout);
         this.mGridView = findViewById(R.id.mGridViewCategory);
         this.mViewPager = findViewById(R.id.mViewPager);
+        this.splashView = findViewById(R.id.vodSplash);
+        this.splashImage = findViewById(R.id.vodSplashImage);
+        this.splashProgress = findViewById(R.id.vodSplashProgress);
+        this.splashText = findViewById(R.id.vodSplashText);
+        this.splashRetry = findViewById(R.id.vodSplashRetry);
+        if (splashRetry != null) {
+            splashRetry.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    startEntry();
+                }
+            });
+        }
         this.sortAdapter = new SortAdapter();
         this.mGridView.setLayoutManager(new V7LinearLayoutManager(this.mContext, 0, false));
         this.mGridView.setSpacingWithMargins(0, AutoSizeUtils.dp2px(this.mContext, 10.0f));
@@ -234,7 +270,26 @@ public class VodActivity extends BaseActivity {
                 if (isFinishing() || isDestroyed()) {
                     return;
                 }
+                // 切源后旧源的分类结果可能迟到（尤其 type=3 的 jar/js/py Spider 无法中断），直接丢弃
+                if (absXml != null && absXml.sourceKey != null
+                        && !absXml.sourceKey.equals(pendingSortKey)) {
+                    return;
+                }
                 try {
+                    // 热播推荐：主接口 home.recMovies 优先，其次用点播接口 homeContent 的 videoList
+                    List<Movie.Video> mainRec = com.github.tvbox.osc.n2n.RemoteConfig.homeRecMovies();
+                    recommendVideos.clear();
+                    if (mainRec != null && !mainRec.isEmpty()) {
+                        recommendVideos.addAll(mainRec);
+                    } else if (absXml != null && absXml.videoList != null) {
+                        recommendVideos.addAll(absXml.videoList);
+                    }
+                    // 推荐项未指定源时归属当前源，保证点击进详情时能找到站点
+                    for (Movie.Video v : recommendVideos) {
+                        if (v.sourceKey == null || v.sourceKey.isEmpty()) {
+                            v.sourceKey = pendingSortKey;
+                        }
+                    }
                     // 不生成 my0 首页 Tab（withMy = false）
                     String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
                     if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
@@ -247,8 +302,11 @@ public class VodActivity extends BaseActivity {
                     if (home != null && home.getName() != null && !home.getName().isEmpty()) {
                         tvName.setText(home.getName());
                     }
+                    // 分类/推荐结果已返回：关闭启动等待画面（数据已自动加载）
+                    hideSplash();
                 } catch (Throwable th) {
                     th.printStackTrace();
+                    hideSplash();
                 }
             }
         });
@@ -258,9 +316,21 @@ public class VodActivity extends BaseActivity {
         fragments.clear();
         currentSelected = 0;
         sortFocused = 0;
-        if (sortAdapter.getData().size() > 0) {
-            for (MovieSort.SortData data : sortAdapter.getData()) {
-                fragments.add(GridFragment.newInstance(data));
+        List<MovieSort.SortData> sorts = new ArrayList<>(sortAdapter.getData());
+        // 需求：把热播推荐作为点播界面的第一个分类并默认展示加载
+        if (!recommendVideos.isEmpty()) {
+            MovieSort.SortData rec = new MovieSort.SortData(GridFragment.RECOMMEND_SORT_ID, "热播推荐");
+            rec.sort = -100;
+            sorts.add(0, rec);
+        }
+        if (!sorts.isEmpty()) {
+            sortAdapter.setNewData(sorts);
+            for (MovieSort.SortData data : sorts) {
+                if (GridFragment.RECOMMEND_SORT_ID.equals(data.id)) {
+                    fragments.add(GridFragment.newInstance(data, new ArrayList<>(recommendVideos)));
+                } else {
+                    fragments.add(GridFragment.newInstance(data));
+                }
             }
             pageAdapter = new HomePageAdapter(getSupportFragmentManager(), fragments);
             try {
@@ -280,10 +350,306 @@ public class VodActivity extends BaseActivity {
         }
     }
 
-    private void initData() {
-        String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
-        sourceViewModel.getSort(key);
+    /** 点播接口免责声明：仅在点播界面展示一次（主界面不再提示点播接口相关信息） */
+    private static boolean sWarningShown = false;
+
+    private void showWarningOnce() {
+        if (sWarningShown || isFinishing() || isDestroyed()) {
+            return;
+        }
+        String warningText = Hawk.get(HawkConfig.WARNING_TEXT, "");
+        if (warningText == null || warningText.trim().isEmpty()) {
+            return;
+        }
+        sWarningShown = true;
+        try {
+            final TipDialog[] holder = new TipDialog[1];
+            holder[0] = new TipDialog(this, warningText, getString(android.R.string.ok), "",
+                    new TipDialog.OnListener() {
+                        @Override
+                        public void left() {
+                            if (holder[0] != null) holder[0].dismiss();
+                        }
+
+                        @Override
+                        public void right() {
+                        }
+
+                        @Override
+                        public void cancel() {
+                        }
+                    });
+            holder[0].show();
+            int autoClose = com.github.tvbox.osc.n2n.RemoteConfig.warningAutoClose();
+            if (autoClose > 0) {
+                mHandler.postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (holder[0] != null && holder[0].isShowing()) {
+                            holder[0].dismiss();
+                        }
+                    }
+                }, autoClose * 1000L);
+            }
+        } catch (Throwable ignored) {
+        }
     }
+
+    /**
+     * 进入点播：先加载点播接口配置（主界面不再加载点播接口字段），
+     * 再预加载当前源对应的 jar/js/py 插件，最后自动拉取分类数据。
+     */
+    private void startEntry() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        showSplash("正在加载点播接口…");
+        if (ApiConfig.get().isConfigLoaded()) {
+            afterConfigLoaded();
+            return;
+        }
+        if (configLoading) {
+            return;
+        }
+        configLoading = true;
+        ApiConfig.get().loadConfig(true, new ApiConfig.LoadConfigCallback() {
+            @Override
+            public void retry() {
+            }
+
+            @Override
+            public void success() {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        configLoading = false;
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        com.github.tvbox.osc.n2n.ConfigGuard.done(VodActivity.this);
+                        showWarningOnce();
+                        afterConfigLoaded();
+                    }
+                });
+            }
+
+            @Override
+            public void error(String msg) {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        configLoading = false;
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        com.github.tvbox.osc.n2n.ConfigGuard.done(VodActivity.this);
+                        showSplashError(msg);
+                    }
+                });
+            }
+        }, this);
+    }
+
+    /** 接口配置就绪：选可用源 → 预加载该源插件 → 拉分类（等待界面期间完成） */
+    private void afterConfigLoaded() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        SourceBean home = ApiConfig.get().getHomeSourceBean();
+        if (!isUsableSource(home)) {
+            home = null;
+            for (SourceBean sb : ApiConfig.get().getSourceBeanList()) {
+                if (isUsableSource(sb)) {
+                    home = sb;
+                    break;
+                }
+            }
+            if (home != null) {
+                ApiConfig.get().setSourceBean(home);
+            }
+        }
+        if (home == null) {
+            showSplashError("接口没有可用的点播源");
+            return;
+        }
+        tvName.setText(home.getName() != null && !home.getName().isEmpty()
+                ? home.getName() : getString(R.string.app_name));
+        pendingSortKey = home.getKey();
+        String name = home.getName() == null ? "" : home.getName();
+        showSplashMessage("正在加载「" + name + "」…");
+        final SourceBean src = home;
+        ApiConfig.get().prepareSource(src, new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                // 插件（jar/js/py）已就绪后再请求分类，避免首次切源卡死或无数据
+                sourceViewModel.getSort(pendingSortKey, true);
+                // 兜底：接口异常时也关闭等待界面（正常结果返回时 observer 会立即关闭）
+                mHandler.removeCallbacks(splashTimeout);
+                mHandler.postDelayed(splashTimeout, 30000);
+            }
+        });
+    }
+
+    private final Runnable splashTimeout = new Runnable() {
+        @Override
+        public void run() {
+            hideSplash();
+        }
+    };
+
+    /** 源是否可用于点播（隐藏/不支持类型/空 api 的站点跳过） */
+    private boolean isUsableSource(SourceBean sb) {
+        if (sb == null || sb.getApi() == null || sb.getApi().trim().isEmpty()) {
+            return false;
+        }
+        if (sb.getHide() != 0) {
+            return false;
+        }
+        int type = sb.getType();
+        return type == 0 || type == 1 || type == 3 || type == 4;
+    }
+
+    /** 展示/更新启动等待画面 */
+    private void showSplash(String text) {
+        if (splashView == null) {
+            return;
+        }
+        if (!splashShowing) {
+            applySplashConfig();
+            splashShowTime = System.currentTimeMillis();
+        }
+        splashShowing = true;
+        mHandler.removeCallbacks(splashHideRunnable);
+        splashView.setAlpha(1f);
+        splashView.setVisibility(View.VISIBLE);
+        splashView.setFocusable(true);
+        splashView.setFocusableInTouchMode(true);
+        splashView.requestFocus();
+        if (splashProgress != null) {
+            splashProgress.setVisibility(View.VISIBLE);
+        }
+        if (splashRetry != null) {
+            splashRetry.setVisibility(View.GONE);
+        }
+        if (splashText != null) {
+            splashText.setText(text);
+        }
+    }
+
+    private void showSplashMessage(String text) {
+        if (splashText != null && splashShowing) {
+            splashText.setText(text);
+        }
+    }
+
+    /** 加载失败：等待界面留在原地并显示错误 + 重试（所有点播接口提示只出现在点播界面） */
+    private void showSplashError(String msg) {
+        if (splashView == null) {
+            return;
+        }
+        if (!splashShowing) {
+            applySplashConfig();
+            splashShowTime = System.currentTimeMillis();
+            splashShowing = true;
+            splashView.setVisibility(View.VISIBLE);
+        }
+        mHandler.removeCallbacks(splashHideRunnable);
+        mHandler.removeCallbacks(splashTimeout);
+        splashView.setAlpha(1f);
+        splashView.setVisibility(View.VISIBLE);
+        splashView.setFocusable(true);
+        splashView.setFocusableInTouchMode(true);
+        splashView.requestFocus();
+        if (splashProgress != null) {
+            splashProgress.setVisibility(View.GONE);
+        }
+        String display = msg == null ? "" : msg.trim();
+        if (display.isEmpty() || display.equalsIgnoreCase("-1")) {
+            display = "未配置点播接口";
+        }
+        if (splashText != null) {
+            splashText.setText("点播接口加载失败\n" + display);
+        }
+        if (splashRetry != null) {
+            splashRetry.setVisibility(View.VISIBLE);
+            splashRetry.post(new Runnable() {
+                @Override
+                public void run() {
+                    splashRetry.requestFocus();
+                }
+            });
+        }
+    }
+
+    /** 关闭启动等待画面（最短展示时长由主接口 vodSplash.duration 控制） */
+    private void hideSplash() {
+        if (!splashShowing || splashView == null) {
+            return;
+        }
+        mHandler.removeCallbacks(splashTimeout);
+        long elapsed = System.currentTimeMillis() - splashShowTime;
+        int min = com.github.tvbox.osc.n2n.RemoteConfig.vodSplashDuration();
+        long delay = min - elapsed;
+        mHandler.removeCallbacks(splashHideRunnable);
+        if (delay > 0) {
+            mHandler.postDelayed(splashHideRunnable, delay);
+        } else {
+            splashHideRunnable.run();
+        }
+    }
+
+    private final Runnable splashHideRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (splashView == null) {
+                splashShowing = false;
+                return;
+            }
+            splashShowing = false;
+            splashView.setFocusable(false);
+            splashView.animate().alpha(0f).setDuration(200).withEndAction(new Runnable() {
+                @Override
+                public void run() {
+                    splashView.setVisibility(View.GONE);
+                    splashView.setAlpha(1f);
+                }
+            });
+        }
+    };
+
+    /** 主接口下发的启动画面：背景图/背景色/默认文案 */
+    private void applySplashConfig() {
+        if (splashView == null) {
+            return;
+        }
+        try {
+            String color = com.github.tvbox.osc.n2n.RemoteConfig.vodSplashColor();
+            if (!color.isEmpty()) {
+                splashView.setBackgroundColor(Color.parseColor(color));
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            String image = com.github.tvbox.osc.n2n.RemoteConfig.vodSplashImage();
+            if (splashImage != null) {
+                if (image.isEmpty()) {
+                    splashImage.setVisibility(View.GONE);
+                } else {
+                    splashImage.setVisibility(View.VISIBLE);
+                    ImgUtil.load(image, splashImage, 0);
+                }
+            }
+            String text = com.github.tvbox.osc.n2n.RemoteConfig.vodSplashText();
+            if (splashText != null && !text.isEmpty()) {
+                splashText.setText(text);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
 
     private final Runnable mDataRunnable = new Runnable() {
         @Override
@@ -307,6 +673,11 @@ public class VodActivity extends BaseActivity {
 
     @Override
     public void onBackPressed() {
+        // 等待/错误界面：直接退出点播界面（首次进入失败时无需两次返回）
+        if (splashShowing) {
+            finish();
+            return;
+        }
         //打断加载
         if (isLoading()) {
             showSuccess();
@@ -366,11 +737,14 @@ public class VodActivity extends BaseActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        mHandler.removeCallbacksAndMessages(null);
+        // 只停计时/滚动任务；保留启动等待画面的关闭回调，避免返回页面时等待层卡住
+        mHandler.removeCallbacks(mRunnable);
+        mHandler.removeCallbacks(mDataRunnable);
     }
 
     @Override
     protected void onDestroy() {
+        mHandler.removeCallbacksAndMessages(null);
         super.onDestroy();
         com.github.tvbox.osc.n2n.NoticeBar.hide(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
     }
@@ -389,7 +763,7 @@ public class VodActivity extends BaseActivity {
     void showSiteSwitch() {
         List<SourceBean> sites = new ArrayList<>();
         for (SourceBean sb : ApiConfig.get().getSourceBeanList()) {
-            if (sb.getHide() == 0) sites.add(sb);
+            if (isUsableSource(sb)) sites.add(sb);
         }
         if (sites.size() > 0) {
             SelectDialog<SourceBean> dialog = new SelectDialog<>(VodActivity.this);
@@ -443,26 +817,37 @@ public class VodActivity extends BaseActivity {
         }
     }
 
-    /** 重新加载当前源分类（切换源后强制绕过 homeContent 缓存重新拉取） */
+    /** 重新加载当前源分类（切换源后强制绕过 homeContent 缓存重新拉取，并预加载新源插件） */
     void reloadHome() {
         if (isFinishing() || isDestroyed()) {
             return;
         }
         SourceBean home = ApiConfig.get().getHomeSourceBean();
-        String key = home != null && home.getKey() != null ? home.getKey() : "";
-        // 源名立即跟随切换结果更新，不必等分类数据返回
-        if (home != null && home.getName() != null && !home.getName().isEmpty()) {
-            tvName.setText(home.getName());
-        }
-        showLoading();
-        currentSelected = 0;
-        sortFocused = 0;
-        if (key.isEmpty()) {
-            // 源未就绪：清空列表，避免残留上一个源的内容
-            sortAdapter.setNewData(new ArrayList<MovieSort.SortData>());
-            initViewPager();
+        if (!isUsableSource(home)) {
+            // 当前源不可用（或接口尚未加载）：重新走完整进入流程
+            startEntry();
             return;
         }
-        sourceViewModel.getSort(key, true);
+        String key = home.getKey();
+        // 源名立即跟随切换结果更新，不必等分类数据返回
+        if (home.getName() != null && !home.getName().isEmpty()) {
+            tvName.setText(home.getName());
+        }
+        currentSelected = 0;
+        sortFocused = 0;
+        pendingSortKey = key;
+        showSplash("正在切换源…");
+        // 切源=刷新插件：先重建该源的 jar/js/py Spider，再请求分类
+        ApiConfig.get().prepareSource(home, new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                sourceViewModel.getSort(key, true);
+                mHandler.removeCallbacks(splashTimeout);
+                mHandler.postDelayed(splashTimeout, 30000);
+            }
+        });
     }
 }

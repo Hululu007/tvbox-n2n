@@ -219,6 +219,29 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 `setting` 页面入口已移除，配置为 `setting` 将被忽略。
 
+**点播接口加载与切源行为**（主点播界面与自定义点播界面一致）：
+
+- 点播接口（主配置 `api` 指向的 TVBox 标准 JSON / 自定义 `target`）只在**点播界面**加载；首页不再加载点播接口字段，也不提示「点播接口加载成功」，所有点播相关提示（免责声明、切源提示、加载失败等）仅在点播界面出现。
+- 进入点播界面时先显示启动等待画面（主配置可下发 `vodSplash`，见 §2.9），接口配置与当前源的 jar/js/py 插件就绪后自动加载分类数据并关闭等待画面。
+- 点播界面切换源时，会丢弃该源旧的 Spider 实例并**重新加载新源对应的 jar / js / py 插件**（`type=3` 的 `.jar`、`.js`、`.py`、纯类名站点分别处理），再强制刷新分类列表；不再依赖首页预加载全局 jar。
+- 点播界面的第一个分类固定为「热播推荐」：优先取主配置 `home.recMovies`，为空时取点播接口 `homeContent` 的 `videoList`；默认选中并自动加载。
+- 若主接口（主配置）无法加载/访问且本地无缓存，客户端直接显示全屏报错页（重试/退出），不再进入首页等其它界面。
+
+### 2.9 点播启动等待画面（`vodSplash`）
+
+主配置顶层（或 `home` 内）可选字段，点播界面加载接口/切换源时展示：
+
+```json
+{
+  "vodSplash": {
+    "image": "./splash.png",        // 可选：背景图，相对地址按主配置地址解析
+    "text": "正在加载点播接口…",      // 可选：文案，缺省用内置文案
+    "backgroundColor": "#FF0D0D12", // 可选：背景色（#RRGGBB / #AARRGGBB）
+    "duration": 0                   // 可选：最短展示毫秒数 0~5000，0=加载完成立即关闭
+  }
+}
+```
+
 ---
 
 ## 3. 本机参数（所有请求）
@@ -288,6 +311,29 @@ echo bin2hex(openssl_encrypt($json, 'AES-128-ECB', substr($secret, 0, 16), OPENS
 | `clan://...` / `assets/...` / `file://...` | 原样 |
 
 配置为本地文件/assets 时以上规则不变，仅基准地址换成主接口 `api` 的协议 + 域名 + 目录。
+
+### 5.1 点播接口内部的相对地址
+
+点播接口（TVBox 标准 JSON）里的 `spider` / 站点 `api` / `jar` / `playUrl` / `ext` 同样支持相对地址，**以该点播接口自身的 URL 目录为基准**（不是主配置目录）：
+
+| 填写（接口地址为 `http://cdn.example.com/vod/api.php`） | 解析结果 |
+|------|----------|
+| `./kjtw.jar` | `http://cdn.example.com/vod/kjtw.jar` |
+| `./js/旺旺.js` | `http://cdn.example.com/vod/js/旺旺.js` |
+| `./py/周六影库.py` | `http://cdn.example.com/vod/py/周六影库.py` |
+| `/files/x.jar` | `http://cdn.example.com/files/x.jar` |
+| `http://...` / `https://...` / `clan://` / `assets/...` / `file://...` | 原样 |
+
+`ext` 为 JSON 字符串时，其中的 `"./xxx.json"` 会按同一基准批量替换；`jar`/`api` 带 `;md5;` 后缀时只解析地址部分。
+
+各类源的插件加载规则（切源时会重新加载对应插件）：
+
+| 站点类型 | `api` 形态 | 加载方式 |
+|------|------|------|
+| 0 / 1 / 4 | http(s) 接口 | XML / JSON / JSON 扩展筛选，无需插件 |
+| 3 | `*.jar` 或纯类名 `csp_xxx` | JarLoader（Java 插件）；纯类名站点用接口级 `spider` jar |
+| 3 | `*.js` / `*.js?...` | QuickJS 脚本插件 |
+| 3 | `*.py` | Python 插件（仅 python flavor APK） |
 
 ---
 

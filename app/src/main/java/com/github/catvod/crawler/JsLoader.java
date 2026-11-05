@@ -40,6 +40,11 @@ public class JsLoader {
         classes.clear();
     }
 
+    /** 仅移除某个源的 Spider（保留已加载的脚本引擎），切源时用于刷新插件 */
+    public void remove(String key) {
+        if (key != null) spiders.remove(key);
+    }
+
     public static void stopAll() {
         for (Spider spider : spiders.values()){
             spider.cancelByTag();

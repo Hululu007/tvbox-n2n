@@ -97,6 +97,8 @@ public class CustomVodActivity extends BaseActivity {
     private SourceBean prevHome = null;
     /** 原当前源是否已恢复（onPause 先于 HomeActivity.onResume 执行，必须提前恢复） */
     private boolean homeRestored = false;
+    /** 当前等待的分类结果所属源 key：切源后丢弃上一源迟到的响应（type=3 的 Spider 无法取消） */
+    private String pendingSortKey = "";
 
     private final Runnable mRunnable = new Runnable() {
         @SuppressLint({"DefaultLocale", "SetTextI18n"})
@@ -261,6 +263,11 @@ public class CustomVodActivity extends BaseActivity {
                     if (isFinishing() || isDestroyed()) {
                         return;
                     }
+                    // 切源后旧源的分类结果可能迟到（尤其 type=3 的 jar/js/py Spider 无法中断），直接丢弃
+                    if (absXml != null && absXml.sourceKey != null
+                            && !absXml.sourceKey.equals(pendingSortKey)) {
+                        return;
+                    }
                     String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
                     if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
                         sortAdapter.setNewData(DefaultConfig.adjustSort(key, absXml.classes.sortList, false));
@@ -385,10 +392,12 @@ public class CustomVodActivity extends BaseActivity {
         // 是 json 直接解析，不是 json 先解密后加载（ke 前缀/固定密钥两种模式自动识别）
         json = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(json);
         customSources.clear();
-        customSources.addAll(ApiConfig.get().injectCustomSources(json));
+        // 传入接口地址：配置内的 "./" 相对地址（spider/api/jar/playUrl/ext）按接口所在目录解析，
+        // type=0/1/3/4 各类源都能在独立点播界面正常加载
+        customSources.addAll(ApiConfig.get().injectCustomSources(json, entryUrl));
         SourceBean first = null;
         for (SourceBean sb : customSources) {
-            if (sb.getHide() == 0) {
+            if (isUsableSource(sb)) {
                 first = sb;
                 break;
             }
@@ -401,7 +410,18 @@ public class CustomVodActivity extends BaseActivity {
         // 保存原当前源，仅内存切换（不写 Hawk，退出本界面即恢复）
         prevHome = ApiConfig.get().getHomeSourceBean();
         ApiConfig.get().setHomeSourceTemp(first);
-        sourceViewModel.getSort(first.getKey(), true);
+        pendingSortKey = first.getKey();
+        // 首次加载也预加载站点对应的 jar/js/py 插件，避免首次请求时同步下载/初始化导致空列表
+        final SourceBean src = first;
+        ApiConfig.get().prepareSource(src, new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                sourceViewModel.getSort(src.getKey(), true);
+            }
+        });
     }
 
     private final Runnable mDataRunnable = new Runnable() {
@@ -529,7 +549,7 @@ public class CustomVodActivity extends BaseActivity {
     void showSiteSwitch() {
         List<SourceBean> sites = new ArrayList<>();
         for (SourceBean sb : customSources) {
-            if (sb.getHide() == 0) sites.add(sb);
+            if (isUsableSource(sb)) sites.add(sb);
         }
         if (sites.size() > 0) {
             SelectDialog<SourceBean> dialog = new SelectDialog<>(CustomVodActivity.this);
@@ -547,8 +567,16 @@ public class CustomVodActivity extends BaseActivity {
             dialog.setAdapter(tvRecyclerView, new SelectDialogAdapter.SelectDialogInterface<SourceBean>() {
                 @Override
                 public void click(SourceBean value, int pos) {
+                    if (value == null || !isUsableSource(value)) {
+                        return;
+                    }
+                    String key = value.getKey();
+                    if (key != null && key.equals(pendingSortKey)) {
+                        // 重复选择同一源：仍然强制刷新（长按名称也可刷新）
+                        reloadHome();
+                        return;
+                    }
                     ApiConfig.get().setHomeSourceTemp(value);
-                    // 反馈 + 强制刷新列表（getSort force=true 绕过 homeContent 缓存）
                     Toast.makeText(mContext, getString(R.string.dia_source) + "：" + value.getName(), Toast.LENGTH_SHORT).show();
                     reloadHome();
                 }
@@ -572,13 +600,28 @@ public class CustomVodActivity extends BaseActivity {
         }
     }
 
+    /** 源是否可用于本界面：type=0 Xml / 1 Json / 3 Spider / 4 Json 扩展，且必须配置了 api */
+    private boolean isUsableSource(SourceBean sb) {
+        if (sb == null || sb.getHide() != 0) {
+            return false;
+        }
+        int type = sb.getType();
+        if (type != 0 && type != 1 && type != 3 && type != 4) {
+            return false;
+        }
+        String api = sb.getApi();
+        return api != null && !api.trim().isEmpty();
+    }
+
     /** 重新加载当前 cv_ 源分类（强制绕过 homeContent 缓存） */
     void reloadHome() {
         showLoading();
         currentSelected = 0;
         sortFocused = 0;
         String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
-        // 取消其它 cv_ 源仍在途的 homeContent 请求，避免旧响应后到达覆盖新源列表
+        pendingSortKey = key;
+        // 取消其它 cv_ 源仍在途的 homeContent 请求；Biz 请求类型 0/1/4 可取消，
+        // type=3 的 Spider 请求无法中断，靠 pendingSortKey 在结果回调处丢弃旧源数据
         try {
             for (SourceBean sb : customSources) {
                 if (sb.getKey() != null && !sb.getKey().equals(key)) {
@@ -587,6 +630,20 @@ public class CustomVodActivity extends BaseActivity {
             }
         } catch (Throwable ignored) {
         }
-        sourceViewModel.getSort(key, true);
+        final SourceBean target = ApiConfig.get().getHomeSourceBean();
+        if (target == null) {
+            showEmpty();
+            return;
+        }
+        // 切源=刷新插件：重建该 cv_ 源的 jar/js/py Spider 后再请求分类
+        ApiConfig.get().prepareSource(target, new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                sourceViewModel.getSort(key, true);
+            }
+        });
     }
 }

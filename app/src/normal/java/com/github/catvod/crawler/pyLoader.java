@@ -13,6 +13,11 @@ public class pyLoader implements IPyLoader {
     }
 
     @Override
+    public void remove(String key) {
+        Log.i("PyLoader", "normal flavor: remove() 调用，但不支持 Python 功能。");
+    }
+
+    @Override
     public void setConfig(String jsonStr) {
         Log.i("PyLoader", "normal flavor: setConfig() 调用，但不支持 Python 功能。");
     }

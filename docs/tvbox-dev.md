@@ -1,8 +1,8 @@
 # TVBox 开发使用文档
 
 > 基于 [takagen99/Box](https://github.com/takagen99/Box)（commit `258a5fe`）内化。
-> 本仓库的定制重点：**hin2n 组网内置模块化**、**应用内无设置页（全部配置由 JSON 下发）**、**APK 不内置配置 JSON（远程/本地地址由代码 CONFIG_URL 指定）**、**内置系统桌面能力**、**接口密文下发（AES-128-ECB）**、**接口请求携带本机参数（mac/ip/系统版本/App版本）**、**Android 4.4（API19）兼容**、首页推荐默认多行。
-> hin2n 模块的细节另见 [hin2n-dev.md](file:///f:/tvbox-n2n/docs/hin2n-dev.md)，配置字段 demo 见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)。
+> 本仓库的定制重点：**应用内无设置页（全部配置由 JSON 下发）**、**APK 不内置配置 JSON（远程/本地地址由代码 CONFIG_URL 指定）**、**内置系统桌面能力**、**接口密文下发（AES-128-ECB）**、**接口请求携带本机参数（mac/ip/系统版本/App版本）**、**Android 4.4（API19）兼容**、首页推荐默认多行、**点播接口按需加载 + 切源刷新插件 + 启动等待画面**。
+> hin2n 组网已拆分为独立可安装 App（源码在独立仓库），本仓库只保留首页入口；细节见 [hin2n.md](file:///f:/tvbox-n2n/docs/hin2n.md)，配置字段 demo 见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)。
 
 ---
 
@@ -10,17 +10,17 @@
 
 ```
 tvbox-n2n/
-├── app/                    # TVBox 主模块（含 n2n/ 集成包；构建时按 ABI 拆成 32/64 位两个 APK）
-├── hin2n/Hin2n_android/app # hin2n 独立 App（settings.gradle 以 :hin2n 引入，applicationId wang.switchy.hin2n）
+├── app/                    # TVBox 主模块（构建时按 ABI 拆成 32/64 位两个 APK）
 ├── pyramid/                # Python 引擎模块（Chaquopy，仅 python flavor）
 ├── quickjs/                # QuickJS 引擎模块
 ├── xwalk/                  # Crosswalk WebView 离线包
 ├── docs/                   # 文档与配置 demo
 ├── .github/workflows/
-│   ├── test.yml            # TVBox 主工程构建（只构建 :app，不再安装 NDK/CMake）
-│   └── hin2n.yml           # hin2n 独立 App 构建（发布到固定 tag hin2n-latest）
-└── settings.gradle         # include ':hin2n' + projectDir 指向
+│   └── test.yml            # TVBox 构建 + 源码包（不含已拆分的 hin2n 源码）
+└── settings.gradle         # 只引入 :app / :quickjs / :pyramid
 ```
+
+> hin2n 是独立 App（applicationId `wang.switchy.hin2n`），源码不在本仓库；首页入口按包名拉起，未安装时按主接口 `hin2n.apkUrl` 下载安装。
 
 ## 2. 构建变体（flavor）
 
@@ -128,9 +128,20 @@ tvbox-n2n/
 1. 入口 target 为接口地址（http(s)/assets/file），`EntryDispatcher` 把地址放入 intent extra 启动 `CustomVodActivity`；
    - 入口 `theme` 字段非空时：先 `ThemeManager.pushOverride(theme)`（解析为主题索引，无法识别则不生效）+ `BaseActivity.resetWallpaper()`，随后创建的 `CustomVodActivity` 及其播放页（Detail/Play）在覆盖期间使用独立主题（`ThemeManager.apply()/currentBgPair()/currentBgImage()` 均走 `activeIndex()`），全局 `THEME_SELECT` 不受影响；
    - 覆盖撤销时机：`CustomVodActivity.onPause(isFinishing)` 与 `onDestroy` 兜底（见下），另 `ThemeManager.apply()` 检测到 `HomeActivity` 创建时自动 `popOverride()`（视为回到 app 全局状态），三重防泄漏；
-2. `onCreate` 读取并解析接口内容（http 请求拼本机参数；任何来源的内容都先过 `ConfigCrypto.maybeDecrypt` 支持密文，之后用标准 Gson 解析，与点播 api 同结构），对每个 `SourceBean` 的 key 加 `CUSTOM_SRC_PREFIX = "cv_"`（防与用户源重名冲突），调 `ApiConfig.injectCustomSources(list)` 内存注入，并用 `setHomeSourceTemp(cv源key)` 临时切首页位；
-3. 界面本体就是 VodActivity 逻辑复用，仅源集合不同；切源弹窗选择后 `setHomeSourceTemp` + Toast「切换源：xxx」+ `reloadHome()`（getSort force=true 绕过缓存强制刷新）；
+2. `onCreate` 读取并解析接口内容（http 请求拼本机参数；任何来源的内容都先过 `ConfigCrypto.maybeDecrypt` 支持密文，之后用标准 Gson 解析，与点播 api 同结构），对每个 `SourceBean` 的 key 加 `CUSTOM_SRC_PREFIX = "cv_"`（防与用户源重名冲突），调 `ApiConfig.injectCustomSources(json, entryUrl)` 内存注入（`entryUrl` 作为相对地址基准，解析 `spider`/`api`/`jar`/`playUrl`/`ext` 中的 `./`、`/`），并用 `setHomeSourceTemp(cv源key)` 临时切首页位；
+3. 界面本体就是 VodActivity 逻辑复用，仅源集合不同；切源弹窗只列可用源（`hide==0`、type∈{0,1,3,4}、api 非空），选择后 `setHomeSourceTemp` + Toast「切换源：xxx」+ `reloadHome()`：
+   - `reloadHome()` 先调用 `ApiConfig.prepareSource(target)` 在后台**重新加载该 cv_ 源的 jar/js/py 插件**（丢弃旧 Spider 实例），就绪后再 `getSort(force=true)` 绕过缓存刷新；
+   - 首次进入同样先 `prepareSource` 再请求分类，避免插件同步下载/初始化造成空列表；
+   - 切源后用 `AbsSortXml.sourceKey` + `pendingSortKey` 丢弃上一源迟到的响应（type=3 Spider 无法中断）；
 4. **恢复时序（关键）**：Activity finish 时系统顺序是 `CustomVod.onPause → HomeActivity.onResume → CustomVod.onStop → onDestroy`。若等 `onDestroy` 才恢复 home 源，主界面 `onResume` 已先读到 cv_ 临时源并把源名写到左上角（用户报障「影院切源后主屏左上文字变了」）。因此 `restoreHomeSource()`（`removeCustomSources` + `setHomeSourceTemp(prevHome)`，幂等，`homeRestored` 标记）在 `onPause(isFinishing=true)` 内立即执行，`onDestroy` 仅兜底；同时 `popOverride()` + `resetWallpaper()` 让主界面恢复全局主题背景——**不落盘、不污染用户配置**；进程被杀重启后自然恢复。
+
+### 3.5.1 主点播界面（VodActivity）加载流程
+
+- 首页（`HomeActivity`）**不再加载点播接口**：不调用 `ApiConfig.loadConfig/loadJar`、不提示加载成功、不展示点播免责声明，点播接口字段全部延迟到点播界面。
+- `VodActivity.startEntry()`：显示启动等待画面（`vodSplash` 配置来自主接口，见 [api-and-config.md §2.9](file:///f:/tvbox-n2n/docs/api-and-config.md)）→ 若 `ApiConfig.isConfigLoaded()` 为 false 则 `loadConfig(true)` → 选择可用源 → `prepareSource(源)` 预加载插件 → `getSort(key, true)` → 分类结果返回后 `hideSplash()` 自动展示数据。
+- `VodActivity.reloadHome()`（切源）：显示等待画面 → `prepareSource(新源)`（刷新 jar/js/py）→ `getSort(force=true)`；等待画面在结果返回/超时 30s 后关闭；加载失败的提示与重试按钮只出现在点播界面。
+- 首分类「热播推荐」为伪分类 `GridFragment.RECOMMEND_SORT_ID`：不发分类请求，直接展示 `RemoteConfig.homeRecMovies()`（为空时用点播接口 `homeContent.videoList`），默认选中并加载。
+- `HomeActivity` 依赖 `RemoteConfig` 的主接口状态（`PRIMARY_LOADING/OK/FAIL`）：主接口失败且无缓存时启动 `ConfigErrorActivity` 全屏报错（重试/退出），不再加载其它界面。
 
 ### 3.6 升级检查与 APK 下载安装管线
 

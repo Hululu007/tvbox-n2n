@@ -41,6 +41,7 @@ import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
 
 import java.util.ArrayList;
+import java.util.List;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import org.greenrobot.eventbus.EventBus;
@@ -54,7 +55,12 @@ import java.util.Stack;
  * @description:
  */
 public class GridFragment extends BaseLazyFragment {
+    /** 点播首分类「热播推荐」的伪分类 id：不请求站点分类接口，直接展示主接口下发的推荐影片 */
+    public static final String RECOMMEND_SORT_ID = "__vod_recommend__";
+
     private MovieSort.SortData sortData = null;
+    /** 热播推荐数据（仅热播推荐分类使用） */
+    private List<Movie.Video> recommendVideos = new ArrayList<>();
     private TvRecyclerView mGridView;
     private SourceViewModel sourceViewModel;
     private GridFilterDialog gridFilterDialog;
@@ -79,6 +85,20 @@ public class GridFragment extends BaseLazyFragment {
 
     public static GridFragment newInstance(MovieSort.SortData sortData) {
         return new GridFragment().setArguments(sortData);
+    }
+
+    /** 热播推荐分类：直接携带推荐影片数据，不请求站点接口 */
+    public static GridFragment newInstance(MovieSort.SortData sortData, List<Movie.Video> recommendVideos) {
+        GridFragment f = new GridFragment();
+        f.setArguments(sortData);
+        if (recommendVideos != null) {
+            f.recommendVideos = new ArrayList<>(recommendVideos);
+        }
+        return f;
+    }
+
+    private boolean isRecommendSort() {
+        return sortData != null && RECOMMEND_SORT_ID.equals(sortData.id);
     }
 
     public GridFragment setArguments(MovieSort.SortData sortData) {
@@ -342,7 +362,12 @@ public class GridFragment extends BaseLazyFragment {
     }
 
     private void initData() {
-    	if (ApiConfig.get().getHomeSourceBean().getApi()==null) {
+        if (isRecommendSort()) {
+            loadRecommend();
+            return;
+        }
+        SourceBean home = ApiConfig.get().getHomeSourceBean();
+        if (home == null || home.getApi() == null) {
             showEmpty();
             return;
         }
@@ -351,6 +376,23 @@ public class GridFragment extends BaseLazyFragment {
         scrollTop();
         toggleFilterStatus();
         sourceViewModel.getList(sortData, page);
+    }
+
+    /** 热播推荐：直接展示主接口下发的推荐影片（无数据时显示空态） */
+    private void loadRecommend() {
+        showLoading();
+        isLoad = false;
+        page = 1;
+        maxPage = 1;
+        scrollTop();
+        if (recommendVideos.isEmpty()) {
+            showEmpty();
+            return;
+        }
+        showSuccess();
+        isLoad = true;
+        gridAdapter.setNewData(new ArrayList<>(recommendVideos));
+        gridAdapter.setEnableLoadMore(false);
     }
 
     private void toggleFilterStatus() {

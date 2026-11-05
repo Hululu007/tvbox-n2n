@@ -151,6 +151,8 @@ public class RemoteConfig {
     public static final String K_APP_MARKET = "rc_app_market";
     /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
+    /** 点播启动等待画面配置（主接口下发，点播界面加载接口/切源时展示） */
+    public static final String K_VOD_SPLASH = "rc_vod_splash";
 
     /** 最近一次加载的主配置 JSON（入口/主题/hin2n 播种等逻辑读取） */
     private static volatile JSONObject sConfig = null;
@@ -162,6 +164,69 @@ public class RemoteConfig {
      * 回退到主接口（api）的协议 + 域名 + 目录。
      */
     private static volatile String sConfigBase = "";
+
+    /** 主接口（主配置）加载状态：0=加载中 1=成功 2=失败（失败且无缓存时首页直接弹报错界面） */
+    public static final int PRIMARY_LOADING = 0;
+    public static final int PRIMARY_OK = 1;
+    public static final int PRIMARY_FAIL = 2;
+
+    private static volatile int sPrimaryState = PRIMARY_LOADING;
+    private static final List<PrimaryListener> sPrimaryListeners = new ArrayList<>();
+
+    public interface PrimaryListener {
+        /** 回调线程：主配置加载线程（远程为后台线程），UI 侧自行切主线程 */
+        void onPrimaryResult(int state);
+    }
+
+    /** 注册主接口加载结果监听；若已有结果会立即回调一次 */
+    public static void addPrimaryListener(PrimaryListener listener) {
+        if (listener == null) {
+            return;
+        }
+        int state;
+        synchronized (sPrimaryListeners) {
+            state = sPrimaryState;
+            if (state == PRIMARY_LOADING) {
+                sPrimaryListeners.add(listener);
+                return;
+            }
+        }
+        listener.onPrimaryResult(state);
+    }
+
+    public static void removePrimaryListener(PrimaryListener listener) {
+        synchronized (sPrimaryListeners) {
+            sPrimaryListeners.remove(listener);
+        }
+    }
+
+    /** 当前主接口状态（0/1/2） */
+    public static int primaryState() {
+        return sPrimaryState;
+    }
+
+    /** 报错页「重试」：重置主接口状态并重新拉取主配置 */
+    public static void retryPrimary(Context ctx) {
+        synchronized (sPrimaryListeners) {
+            sPrimaryState = PRIMARY_LOADING;
+        }
+        bootstrap(ctx);
+    }
+
+    private static void notifyPrimary(int state) {
+        List<PrimaryListener> copy;
+        synchronized (sPrimaryListeners) {
+            sPrimaryState = state;
+            copy = new ArrayList<>(sPrimaryListeners);
+            sPrimaryListeners.clear();
+        }
+        for (PrimaryListener l : copy) {
+            try {
+                l.onPrimaryResult(state);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
 
     /** 单个自定义入口 */
     public static class Entry {
@@ -203,6 +268,41 @@ public class RemoteConfig {
         } catch (Throwable t) {
             return new JSONObject();
         }
+    }
+
+    /** 点播启动等待画面配置（主接口 "vodSplash" 段；无则空对象） */
+    public static JSONObject vodSplash() {
+        try {
+            return new JSONObject(Hawk.get(K_VOD_SPLASH, "{}"));
+        } catch (Throwable t) {
+            return new JSONObject();
+        }
+    }
+
+    /** 启动画面背景图（"image"/"pic"；支持相对地址，按主接口地址解析） */
+    public static String vodSplashImage() {
+        JSONObject j = vodSplash();
+        String url = j.optString("image", j.optString("pic", "")).trim();
+        return url.isEmpty() ? "" : resolveInterfaceUrl(url);
+    }
+
+    /** 启动画面文案（"text"；默认「正在加载点播接口…」由界面兜底） */
+    public static String vodSplashText() {
+        return vodSplash().optString("text", "").trim();
+    }
+
+    /** 启动画面背景色（"backgroundColor"/"bgColor"，#RRGGBB / #AARRGGBB） */
+    public static String vodSplashColor() {
+        JSONObject j = vodSplash();
+        return j.optString("backgroundColor", j.optString("bgColor", "")).trim();
+    }
+
+    /** 启动画面最短展示时长（"duration" 毫秒，0~5000，默认 0=加载完成立即关闭） */
+    public static int vodSplashDuration() {
+        int ms = vodSplash().optInt("duration", 0);
+        if (ms < 0) ms = 0;
+        if (ms > 5000) ms = 5000;
+        return ms;
     }
 
     /**
@@ -489,6 +589,7 @@ public class RemoteConfig {
         final String src = CONFIG_URL == null ? "" : CONFIG_URL.trim();
         if (src.isEmpty()) {
             // 未配置：完全使用代码默认值（无需任何本地 json）
+            notifyPrimary(PRIMARY_OK);
             return;
         }
         if (src.startsWith("http://") || src.startsWith("https://")) {
@@ -517,6 +618,7 @@ public class RemoteConfig {
         try {
             String raw = readLocalConfig(app, src);
             if (raw == null || raw.isEmpty()) {
+                notifyPrimary(PRIMARY_FAIL);
                 return;
             }
             raw = ConfigCrypto.maybeDecrypt(raw);
@@ -524,11 +626,13 @@ public class RemoteConfig {
             sConfig = cfg;
             sConfigBase = ""; // 本地/assets 配置无 URL 基准，相对接口地址回退拼接主接口 api 域名
             apply(app, cfg, false);
+            notifyPrimary(PRIMARY_OK);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
             if (!secondary.isEmpty()) {
                 fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
             }
         } catch (Throwable ignored) {
+            notifyPrimary(PRIMARY_FAIL);
         }
     }
 
@@ -573,7 +677,8 @@ public class RemoteConfig {
         try {
             String raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
             if (raw == null || raw.isEmpty()) {
-                restoreCachedRemote(app, false);
+                boolean restored = restoreCachedRemote(app, false);
+                notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
                 return;
             }
             raw = ConfigCrypto.maybeDecrypt(raw);
@@ -582,17 +687,19 @@ public class RemoteConfig {
             sConfigBase = url; // 相对接口地址以主配置所在目录为基准拼接
             apply(app, cfg, false);
             Hawk.put(K_REMOTE_RAW, raw);
+            notifyPrimary(PRIMARY_OK);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
             if (!secondary.isEmpty()) {
                 fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
             }
         } catch (Throwable t) {
-            restoreCachedRemote(app, false);
+            boolean restored = restoreCachedRemote(app, false);
+            notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
         }
     }
 
-    /** 断网时用上次缓存的主配置兜底 */
-    private static void restoreCachedRemote(Context app, boolean remoteOnly) {
+    /** 断网时用上次缓存的主配置兜底；返回是否成功应用了缓存 */
+    private static boolean restoreCachedRemote(Context app, boolean remoteOnly) {
         try {
             String cached = Hawk.get(K_REMOTE_RAW, "");
             if (cached != null && !cached.isEmpty()) {
@@ -601,9 +708,11 @@ public class RemoteConfig {
                     sConfig = cfg;
                 }
                 apply(app, cfg, remoteOnly);
+                return true;
             }
         } catch (Throwable ignored) {
         }
+        return false;
     }
 
     /** 后台线程拉取远程 json 并应用（非 settings/hin2n 段） */
@@ -826,6 +935,14 @@ public class RemoteConfig {
         }
         if (j.has("home") && j.optJSONObject("home") != null) {
             Hawk.put(K_HOME_STYLE, j.optJSONObject("home").toString());
+        }
+        // 点播启动等待画面：主接口顶层 vodSplash（兼容写在 home.vodSplash）
+        JSONObject splash = j.optJSONObject("vodSplash");
+        if (splash == null && j.optJSONObject("home") != null) {
+            splash = j.optJSONObject("home").optJSONObject("vodSplash");
+        }
+        if (splash != null) {
+            Hawk.put(K_VOD_SPLASH, splash.toString());
         }
         // 点播接口加载成功通知：多少秒后自动关闭（0=不显示）。本地/远程均可下发，每次启动应用，
         // 写入前做 0~60 范围保护，避免异常配置导致通知长期遮挡首页。

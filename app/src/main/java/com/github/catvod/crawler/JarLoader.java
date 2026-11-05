@@ -47,6 +47,11 @@ public class JarLoader {
         classLoaders.clear();
     }
 
+    /** 仅移除某个源的 Spider（保留已加载的 classLoader），切源时用于刷新插件 */
+    public void remove(String key) {
+        if (key != null) spiders.remove(key);
+    }
+
     private boolean loadClassLoader(String jar, String key) {
         if (classLoaders.containsKey(key)){
             Log.i("JarLoader", "echo-loadClassLoader jar缓存: " + key);
