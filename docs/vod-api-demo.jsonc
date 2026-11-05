@@ -9,8 +9,8 @@
 //     再强制刷新列表（绕过缓存）并弹出「切换源：xxx」提示；
 //     进入点播界面与切源期间都会显示启动等待画面（主配置可下发 vodSplash），
 //     接口/插件就绪后自动加载数据；
-//   · 点播界面第一个分类固定为「热播推荐」（优先主配置 home.recMovies，其次本接口
-//     homeContent 的 videoList），默认选中并自动加载；
+//   · 点播界面第一个分类固定为「热播推荐」（只取主配置 home.recMovies，未配置时显示空态，
+//     不再回退本接口 homeContent 的 videoList），默认选中并自动加载；
 //   · 作为默认点播接口：填到主配置 JSON 的 "api" 字段（配置来源由
 //     RemoteConfig.CONFIG_URL 指定：远程 http(s) / 设备本地文件 / assets/xxx.json，APK 内不再内置配置）；
 //   · 作为自定义点播界面（影院）的独立数据源：填到 topEntries/homeEntries 中
@@ -93,6 +93,7 @@
 
   // ───────────────────────── 以下全部可选 ─────────────────────────
   // "parses"  VIP 解析器列表；"flags" 走解析的播放 flag；"rules" m3u8 广告过滤；
-  // "ijk" IJK 播放器参数；"ads" 广告域名拦截；"lives" 与点播并列的直播源。
+  // "ijk" IJK 播放器参数；"ads" 广告域名拦截；"lives" 与点播并列的直播源
+  // （直播 JSON 支持每频道/线路 decode，txt/m3u 地址同样兼容）。
   // 完整字段示例见 docs/vod.config.example.json。
 }

@@ -93,7 +93,7 @@ public class VodActivity extends BaseActivity {
     private boolean splashShowing = false;
     private long splashShowTime = 0;
 
-    /** 点播首分类「热播推荐」数据（主接口 home.recMovies 优先，其次点播接口 homeContent videoList） */
+    /** 点播首分类「热播推荐」数据（只使用主接口 home.recMovies，不再回退点播源首页/豆瓣） */
     private final List<Movie.Video> recommendVideos = new ArrayList<>();
 
     /** 防止重复触发接口加载 */
@@ -276,13 +276,11 @@ public class VodActivity extends BaseActivity {
                     return;
                 }
                 try {
-                    // 热播推荐：主接口 home.recMovies 优先，其次用点播接口 homeContent 的 videoList
+                    // 热播推荐：只展示主接口 home.recMovies 配置的内容（未配置时为空态）
                     List<Movie.Video> mainRec = com.github.tvbox.osc.n2n.RemoteConfig.homeRecMovies();
                     recommendVideos.clear();
                     if (mainRec != null && !mainRec.isEmpty()) {
                         recommendVideos.addAll(mainRec);
-                    } else if (absXml != null && absXml.videoList != null) {
-                        recommendVideos.addAll(absXml.videoList);
                     }
                     // 推荐项未指定源时归属当前源，保证点击进详情时能找到站点
                     for (Movie.Video v : recommendVideos) {
@@ -317,12 +315,10 @@ public class VodActivity extends BaseActivity {
         currentSelected = 0;
         sortFocused = 0;
         List<MovieSort.SortData> sorts = new ArrayList<>(sortAdapter.getData());
-        // 需求：把热播推荐作为点播界面的第一个分类并默认展示加载
-        if (!recommendVideos.isEmpty()) {
-            MovieSort.SortData rec = new MovieSort.SortData(GridFragment.RECOMMEND_SORT_ID, "热播推荐");
-            rec.sort = -100;
-            sorts.add(0, rec);
-        }
+        // 热播推荐固定为点播界面第一个分类并默认展示；数据只取主接口 recMovies，未配置时显示空态
+        MovieSort.SortData rec = new MovieSort.SortData(GridFragment.RECOMMEND_SORT_ID, "热播推荐");
+        rec.sort = -100;
+        sorts.add(0, rec);
         if (!sorts.isEmpty()) {
             sortAdapter.setNewData(sorts);
             for (MovieSort.SortData data : sorts) {
@@ -817,7 +813,11 @@ public class VodActivity extends BaseActivity {
         }
     }
 
-    /** 重新加载当前源分类（切换源后强制绕过 homeContent 缓存重新拉取，并预加载新源插件） */
+    /**
+     * 切换源后在本界面刷新：先复用本地缓存的接口配置重新解析（源列表/解析器同步更新），
+     * 再重建当前源的 jar/js/py 插件，最后强制绕过缓存重新请求分类。
+     * 与参考项目一致：切源不重启界面，分类/推荐直接在当前点播界面刷新。
+     */
     void reloadHome() {
         if (isFinishing() || isDestroyed()) {
             return;
@@ -837,17 +837,52 @@ public class VodActivity extends BaseActivity {
         sortFocused = 0;
         pendingSortKey = key;
         showSplash("正在切换源…");
-        // 切源=刷新插件：先重建该源的 jar/js/py Spider，再请求分类
-        ApiConfig.get().prepareSource(home, new Runnable() {
+        if (configLoading) {
+            return;
+        }
+        configLoading = true;
+        // 切源=复用缓存重载接口配置（含 sites/parses/lives），成功后由 afterConfigLoaded 重建插件并拉分类
+        ApiConfig.get().loadConfig(true, new ApiConfig.LoadConfigCallback() {
             @Override
-            public void run() {
-                if (isFinishing() || isDestroyed()) {
-                    return;
-                }
-                sourceViewModel.getSort(key, true);
-                mHandler.removeCallbacks(splashTimeout);
-                mHandler.postDelayed(splashTimeout, 30000);
+            public void retry() {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        configLoading = false;
+                        afterConfigLoaded();
+                    }
+                });
             }
-        });
+
+            @Override
+            public void success() {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        configLoading = false;
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        com.github.tvbox.osc.n2n.ConfigGuard.done(VodActivity.this);
+                        afterConfigLoaded();
+                    }
+                });
+            }
+
+            @Override
+            public void error(String msg) {
+                mHandler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        configLoading = false;
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        com.github.tvbox.osc.n2n.ConfigGuard.done(VodActivity.this);
+                        showSplashError(msg);
+                    }
+                });
+            }
+        }, this);
     }
 }

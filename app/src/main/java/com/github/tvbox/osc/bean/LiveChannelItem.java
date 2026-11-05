@@ -21,6 +21,8 @@ public class LiveChannelItem {
     private String channelName;
     private ArrayList<String> channelSourceNames;
     private ArrayList<String> channelUrls;
+    /** 每条线路由接口下发的默认解码方式（soft/hard/system/exo/ali，空=跟随全局） */
+    private ArrayList<String> channelDecodes = new ArrayList<>();
     public int sourceIndex = 0;
     public int sourceNum = 0;
     public boolean include_back = false;
@@ -65,6 +67,31 @@ public class LiveChannelItem {
     public void setChannelUrls(ArrayList<String> channelUrls) {
         this.channelUrls = channelUrls;
         sourceNum = channelUrls.size();
+    }
+
+    /** 每条线路的接口默认解码方式（可为空列表） */
+    public void setChannelDecodes(ArrayList<String> channelDecodes) {
+        this.channelDecodes = channelDecodes == null ? new ArrayList<String>() : channelDecodes;
+    }
+
+    public ArrayList<String> getChannelDecodes() {
+        return channelDecodes;
+    }
+
+    /** 当前线路由接口下发的默认解码方式，未下发返回空串 */
+    public String getDecode() {
+        return getDecode(sourceIndex);
+    }
+
+    public String getDecode(int index) {
+        if (channelDecodes == null || index < 0 || index >= channelDecodes.size()) return "";
+        String decode = channelDecodes.get(index);
+        return decode == null ? "" : decode;
+    }
+
+    public String getUrl(int index) {
+        if (channelUrls == null || index < 0 || index >= channelUrls.size()) return "";
+        return channelUrls.get(index);
     }
     public void preSource() {
         sourceIndex--;

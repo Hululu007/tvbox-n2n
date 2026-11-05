@@ -212,6 +212,37 @@ public class TxtSubscribe {
         }
     }
 
+    /**
+     * 解析 JSON 直播源并保留频道的 decode/playerType 等扩展字段（供 ApiConfig.loadLives 使用）。
+     * 返回 null 表示不是可识别的 JSON 直播结构，调用方继续走 txt/m3u 文本解析。
+     */
+    public static JsonArray jsonLivesArray(String str) {
+        if (str == null) return null;
+        String trimmed = str.trim();
+        if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return null;
+        try {
+            JsonElement root = JsonParser.parseString(trimmed);
+            JsonArray groups = null;
+            if (root.isJsonArray()) {
+                groups = root.getAsJsonArray();
+            } else if (root.isJsonObject() && root.getAsJsonObject().has("groups")) {
+                JsonElement ge = root.getAsJsonObject().get("groups");
+                if (ge != null && ge.isJsonArray()) groups = ge.getAsJsonArray();
+            }
+            if (groups == null) return null;
+            // 至少有一个分组对象带 channels 数组才认为是直播 JSON；空数组也视为有效空源
+            if (groups.size() == 0) return groups;
+            for (JsonElement groupEle : groups) {
+                if (!groupEle.isJsonObject()) continue;
+                JsonElement channels = groupEle.getAsJsonObject().get("channels");
+                if (channels != null && channels.isJsonArray()) return groups;
+            }
+            return null;
+        } catch (Throwable th) {
+            return null;
+        }
+    }
+
     public static JsonArray live2JsonArray(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap) {
         JsonArray jsonarr = new JsonArray();
         for (String str : linkedHashMap.keySet()) {

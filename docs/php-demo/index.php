@@ -9,7 +9,8 @@
  * 路由一览（enc 可选 none|ke|fixed，默认 none）：
  *   index.php?r=config                 远程主配置（App 入口，定义左上角名称/首页推荐）
  *   index.php?r=api                    点播源配置（TVBox 标准 JSON）
- *   index.php?r=live                   直播源（JSON，支持密文，含全部节目类型示例）
+ *   index.php?r=live                   直播源（JSON，支持密文；可选 format=txt 输出传统文本源）
+ *   index.php?r=live&format=txt        直播源（传统 txt 文本，分组,#genre# / 频道,url#url2）
  *   index.php?r=epg                    节目单（JSON，支持密文，可多天）
  *   index.php?r=market                 应用市场列表（模板占位符）
  *   index.php?r=detail&pkg=xxx         应用市场详情
@@ -52,6 +53,54 @@ function tk_abs_url(string $query, string $enc): string
         $url .= '&enc=' . rawurlencode($enc);
     }
     return $url;
+}
+
+/** 取直播 URL 条目中的地址文本：兼容 "地址$线路名" 字符串与 ['url'=>..., 'name'=>..., 'decode'=>...] 对象 */
+function tk_live_url_text($item): string
+{
+    if (is_string($item)) {
+        return trim($item);
+    }
+    if (is_array($item)) {
+        $url = trim((string)($item['url'] ?? $item['src'] ?? ''));
+        $name = trim((string)($item['name'] ?? ''));
+        return ($url !== '' && $name !== '') ? $url . '$' . $name : $url;
+    }
+    return '';
+}
+
+/**
+ * 把 JSON 直播结构转成传统 txt 文本源（分组,#genre# / 频道,url#url2）。
+ * 注意：txt 格式本身不携带 decode 字段，需要逐频道/线路设置解码方式时请使用 JSON 格式。
+ */
+function tk_live_to_txt(array $live): string
+{
+    $lines = [];
+    foreach ($live as $group) {
+        if (!is_array($group)) continue;
+        $groupName = trim((string)($group['group'] ?? $group['name'] ?? '未分组'));
+        if ($groupName === '') $groupName = '未分组';
+        $lines[] = $groupName . ',#genre#';
+        $channels = $group['channels'] ?? [];
+        if (!is_array($channels)) continue;
+        foreach ($channels as $channel) {
+            if (!is_array($channel)) continue;
+            $channelName = trim((string)($channel['name'] ?? ''));
+            if ($channelName === '') continue;
+            $urls = [];
+            $items = $channel['urls'] ?? [];
+            if (!is_array($items)) {
+                $items = isset($channel['url']) ? [$channel['url']] : [];
+            }
+            foreach ($items as $item) {
+                $url = tk_live_url_text($item);
+                if ($url !== '') $urls[] = $url;
+            }
+            if (empty($urls)) continue;
+            $lines[] = $channelName . ',' . implode('#', $urls);
+        }
+    }
+    return implode("\n", $lines) . (empty($lines) ? '' : "\n");
 }
 
 /** 应用市场列表（演示数据，可按 MAC/关键词下发） */
@@ -251,7 +300,7 @@ switch ($route) {
                 // ---- 首页 ----
                 'homeShowSource'     => true,    // 显示当前源名称
                 'homeSearchPosition' => false,   // 搜索按钮位置：true=上方顶栏 false=下方历史行
-                'homeRec'            => 1,       // 首页推荐：0/1=主接口 home.recMovies（未配置回退豆瓣） 2=观看历史
+                'homeRec'            => 1,       // 首页推荐：0/1=主接口 home.recMovies（首页未配置回退豆瓣；点播首屏固定显示该字段，未配置为空态） 2=观看历史
                 'homeNum'            => 4,       // 历史条数档位：0=20 1=40 2=60 3=80 4=100
                 'homeRecStyle'       => true,    // true=多行网格 false=单行横滑
                 'homeDefaultShow'    => false,   // true=启动直接进直播
@@ -448,11 +497,25 @@ switch ($route) {
          *   顶层是分组数组，每个分组含频道列表：
          *   [
          *     {"group": "分组名", "channels": [
-         *       {"name": "频道名", "urls": ["直链1", "直链2$线路名"]}
+         *       {"name": "频道名", "decode": "soft", "urls": [
+         *           "直链1",
+         *           {"url": "直链2", "name": "线路名", "decode": "hard"}
+         *       ]}
          *     ]}
          *   ]
          *   - urls 数组可放多个播放地址，"地址$线路名" 格式可为地址命名
          *   - 也可写成 {"groups": [...]} 对象形式
+         *
+         * 【每频道/线路解码方式 decode（可选）】
+         *   decode 取值：soft=软解 hard=硬解 system=系统 exo=Exo ali=AliPlayer auto=跟随全局
+         *   - 频道对象上写 "decode":"soft"：该频道下所有线路默认使用该解码方式；
+         *   - urls 写成 [{"url":"地址","name":"线路名","decode":"hard"}]：为单条线路设置独立解码；
+         *   - 也兼容 "playerType":-1/0/1/2/3（-1=跟随全局 0=系统 1=Ijk 2=Exo 3=Ali）与平行数组 "decodes":["soft","hard"]；
+         *   - 客户端仅在用户未手动设置该线路解码时采用该默认值，播放中手动调整后以用户设置为准。
+         *
+         * 【txt 文本输出】
+         *   请求 index.php?r=live&format=txt 可返回传统文本源（分组,#genre# / 频道,地址#地址）：
+         *   客户端同样兼容，但 txt 格式本身不携带 decode 字段；需要逐频道/线路解码请使用 JSON 格式。
          *
          * 【支持的播放协议】
          *   http(s)://   直链 m3u8/flv/mp4 等常规流媒体（可含 ?UA=.../Referer=... 参数）
@@ -474,16 +537,17 @@ switch ($route) {
          */
         $live = [
             ['group' => '央视', 'channels' => [
-                ['name' => 'CCTV-1 综合', 'urls' => [
+                // 频道级 decode：该频道所有线路默认软解；线路对象里的 decode 可单独覆盖
+                ['name' => 'CCTV-1 综合', 'decode' => 'soft', 'urls' => [
                     'http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226214/index.m3u8',
-                    'https://example.com/cctv1-2.m3u8$备用线路',
+                    ['url' => 'https://example.com/cctv1-2.m3u8', 'name' => '备用线路', 'decode' => 'hard'],
                 ]],
                 ['name' => 'CCTV-2 财经', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226204/index.m3u8']],
                 ['name' => 'CCTV-13 新闻', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226357/index.m3u8']],
                 ['name' => 'CCTV-5 体育', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226207/index.m3u8']],
             ]],
             ['group' => '卫视', 'channels' => [
-                ['name' => '湖南卫视', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226224/index.m3u8']],
+                ['name' => '湖南卫视', 'decode' => 'hard', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226224/index.m3u8']],
                 ['name' => '浙江卫视', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226225/index.m3u8']],
                 ['name' => '东方卫视', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226226/index.m3u8']],
                 ['name' => '北京卫视', 'urls' => ['http://dbiptv.sn.chinamobile.com/PLTV/88888890/224/3221226227/index.m3u8']],
@@ -496,7 +560,13 @@ switch ($route) {
                 ['name' => 'RTSP 示例', 'urls' => ['rtsp://example.com:554/stream']],
             ]],
         ];
-        tk_output(json_encode($live, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'application/json; charset=utf-8');
+        // format=txt → 返回传统文本源（客户端兼容；txt 不携带 decode）
+        $format = strtolower(trim((string)($_GET['format'] ?? 'json')));
+        if ($format === 'txt') {
+            tk_output(tk_live_to_txt($live), 'text/plain; charset=utf-8');
+        } else {
+            tk_output(json_encode($live, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'application/json; charset=utf-8');
+        }
         break;
 
     case 'epg':

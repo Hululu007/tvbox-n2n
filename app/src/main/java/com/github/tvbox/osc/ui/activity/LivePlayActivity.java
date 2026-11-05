@@ -1248,7 +1248,7 @@ public class LivePlayActivity extends BaseActivity {
             if (currentChannelGroupIndex >= 0 && currentChannelGroupIndex < liveChannelGroupList.size()) {
                 HawkUtils.setLastLiveChannelGroup(liveChannelGroupList.get(currentChannelGroupIndex).getGroupName());
             }
-            livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl());
+            livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl(), currentLiveChannelItem.getDecode());
             channel_Name = currentLiveChannelItem;
             currentLiveChannelItem.setinclude_back(supportBack(currentLiveChannelItem.getUrl()));
             mHandler.post(tv_sys_timeRunnable);
@@ -1308,10 +1308,10 @@ public class LivePlayActivity extends BaseActivity {
                 if (channelGroupIndex >= 0 && channelGroupIndex < liveChannelGroupList.size()) {
                     HawkUtils.setLastLiveChannelGroup(liveChannelGroupList.get(channelGroupIndex).getGroupName());
                 }
-                livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl());
+                livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl(), currentLiveChannelItem.getDecode());
             } else if (currentLiveChannelItem != null) {
                 // 切线路时套用该线路（节目源）独立保存的解码方式
-                livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl());
+                livePlayerManager.getLiveChannelPlayer(mVideoView, currentLiveChannelItem.getChannelName(), currentLiveChannelItem.getUrl(), currentLiveChannelItem.getDecode());
             }
             if (currentLiveChannelItem == null) return true;
             channel_Name = currentLiveChannelItem;
@@ -2409,8 +2409,13 @@ public class LivePlayActivity extends BaseActivity {
                 JsonArray livesArray;
                 LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap = new LinkedHashMap<>();
                 // 是明文列表直接解析，是密文先解密后加载（ke 前缀/固定密钥两种模式自动识别）
-                TxtSubscribe.parse(linkedHashMap, com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body()));
-                livesArray = TxtSubscribe.live2JsonArray(linkedHashMap);
+                String content = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(response.body());
+                // JSON 直播源优先走保留字段的解析（可携带每频道/线路 decode），txt/m3u 继续走文本解析
+                livesArray = TxtSubscribe.jsonLivesArray(content);
+                if (livesArray == null) {
+                    TxtSubscribe.parse(linkedHashMap, content);
+                    livesArray = TxtSubscribe.live2JsonArray(linkedHashMap);
+                }
 
                 ApiConfig.get().loadLives(livesArray);
                 List<LiveChannelGroup> list = ApiConfig.get().getChannelGroupList();
@@ -2539,10 +2544,15 @@ public class LivePlayActivity extends BaseActivity {
             LiveSettingItem liveSettingItem = new LiveSettingItem();
             liveSettingItem.setItemIndex(j);
             String sourceName = currentSourceNames.get(j);
-            // MQPlayer 风格：在线路名后标记该节目源已单独设置过的解码方式
-            String decodeLabel = livePlayerManager.getSourceDecodeLabel(currentLiveChannelItem.getChannelUrls().get(j));
+            // MQPlayer 风格：在线路名后标记解码方式（用户单独设置优先，否则显示接口默认值）
+            String sourceUrl = currentLiveChannelItem.getChannelUrls().get(j);
+            String decodeLabel = livePlayerManager.getSourceDecodeLabel(
+                    sourceUrl,
+                    currentLiveChannelItem.getDecode(j));
             if (!decodeLabel.isEmpty()) {
-                sourceName = sourceName + " [已设" + decodeLabel + "]";
+                sourceName = sourceName + (livePlayerManager.hasSourceDecode(sourceUrl)
+                        ? " [已设" + decodeLabel + "]"
+                        : " [默认" + decodeLabel + "]");
             }
             liveSettingItem.setItemName(sourceName);
             liveSettingItemList.add(liveSettingItem);

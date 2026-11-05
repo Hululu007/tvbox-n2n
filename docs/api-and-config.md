@@ -62,7 +62,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "settings": { "homeRecStyle": true },
   "home": {
     "sourceName": "TKLauncher",          // 左上角显示的名称（主接口统一定义；空=显示 App 名称）
-    "recMovies": [                        // 首页推荐数据（主接口提供；配置后不再请求豆瓣/点播接口）
+    "recMovies": [                        // 推荐影片（主接口提供）：首页推荐 + 点播界面「热播推荐」首屏均只取该字段
       { "name": "演示影片一", "pic": "https://placehold.co/300x400/png", "note": "9.0" }
     ]
   },
@@ -110,7 +110,14 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   {
     "group": "央视",
     "channels": [
-      { "name": "CCTV-1 综合", "urls": ["https://example.com/cctv1.m3u8", "https://example.com/cctv1-2.m3u8$线路2"] },
+      {
+        "name": "CCTV-1 综合",
+        "decode": "soft",
+        "urls": [
+          "https://example.com/cctv1.m3u8",
+          { "url": "https://example.com/cctv1-2.m3u8", "name": "线路2", "decode": "hard" }
+        ]
+      },
       { "name": "CCTV-13 新闻", "urls": ["https://example.com/cctv13.m3u8"] }
     ]
   },
@@ -132,7 +139,13 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 - 顶层为分组数组（或 `{"groups":[...]}` 对象形式）；每个频道含 `name` 与 `urls`，`地址$线路名` 可为地址命名；
 - **支持的节目类型（播放地址协议）**：`http(s)` 直链（m3u8/flv/mp4 等）、`rtmp://`、`rtsp://`、`webview://`（WebView 直接播网页）、`video://`（WebView 嗅探网页视频）、`tkp2p://`（内置 P2P）；
-- 兼容的文本格式：`分组,#genre#` + `频道,url#url2`（txt）、`#EXTM3U` + `#EXTINF`（m3u）。
+- 兼容的文本格式：`分组,#genre#` + `频道,url#url2`（txt）、`#EXTM3U` + `#EXTINF`（m3u）；`live` 直接填 `.txt` / `.m3u` 地址同样可用；
+- **每频道/线路解码 `decode`（可选）**：取值 `soft`（软解）、`hard`（硬解）、`system`（系统）、`exo`、`ali`、`auto`（跟随全局）。
+  - 写在频道对象上：该频道所有线路默认使用；
+  - urls 写成 `[{ "url": "...", "name": "线路名", "decode": "hard" }]`：为单条线路设置独立解码；
+  - 兼容 `playerType`（-1/0/1/2/3）及平行数组 `decodes`（如 `["soft","hard"]`）；
+  - 客户端仅在用户未手动设置该线路解码时采用接口默认值；用户在播放中调整后始终以用户设置为准。
+  - txt 文本源不携带 `decode`，需要逐频道/线路解码时请使用 JSON 格式。
 
 ### 2.4 EPG（`epg`）示例
 
@@ -224,7 +237,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 - 点播接口（主配置 `api` 指向的 TVBox 标准 JSON / 自定义 `target`）只在**点播界面**加载；首页不再加载点播接口字段，也不提示「点播接口加载成功」，所有点播相关提示（免责声明、切源提示、加载失败等）仅在点播界面出现。
 - 进入点播界面时先显示启动等待画面（主配置可下发 `vodSplash`，见 §2.9），接口配置与当前源的 jar/js/py 插件就绪后自动加载分类数据并关闭等待画面。
 - 点播界面切换源时，会丢弃该源旧的 Spider 实例并**重新加载新源对应的 jar / js / py 插件**（`type=3` 的 `.jar`、`.js`、`.py`、纯类名站点分别处理），再强制刷新分类列表；不再依赖首页预加载全局 jar。
-- 点播界面的第一个分类固定为「热播推荐」：优先取主配置 `home.recMovies`，为空时取点播接口 `homeContent` 的 `videoList`；默认选中并自动加载。
+- 点播界面的第一个分类固定为「热播推荐」：**只取主配置 `home.recMovies`**（未配置时显示空态，不再回退点播接口 `homeContent` 或豆瓣）；默认选中并自动加载。
 - 若主接口（主配置）无法加载/访问且本地无缓存，客户端直接显示全屏报错页（重试/退出），不再进入首页等其它界面。
 
 ### 2.9 点播启动等待画面（`vodSplash`）

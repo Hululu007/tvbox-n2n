@@ -954,10 +954,14 @@ public class ApiConfig {
         int channelIndex = 0;
         int channelNum = 0;
         for (JsonElement groupElement : livesArray) {
+            if (!groupElement.isJsonObject()) continue;
+            JsonObject groupObj = groupElement.getAsJsonObject();
             LiveChannelGroup liveChannelGroup = new LiveChannelGroup();
             liveChannelGroup.setLiveChannels(new ArrayList<LiveChannelItem>());
             liveChannelGroup.setGroupIndex(groupIndex++);
-            String groupName = ((JsonObject) groupElement).get("group").getAsString().trim();
+            String groupName = optString(groupObj, "group");
+            if (groupName.isEmpty()) groupName = optString(groupObj, "name");
+            if (groupName.isEmpty()) groupName = "未分组";
             String[] splitGroupName = groupName.split("_", 2);
             liveChannelGroup.setGroupName(splitGroupName[0]);
             if (splitGroupName.length > 1)
@@ -965,31 +969,170 @@ public class ApiConfig {
             else
                 liveChannelGroup.setGroupPassword("");
             channelIndex = 0;
-            for (JsonElement channelElement : ((JsonObject) groupElement).get("channels").getAsJsonArray()) {
-                JsonObject obj = (JsonObject) channelElement;
+            JsonElement channelsEle = groupObj.get("channels");
+            if (channelsEle == null || !channelsEle.isJsonArray()) continue;
+            for (JsonElement channelElement : channelsEle.getAsJsonArray()) {
+                if (!channelElement.isJsonObject()) continue;
+                JsonObject obj = channelElement.getAsJsonObject();
                 LiveChannelItem liveChannelItem = new LiveChannelItem();
-                liveChannelItem.setChannelName(obj.get("name").getAsString().trim());
+                String channelName = optString(obj, "name");
+                liveChannelItem.setChannelName(channelName.isEmpty() ? "未命名" : channelName);
                 liveChannelItem.setChannelIndex(channelIndex++);
                 liveChannelItem.setChannelNum(++channelNum);
-                ArrayList<String> urls = DefaultConfig.safeJsonStringList(obj, "urls");
-                ArrayList<String> sourceNames = new ArrayList<>();
+                // 频道级默认解码方式：频道下所有线路未单独声明时使用
+                String channelDecode = normalizeDecode(obj, "", "");
+                // 兼容 urls:[{url,name,decode}] 与 urls:["地址$线路名"] 两种写法
                 ArrayList<String> sourceUrls = new ArrayList<>();
-                int sourceIndex = 1;
-                for (String url : urls) {
-                    String[] splitText = url.split("\\$", 2);
-                    sourceUrls.add(splitText[0]);
-                    if (splitText.length > 1)
-                        sourceNames.add(splitText[1]);
-                    else
-                        sourceNames.add("源" + sourceIndex);
-                    sourceIndex++;
+                ArrayList<String> sourceNames = new ArrayList<>();
+                ArrayList<String> sourceDecodes = new ArrayList<>();
+                ArrayList<String> parallelDecodes = parseDecodeList(obj.get("decodes"));
+                int sourceIndex = 0;
+                JsonElement urlsEle = obj.get("urls");
+                if (urlsEle != null && urlsEle.isJsonArray()) {
+                    for (JsonElement urlElement : urlsEle.getAsJsonArray()) {
+                        String rawUrl = "";
+                        String lineName = "";
+                        String lineDecode = channelDecode;
+                        if (urlElement.isJsonPrimitive()) {
+                            rawUrl = urlElement.getAsString().trim();
+                        } else if (urlElement.isJsonObject()) {
+                            JsonObject urlObj = urlElement.getAsJsonObject();
+                            rawUrl = optString(urlObj, "url");
+                            lineName = optString(urlObj, "name");
+                            String apiDecode = normalizeDecode(urlObj, "", "");
+                            if (!apiDecode.isEmpty()) lineDecode = apiDecode;
+                        } else {
+                            continue;
+                        }
+                        String[] splitText = rawUrl.split("\\$", 2);
+                        rawUrl = splitText[0].trim();
+                        if (lineName.isEmpty() && splitText.length > 1) lineName = splitText[1].trim();
+                        if (sourceIndex < parallelDecodes.size() && !parallelDecodes.get(sourceIndex).isEmpty())
+                            lineDecode = parallelDecodes.get(sourceIndex);
+                        if (rawUrl.isEmpty()) continue;
+                        sourceUrls.add(rawUrl);
+                        if (lineName.isEmpty())
+                            sourceNames.add("源" + (sourceIndex + 1));
+                        else
+                            sourceNames.add(lineName);
+                        sourceDecodes.add(lineDecode == null ? "" : lineDecode);
+                        sourceIndex++;
+                    }
+                } else {
+                    // 兼容单链接写法 {"url":"..."}
+                    String rawUrl = optString(obj, "url");
+                    String[] splitText = rawUrl.split("\\$", 2);
+                    rawUrl = splitText[0].trim();
+                    if (!rawUrl.isEmpty()) {
+                        sourceUrls.add(rawUrl);
+                        sourceNames.add(splitText.length > 1 && !splitText[1].trim().isEmpty()
+                                ? splitText[1].trim() : "源1");
+                        sourceDecodes.add(channelDecode);
+                    }
                 }
+                if (sourceUrls.isEmpty()) continue;
                 liveChannelItem.setChannelSourceNames(sourceNames);
                 liveChannelItem.setChannelUrls(sourceUrls);
+                liveChannelItem.setChannelDecodes(sourceDecodes);
                 liveChannelGroup.getLiveChannels().add(liveChannelItem);
             }
             liveChannelGroupList.add(liveChannelGroup);
         }
+    }
+
+    /** 读取字符串字段（不存在/非字符串返回空串） */
+    private static String optString(JsonObject obj, String key) {
+        if (obj == null) return "";
+        JsonElement ele = obj.get(key);
+        return ele != null && ele.isJsonPrimitive() ? ele.getAsString().trim() : "";
+    }
+
+    /**
+     * 统一解析解码方式：支持 "decode":"soft/hard/system/exo/ali/auto"，
+     * 也兼容 "playerType":-1/0/1/2/3（-1=跟随全局，0=系统，1=Ijk，2=Exo，3=Ali）。
+     */
+    private static String normalizeDecode(JsonObject obj, String decodeKey, String playerTypeKey) {
+        if (obj == null) return "";
+        String decode = decodeKey == null || decodeKey.isEmpty() ? optString(obj, "decode") : optString(obj, decodeKey);
+        if (decode.isEmpty()) decode = optString(obj, "codec");
+        if (!decode.isEmpty()) return normalizeDecodeToken(decode);
+        JsonElement typeEle = obj.get(playerTypeKey == null || playerTypeKey.isEmpty() ? "playerType" : playerTypeKey);
+        if (typeEle != null && typeEle.isJsonPrimitive()) {
+            int playerType = -1;
+            try {
+                playerType = typeEle.getAsInt();
+            } catch (Throwable ignored) {
+                return "";
+            }
+            switch (playerType) {
+                case 0:
+                    return "system";
+                case 1:
+                    return "soft";
+                case 2:
+                    return "exo";
+                case 3:
+                    return "ali";
+                default:
+                    return "";
+            }
+        }
+        return "";
+    }
+
+    /** 解码方式别名统一为英文标记，未知值原样保留（由播放器侧忽略） */
+    private static String normalizeDecodeToken(String decode) {
+        String token = decode == null ? "" : decode.trim().toLowerCase();
+        if (token.isEmpty()) return "";
+        switch (token) {
+            case "auto":
+            case "default":
+            case "follow":
+            case "跟随":
+                return "auto";
+            case "system":
+            case "sys":
+            case "系统":
+            case "0":
+                return "system";
+            case "soft":
+            case "sw":
+            case "ijk":
+            case "ijk-soft":
+            case "软解":
+            case "软解码":
+            case "1":
+                return "soft";
+            case "hard":
+            case "hw":
+            case "ijk-hard":
+            case "硬解":
+            case "硬解码":
+                return "hard";
+            case "exo":
+            case "2":
+                return "exo";
+            case "ali":
+            case "aliplayer":
+            case "3":
+                return "ali";
+            default:
+                return token;
+        }
+    }
+
+    /** 解析 urls 的平行解码数组 decodes（元素可为字符串或数字） */
+    private static ArrayList<String> parseDecodeList(JsonElement ele) {
+        ArrayList<String> list = new ArrayList<>();
+        if (ele == null || !ele.isJsonArray()) return list;
+        for (JsonElement item : ele.getAsJsonArray()) {
+            if (item != null && item.isJsonPrimitive()) {
+                list.add(normalizeDecodeToken(item.getAsString()));
+            } else {
+                list.add("");
+            }
+        }
+        return list;
     }
 
     public String getSpider() {

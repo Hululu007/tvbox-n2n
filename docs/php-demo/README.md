@@ -34,7 +34,8 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 |-----|------------------|------|
 | `index.php?r=config` | `CONFIG_URL` | 远程主配置 |
 | `index.php?r=api` | `api` | 点播源配置（TVBox 标准 JSON） |
-| `index.php?r=live` | `live` | 直播源 JSON（客户端兼容 txt/m3u） |
+| `index.php?r=live` | `live` | 直播源 JSON（可选 `format=txt`；客户端兼容 txt/m3u） |
+| `index.php?r=live&format=txt` | `live` | 直播源传统 txt 文本（`分组,#genre#` / `频道,url#url2`） |
 | `index.php?r=epg&ch={频道名}&date={yyyy-MM-dd}&days={天数}` | `epg` | 节目单 JSON（支持一次返回多天） |
 | `index.php?r=market&category={category}&sort={sort}&page={page}&pageSize={pageSize}&keyword={keyword}` | `appMarket.url` | 应用市场列表 |
 | `index.php?r=detail&pkg={packageName}` | `appMarket.detailUrl` | 应用详情 |
@@ -55,7 +56,14 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   {
     "group": "央视",
     "channels": [
-      { "name": "CCTV-1 综合", "urls": ["https://example.com/cctv1.m3u8", "https://example.com/cctv1-2.m3u8$线路2"] }
+      {
+        "name": "CCTV-1 综合",
+        "decode": "soft",
+        "urls": [
+          "https://example.com/cctv1.m3u8",
+          { "url": "https://example.com/cctv1-2.m3u8", "name": "线路2", "decode": "hard" }
+        ]
+      }
     ]
   }
 ]
@@ -63,7 +71,12 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 - 顶层为分组数组（或 `{"groups":[...]}` 对象形式，客户端均可识别）；每个分组含 `group` 与 `channels`；
 - 同一频道多个播放地址写入 `urls` 数组，`地址$线路名` 可为地址命名；
+- **每频道/线路解码 `decode`（可选）**：`soft`/`hard`/`system`/`exo`/`ali`/`auto`。
+  - 写在频道对象上=该频道所有线路默认；写在 urls 对象上=单线路独立解码；
+  - 也兼容 `playerType`（-1/0/1/2/3）与平行数组 `decodes`；
+  - 客户端仅在用户未手动设置该线路解码时采用，用户播放中调整后以用户设置为准；
 - **支持的节目类型（播放地址协议）**：`http(s)` 直链（m3u8/flv/mp4 等）、`rtmp://`、`rtsp://`、`webview://`（WebView 直接播网页）、`video://`（WebView 嗅探网页视频）、`tkp2p://`（内置 P2P，引擎见主配置 `tkp2p` 段）；
+- 请求 `index.php?r=live&format=txt` 返回传统 txt（`分组,#genre#` / `频道,url#url2`），客户端同样兼容；txt 不携带 `decode`；
 - 客户端同时兼容传统 txt（`分组,#genre#` / `频道,url#url2`）与 m3u（`#EXTM3U`/`#EXTINF`）文本源，按内容自动识别。
 
 ### 3.2 EPG JSON 格式
@@ -115,7 +128,7 @@ $out = bin2hex(openssl_encrypt($plain, 'AES-128-ECB', substr($secret, 0, 16), OP
 
 ### 4.3 注意事项
 
-- 客户端会自动识别明文/密文；**响应内容类型必须是 JSON / 直播 txt（直播推荐用 JSON）**，解密后客户端靠首字符 `{`、`[`、`/`、`#EXTM3U`、`#genre#` 判定（`<` 仅兼容旧 XMLTV）；
+- 客户端会自动识别明文/密文；**响应内容类型必须是 JSON / 直播 txt / m3u**，解密后客户端靠首字符 `{`、`[`、`/`、`#EXTM3U`、`#genre#` 判定（`<` 仅兼容旧 XMLTV）；`r=live` 推荐用 JSON（可携带逐频道/线路 `decode`），也支持 `format=txt` 返回传统文本源；
 - 加密输出时 `Content-Type` 改为 `text/plain`，不要把密文包在 JSON 字符串里；
 - 换密钥后旧密文立即失效，客户端会自动回退到明文/缓存（视接口而定）。
 

@@ -1,7 +1,7 @@
 # TVBox 开发使用文档
 
 > 基于 [takagen99/Box](https://github.com/takagen99/Box)（commit `258a5fe`）内化。
-> 本仓库的定制重点：**应用内无设置页（全部配置由 JSON 下发）**、**APK 不内置配置 JSON（远程/本地地址由代码 CONFIG_URL 指定）**、**内置系统桌面能力**、**接口密文下发（AES-128-ECB）**、**接口请求携带本机参数（mac/ip/系统版本/App版本）**、**Android 4.4（API19）兼容**、首页推荐默认多行、**点播接口按需加载 + 切源刷新插件 + 启动等待画面**。
+> 本仓库的定制重点：**应用内无设置页（全部配置由 JSON 下发）**、**APK 不内置配置 JSON（远程/本地地址由代码 CONFIG_URL 指定）**、**内置系统桌面能力**、**接口密文下发（AES-128-ECB）**、**接口请求携带本机参数（mac/ip/系统版本/App版本）**、**Android 4.4（API19）兼容**、首页推荐默认多行、**点播界面直接显示分类 + 切源原地重载（缓存配置 + 插件 + 分类刷新）**。
 > hin2n 组网已拆分为独立可安装 App（源码在独立仓库），本仓库只保留首页入口；细节见 [hin2n.md](file:///f:/tvbox-n2n/docs/hin2n.md)，配置字段 demo 见 [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)。
 
 ---
@@ -139,8 +139,8 @@ tvbox-n2n/
 
 - 首页（`HomeActivity`）**不再加载点播接口**：不调用 `ApiConfig.loadConfig/loadJar`、不提示加载成功、不展示点播免责声明，点播接口字段全部延迟到点播界面。
 - `VodActivity.startEntry()`：显示启动等待画面（`vodSplash` 配置来自主接口，见 [api-and-config.md §2.9](file:///f:/tvbox-n2n/docs/api-and-config.md)）→ 若 `ApiConfig.isConfigLoaded()` 为 false 则 `loadConfig(true)` → 选择可用源 → `prepareSource(源)` 预加载插件 → `getSort(key, true)` → 分类结果返回后 `hideSplash()` 自动展示数据。
-- `VodActivity.reloadHome()`（切源）：显示等待画面 → `prepareSource(新源)`（刷新 jar/js/py）→ `getSort(force=true)`；等待画面在结果返回/超时 30s 后关闭；加载失败的提示与重试按钮只出现在点播界面。
-- 首分类「热播推荐」为伪分类 `GridFragment.RECOMMEND_SORT_ID`：不发分类请求，直接展示 `RemoteConfig.homeRecMovies()`（为空时用点播接口 `homeContent.videoList`），默认选中并加载。
+- `VodActivity.reloadHome()`（切源）：显示等待画面 → `ApiConfig.loadConfig(true)` **复用本地缓存重新解析接口配置**（同步 sites/parses/lives）→ `prepareSource(当前源)` 重建 jar/js/py 插件 → `getSort(force=true)` 绕过分类缓存；等待画面在结果返回/超时 30s 后关闭；加载失败的提示与重试按钮只出现在点播界面。
+- 首分类「热播推荐」为伪分类 `GridFragment.RECOMMEND_SORT_ID`：固定为第一个分类，不发分类请求，**只展示 `RemoteConfig.homeRecMovies()`，未配置时为空态，不再回退点播接口 `homeContent.videoList`/豆瓣**，默认选中并加载。
 - `HomeActivity` 依赖 `RemoteConfig` 的主接口状态（`PRIMARY_LOADING/OK/FAIL`）：主接口失败且无缓存时启动 `ConfigErrorActivity` 全屏报错（重试/退出），不再加载其它界面。
 
 ### 3.6 升级检查与 APK 下载安装管线
@@ -177,12 +177,13 @@ tvbox-n2n/
 
 ### 3.10 点播切源界面内直接刷新（2026-11-05 调整）
 
-[VodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/VodActivity.java) `showSiteSwitch()` 点击回调：先 `OkGo.cancelTag(旧源key + "_sort")` 取消旧源未完成的分类请求 → `ApiConfig.get().setSourceBean(value)` → Toast「已切换到「xxx」」→ 直接调用本界面 `reloadHome()`（`sourceViewModel.getSort(key, true)` 强制绕过 `sortCache` 重新拉取当前源分类，源名立即更新到左上角）。**不再返回主界面刷新，也不再自动重建首页/重新进入点播**，根除了旧流程（finish → HomeActivity 重建 → 再 startActivity(VodActivity)）中的闪退与 Activity 重建竞态。
+[VodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/VodActivity.java) `showSiteSwitch()` 点击回调：先 `OkGo.cancelTag(旧源key + "_sort")` 取消旧源未完成的分类请求 → `ApiConfig.get().setSourceBean(value)` → Toast「已切换到「xxx」」→ 直接调用本界面 `reloadHome()`。`reloadHome()` 与参考项目一致按「**复用缓存配置 → 重建插件 → 强制刷新分类**」执行：`ApiConfig.loadConfig(true)` 复用本地缓存重新解析接口配置（同步 sites/parses/lives、更新源列表）→ `afterConfigLoaded()` 内 `prepareSource(当前源)` 重建 jar/js/py 插件 → `sourceViewModel.getSort(key, true)` 强制绕过 `sortCache` 拉取分类，源名立即更新到左上角。**全程停留在当前点播界面，不返回主界面、不重启界面**。
 
 配套调整：
 
 - **主页面已去除对点播接口的全部引用**：`HomeActivity` 不再持有 `SourceViewModel`、不观察 `sortResult`、不再请求 `homeContent`；`sRefreshOnResume` / `sReopenVodAfterRefresh` 静态标记与 `UserFragment.updateHomeRec()` 一并删除。
-- **首页推荐改由主接口提供**：`UserFragment.initHomeHotVod()` 在 `home.recMovies` 非空时直接展示（标题「推荐」），空数组才回退豆瓣热播（含当日缓存）；`homeRec` 模式 0/1 均走该逻辑，模式 2 仍为观看历史。
+- **首分类「热播推荐」**：固定为第一个分类（`GridFragment.RECOMMEND_SORT_ID` 伪分类，不发分类请求），数据只取 `RemoteConfig.homeRecMovies()`；**不再回退点播接口 `homeContent.videoList` 或豆瓣**，未配置时显示空态。
+- **首页推荐仍由主接口提供**：`UserFragment.initHomeHotVod()` 在 `home.recMovies` 非空时直接展示（标题「推荐」），空数组才回退豆瓣热播（含当日缓存）；`homeRec` 模式 0/1 均走该逻辑，模式 2 仍为观看历史。
 - **首页切源（MENU 键 / feature=siteSwitch）**：仅 `setSourceBean` + Toast，不再 `reloadHome()` 重建首页（首页内容已不依赖点播源）。
 
 ### 3.11 接口加密协议（ConfigCrypto）
@@ -259,7 +260,7 @@ echo bin2hex(aesEncrypt($miniData, $SECRET));   // 纯 hex（偶数长度），�
 | 2 | `RemoteConfig.fetchAndApply()` | 二次远程配置 `remoteConfigUrl`（缓存 `rc_remote_raw` 存**解密后明文**，与旧版缓存格式兼容） |
 | 3 | `ApiConfig` FindResult else 分支 | 点播接口（用户/预置 `api` 地址；`2423` 原生 CBC 格式保持原逻辑不受影响） |
 | 4 | `CustomVodActivity.applyCustomJson()` | 自定义点播接口（http/assets/file 三种来源统一过解密） |
-| 5 | `LivePlayActivity.loadProxyLives()` | 直播接口（解密后交 `TxtSubscribe.parse`，支持 m3u/txt/json） |
+| 5 | `LivePlayActivity.loadProxyLives()` | 直播接口（解密后 JSON 走 `TxtSubscribe.jsonLivesArray()` 保留 decode，txt/m3u 走 `TxtSubscribe.parse`） |
 | 6 | `LivePlayActivity` EPG 加载 | 节目单接口 |
 | 7 | `UpgradeChecker` checkUrl 响应 | 升级检查接口 |
 
@@ -325,10 +326,12 @@ $miniData = getMiniData($mac);   // 按设备查询/生成数据，再走 §3.11
 - `sEpgFetching` 集合防止同一频道同一日期并发重复请求。
 - **节目单回看**：`supportBack(url)` 识别 PLTV/8888、`playseek`、`starttime`、`seek=` 等时移源；点选已结束节目时先校验 `currentLiveChannelItem.getinclude_back()`，不支持则 Toast「当前节目源不支持回看」并保持直播，避免直接改 URL 导致黑屏。
 
-**直播按节目源独立解码（参照 MQPlayer 解码配置）**（[LivePlayerManager.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/bean/LivePlayerManager.java) + [LivePlayActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java)）：
-- 存储：Hawk 键 `live_source_decode_<MD5(线路URL)>`，值为原有 `{"pl":0/1/2,"ijk":"硬解码"/"软解码"}`；读取顺序 = 当前线路 URL 配置 → 旧频道名配置（兼容历史数据）→ 全局默认；
-- 切台/切线路时 `getLiveChannelPlayer(videoView, channelName, url)` 都会套用新节目源配置，各线路解码方式互不影响；
-- 设置面板第 3 组改名「节目源解码」，切换后立即写当前线路并 Toast「已为当前节目源保存解码方式」；线路选择列表会给已单独设置过的线路追加 `[已设硬解/软解/系统/EXO]` 标记（`getSourceDecodeLabel()`）。
+**直播按节目源独立解码（参照 MQPlayer 解码配置 + 接口下发默认值）**（[LivePlayerManager.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/bean/LivePlayerManager.java) + [LivePlayActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/LivePlayActivity.java)）：
+- 用户设置存储：Hawk 键 `live_source_decode_<MD5(线路URL)>`，值为原有 `{"pl":0/1/2,"ijk":"硬解码"/"软解码"}`；读取优先级 = **当前线路 URL 的用户配置 → 接口下发的线路 `decode` 默认值 → 旧频道名配置（兼容历史数据） → 全局默认**；
+- 接口字段：直播 JSON 的频道对象或线路对象可带 `decode`（soft/hard/system/exo/ali/auto）或 `playerType`（-1/0/1/2/3），也支持平行数组 `decodes`；`ApiConfig.loadLives()` 解析为 `LiveChannelItem.channelDecodes`，`LivePlayerManager.buildServerConfig()` 转为播放器配置，**不写 Hawk**，用户手动调整后仍以用户设置为准；
+- 切台/切线路时 `getLiveChannelPlayer(videoView, channelName, url, decode)` 都会套用新节目源配置，各线路解码方式互不影响；
+- 设置面板第 3 组「节目源解码」，切换后立即写当前线路并 Toast「已为当前节目源保存解码方式」；线路选择列表会显示生效的解码标记（用户配置优先，否则显示接口默认值，`getSourceDecodeLabel(url, decode)`）；
+- 直播接口兼容 **JSON / txt / m3u**：JSON 走 `TxtSubscribe.jsonLivesArray()`（保留 decode 扩展字段）交给 `ApiConfig.loadLives()`，txt/m3u 走 `TxtSubscribe.parse()` 文本解析，按内容自动识别。
 
 **阿里云播放器 License**：AliyunPlayer SDK 5.5+ 强制校验 License，未配置时 SDK 内部弹「配置信息初始化失败，请重启app」Toast（不影响播放）。json 新增 `aliLicenseKey`，`PlayerHelper.init()` 反射调 `AliPlayerGlobalSettings.setLicenseKey`（反射兼容旧版 SDK 无该类的情况，失败静默忽略）。
 

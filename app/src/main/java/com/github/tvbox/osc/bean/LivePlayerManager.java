@@ -56,7 +56,19 @@ public class LivePlayerManager {
     }
 
     public void getLiveChannelPlayer(VideoView videoView, String channelName, String sourceUrl) {
+        getLiveChannelPlayer(videoView, channelName, sourceUrl, null);
+    }
+
+    /**
+     * 读取并应用解码配置。
+     * 优先级：用户为「节目源 URL」单独保存的配置 → 接口下发的默认 decode → 旧的「频道名」配置 → 全局默认。
+     * 接口下发的 decode 只在用户尚未单独设置时作为首次播放的默认值，不会覆盖用户后续的手动修改。
+     */
+    public void getLiveChannelPlayer(VideoView videoView, String channelName, String sourceUrl, String serverDecode) {
         JSONObject playerConfig = getSourceConfig(sourceUrl);
+        if (playerConfig == null) {
+            playerConfig = buildServerConfig(serverDecode);
+        }
         if (playerConfig == null) {
             playerConfig = channelName == null ? null : Hawk.get(channelName, null);
         }
@@ -81,6 +93,68 @@ public class LivePlayerManager {
         }
 
         currentPlayerConfig = playerConfig;
+    }
+
+    /** 把接口下发的 decode 标记转换为播放器配置；auto/空值返回 null（继续使用默认配置） */
+    private JSONObject buildServerConfig(String serverDecode) {
+        if (serverDecode == null) return null;
+        String token = serverDecode.trim().toLowerCase();
+        if (token.isEmpty() || token.equals("auto") || token.equals("default") || token.equals("follow"))
+            return null;
+        JSONObject config;
+        try {
+            config = new JSONObject(defaultPlayerConfig.toString());
+            switch (token) {
+                case "system":
+                case "sys":
+                case "0":
+                    config.put("pl", 0);
+                    config.put("ijk", "软解码");
+                    break;
+                case "soft":
+                case "sw":
+                case "ijk":
+                case "ijk-soft":
+                case "1":
+                    config.put("pl", 1);
+                    config.put("ijk", "软解码");
+                    break;
+                case "hard":
+                case "hw":
+                case "ijk-hard":
+                    config.put("pl", 1);
+                    config.put("ijk", "硬解码");
+                    break;
+                case "exo":
+                case "2":
+                    config.put("pl", 2);
+                    config.put("ijk", "软解码");
+                    break;
+                case "ali":
+                case "aliplayer":
+                case "3":
+                    config.put("pl", 3);
+                    config.put("ijk", "软解码");
+                    break;
+                default:
+                    return null;
+            }
+            return config;
+        } catch (JSONException e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private String getDecodeLabelFromToken(String serverDecode) {
+        JSONObject config = buildServerConfig(serverDecode);
+        if (config == null) return "";
+        int playerType = config.optInt("pl", 0);
+        String ijkCodec = config.optString("ijk", "软解码");
+        if (playerType == 0) return "系统";
+        if (playerType == 1) return ijkCodec.equals("硬解码") ? "硬解" : "软解";
+        if (playerType == 2) return "EXO";
+        return "Ali";
     }
 
     public int getLivePlayerType() {
@@ -168,8 +242,13 @@ public class LivePlayerManager {
 
     /** 返回节目源的解码方式简称，未单独设置返回空串（用于线路列表上的标记） */
     public String getSourceDecodeLabel(String sourceUrl) {
+        return getSourceDecodeLabel(sourceUrl, null);
+    }
+
+    /** 线路标记：用户单独设置优先，其次显示接口下发的 decode 默认值 */
+    public String getSourceDecodeLabel(String sourceUrl, String serverDecode) {
         JSONObject config = getSourceConfig(sourceUrl);
-        if (config == null) return "";
+        if (config == null) return getDecodeLabelFromToken(serverDecode);
         int playerType = config.optInt("pl", 0);
         String ijkCodec = config.optString("ijk", "软解码");
         if (playerType == 0) return "系统";
