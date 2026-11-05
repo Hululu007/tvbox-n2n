@@ -65,6 +65,10 @@ public class App extends MultiDexApplication {
         super.onCreate();
         // 全局异常捕获：任何线程未捕获异常写 crash.log 并安静重启进程，避免系统弹「tvbox结束运行」
         initCrashHandler();
+        // 必须在任何可能使用 Path/Util 的代码之前调用 Init.set(context)：
+        // Path.files()/Path.cache()/Util.md5() 等大量静态方法都依赖 Init.context()，
+        // 如果为 null 会直接 NPE。parent project 中由 spider jar 自己调，这里主动调用保证安全。
+        com.github.catvod.Init.set(this);
         SubtitleHelper.initSubtitleColor(this);
         // Hawk 必须先初始化：内置 JSON 的设置项默认值依赖 Hawk
         // 存储后端替换为本地 JSON 文件（filesDir/tvbox-config-local.json）+ 明文，

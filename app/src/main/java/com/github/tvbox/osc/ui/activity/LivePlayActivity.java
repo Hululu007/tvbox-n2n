@@ -2120,8 +2120,7 @@ public class LivePlayActivity extends BaseActivity {
                                 Hawk.put(HawkConfig.LIVE_URL, liveURL);
                                 liveChannelGroupList.clear();
                                 try {
-                                    liveURL = Base64.encodeToString(liveURL.getBytes("UTF-8"), Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP);
-                                    liveURL = "http://127.0.0.1:9978/proxy?do=live&type=txt&ext=" + liveURL;
+                                    // 直接传原始 URL — loadProxyLives 已支持直接请求和代理格式两种模式
                                     loadProxyLives(liveURL);
                                 } catch (Throwable th) {
                                     th.printStackTrace();
@@ -2157,9 +2156,8 @@ public class LivePlayActivity extends BaseActivity {
             String liveUrl = Hawk.get(HawkConfig.LIVE_URL, "");
             if (liveUrl != null && !liveUrl.trim().isEmpty()) {
                 try {
-                    String b64 = Base64.encodeToString(liveUrl.trim().getBytes("UTF-8"),
-                            Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP);
-                    loadProxyLives("http://127.0.0.1:9978/proxy?do=live&type=txt&ext=" + b64);
+                    // 直接传原始 URL — loadProxyLives 已支持直接请求和代理格式两种模式
+                    loadProxyLives(liveUrl.trim());
                     return;
                 } catch (Throwable th) {
                     th.printStackTrace();
@@ -2170,7 +2168,9 @@ public class LivePlayActivity extends BaseActivity {
             return;
         }
 
-        if (list.size() == 1 && list.get(0).getGroupName().startsWith("http://127.0.0.1")) {
+        // groupName 存的是直播列表 URL（可能是原始 URL，也可能是代理格式 URL），都能被 loadProxyLives 处理
+        if (list.size() == 1 && !list.get(0).getGroupName().isEmpty()
+                && (list.get(0).getGroupName().startsWith("http://") || list.get(0).getGroupName().startsWith("https://"))) {
             loadProxyLives(list.get(0).getGroupName());
         } else {
             liveChannelGroupList.clear();
@@ -2368,13 +2368,28 @@ public class LivePlayActivity extends BaseActivity {
     //加载列表
     public void loadProxyLives(String url) {
         try {
-            Uri parsedUrl = Uri.parse(url);
-            url = new String(Base64.decode(parsedUrl.getQueryParameter("ext"), Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8");
-            if (url.equals("")) {
+            // 兼容两种格式：
+            // 1. n2n 代理格式：http://127.0.0.1:9978/proxy?do=live&type=txt&ext=<base64>
+            //    → 解码 ext 得到真实直播列表 URL
+            // 2. 直接 URL：http(s)://.../live.json 或 .txt 或 .m3u8
+            //    → 直接当作直播列表 URL 使用
+            String decoded = null;
+            try {
+                Uri parsedUrl = Uri.parse(url);
+                String ext = parsedUrl.getQueryParameter("ext");
+                if (ext != null && !ext.isEmpty()) {
+                    decoded = new String(Base64.decode(ext, Base64.DEFAULT | Base64.URL_SAFE | Base64.NO_WRAP), "UTF-8");
+                }
+            } catch (Throwable ignored) {
+                // ext 解码失败或 URL 不是代理格式，忽略后走下面的直接 URL 路径
+            }
+            String realUrl = (decoded != null && !decoded.isEmpty()) ? decoded : url;
+            if (realUrl == null || realUrl.trim().isEmpty()) {
                 Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_live_url), Toast.LENGTH_LONG).show();
                 finish();
                 return;
             }
+            url = realUrl;
         } catch (Throwable th) {
             Toast.makeText(App.getInstance(), getString(R.string.act_live_play_empty_channel), Toast.LENGTH_SHORT).show();
             finish();
