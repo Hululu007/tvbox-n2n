@@ -171,3 +171,40 @@ A：demo 默认 `versionCode=0`，需把它改成大于当前客户端的版本�
 
 **Q：如何按 MAC 下发不同配置？**
 A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 JSON 即可；客户端无需改动。
+
+## 7. 界面（酒店 IPTV 桌面）与新增配置字段
+
+`index.php?r=config` 已包含以下演示字段，可直接修改：
+
+| 字段 | 说明 |
+| --- | --- |
+| `placeholderImage` | 图片下载完成前显示的预设占位图 |
+| `forceOverride` | 接口强制覆盖：`false`=用户手动配置优先；`true`=全部覆盖；也可对象逐项控制 |
+| `defaultScreen` | 启动加载的界面 id：`standard` 或 `screens` 中的 id |
+| `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |
+
+按 MAC 返回不同酒店桌面的示例：
+
+```php
+$hotel = $dev['mac'] === 'AA:BB:CC:DD:EE:FF';
+$config['defaultScreen'] = $hotel ? 'hotel_a' : 'standard';
+$config['screens'] = [[
+    'id'       => 'hotel_a',
+    'name'     => 'A 酒店桌面',
+    'layout'   => 'hotel_grid',
+    'title'    => '欢迎入住 A 酒店',
+    'ticker'   => '前台电话 8888',
+    'api'      => 'http://hotel-a.example.com/vod.json',
+    'live'     => 'http://hotel-a.example.com/live.json',
+    'epg'      => 'http://hotel-a.example.com/epg.json',
+    'columns'  => 3,
+    'rows'     => 2,
+    'entries'  => [
+        ['name' => '点播', 'type' => 'page', 'target' => 'vod', 'icon' => 'hm_vod'],
+        ['name' => '直播', 'type' => 'page', 'target' => 'live', 'icon' => 'hm_live'],
+        ['name' => '切换界面', 'type' => 'feature', 'target' => 'screenSwitch', 'icon' => 'hm_settings'],
+    ],
+]];
+```
+
+完整教程（含布局插件与小白步骤）见 [../tvbox-dev.md](../tvbox-dev.md) 第 11 章。

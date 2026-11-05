@@ -120,6 +120,8 @@ public class VodActivity extends BaseActivity {
     protected void init() {
         initView();
         initViewModel();
+        // 热播推荐与主界面使用同一套规则：主接口推荐 / 豆瓣热播 / 观看历史
+        loadRecommendData();
         startEntry();
     }
 
@@ -247,6 +249,14 @@ public class VodActivity extends BaseActivity {
         });
         // 搜索
         tvFindListener();
+        // 点播源配置入口（点播接口地址 + 手机扫码配置）
+        findViewById(R.id.tvVodSetting).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                FastClickCheckUtil.check(view);
+                showVodSourceConfig();
+            }
+        });
         setLoadSir(this.contentLayout);
         // 滚动公告：可由远程 JSON 配置是否在点播界面显示（notice.show.vod，默认显示）
         com.github.tvbox.osc.n2n.NoticeBar.show(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
@@ -276,12 +286,6 @@ public class VodActivity extends BaseActivity {
                     return;
                 }
                 try {
-                    // 热播推荐：只展示主接口 home.recMovies 配置的内容（未配置时为空态）
-                    List<Movie.Video> mainRec = com.github.tvbox.osc.n2n.RemoteConfig.homeRecMovies();
-                    recommendVideos.clear();
-                    if (mainRec != null && !mainRec.isEmpty()) {
-                        recommendVideos.addAll(mainRec);
-                    }
                     // 推荐项未指定源时归属当前源，保证点击进详情时能找到站点
                     for (Movie.Video v : recommendVideos) {
                         if (v.sourceKey == null || v.sourceKey.isEmpty()) {
@@ -315,7 +319,7 @@ public class VodActivity extends BaseActivity {
         currentSelected = 0;
         sortFocused = 0;
         List<MovieSort.SortData> sorts = new ArrayList<>(sortAdapter.getData());
-        // 热播推荐固定为点播界面第一个分类并默认展示；数据只取主接口 recMovies，未配置时显示空态
+        // 热播推荐固定为点播界面第一个分类并默认展示；数据与主界面一致（recMovies/豆瓣/历史）
         MovieSort.SortData rec = new MovieSort.SortData(GridFragment.RECOMMEND_SORT_ID, "热播推荐");
         rec.sort = -100;
         sorts.add(0, rec);
@@ -755,6 +759,62 @@ public class VodActivity extends BaseActivity {
         return super.dispatchKeyEvent(event);
     }
 
+    /** 重启点播界面（选源/修改点播接口后使用），保留主界面返回栈 */
+    private void restartVod() {
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                Intent intent = new Intent(VodActivity.this, VodActivity.class);
+                finish();
+                startActivity(intent);
+                overridePendingTransition(0, 0);
+            }
+        }, 200);
+    }
+
+    /** 点播源配置：点播接口地址 + 手机扫码（仅显示点播接口表单） */
+    private void showVodSourceConfig() {
+        com.github.tvbox.osc.ui.dialog.ApiDialog dialog =
+                new com.github.tvbox.osc.ui.dialog.ApiDialog(this, com.github.tvbox.osc.ui.dialog.ApiDialog.MODE_VOD);
+        dialog.setOnListener(new com.github.tvbox.osc.ui.dialog.ApiDialog.OnListener() {
+            @Override
+            public void onchange(String api) {
+                restartVod();
+            }
+        });
+        dialog.show();
+    }
+
+    /**
+     * 加载热播推荐：与主界面规则一致（主接口 home.recMovies / 豆瓣热播 / 观看历史）。
+     * 网络数据晚到时刷新已创建的首个推荐分类。
+     */
+    private void loadRecommendData() {
+        com.github.tvbox.osc.n2n.RecommendLoader.load(this, new com.github.tvbox.osc.n2n.RecommendLoader.Callback() {
+            @Override
+            public void onResult(List<Movie.Video> videos) {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                recommendVideos.clear();
+                if (videos != null) {
+                    recommendVideos.addAll(videos);
+                }
+                for (Movie.Video v : recommendVideos) {
+                    if (v.sourceKey == null || v.sourceKey.isEmpty()) {
+                        v.sourceKey = pendingSortKey;
+                    }
+                }
+                if (!fragments.isEmpty() && fragments.get(0) instanceof GridFragment) {
+                    ((GridFragment) fragments.get(0)).setRecommendVideos(recommendVideos);
+                }
+            }
+        });
+    }
+
     // 站点切换
     void showSiteSwitch() {
         List<SourceBean> sites = new ArrayList<>();
@@ -789,9 +849,9 @@ public class VodActivity extends BaseActivity {
                     }
                     ApiConfig.get().setSourceBean(value);
                     fDialog.dismiss();
-                    // 切换源后直接在本界面刷新点播分类列表，不再返回主界面刷新
-                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」", Toast.LENGTH_SHORT).show();
-                    reloadHome();
+                    // 与参考项目一致：选源后重启点播界面，重新加载该源的分类与推荐
+                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」，正在重启点播界面", Toast.LENGTH_SHORT).show();
+                    restartVod();
                 }
 
                 @Override

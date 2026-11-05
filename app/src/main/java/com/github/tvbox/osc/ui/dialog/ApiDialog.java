@@ -38,12 +38,20 @@ import me.jessyan.autosize.utils.AutoSizeUtils;
  * @since 2020/12/27
  */
 public class ApiDialog extends BaseDialog {
+    /** 全部接口（首页设置） */
+    public static final int MODE_ALL = 0;
+    /** 仅点播接口（点播界面右上角设置入口） */
+    public static final int MODE_VOD = 1;
+    /** 仅直播源 + EPG（直播界面设置入口） */
+    public static final int MODE_LIVE = 2;
+
     private final ImageView ivQRCode;
     private final TextView tvAddress;
     private final EditText inputApi;
     private final EditText inputLive;
     private final EditText inputEPG;
     private final EditText inputProxy;
+    private final int mode;
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void refresh(RefreshEvent event) {
@@ -62,7 +70,12 @@ public class ApiDialog extends BaseDialog {
     }
 
     public ApiDialog(@NonNull @NotNull Context context) {
+        this(context, MODE_ALL);
+    }
+
+    public ApiDialog(@NonNull @NotNull Context context, int mode) {
         super(context);
+        this.mode = mode;
         setContentView(R.layout.dialog_api);
         setCanceledOnTouchOutside(true);
         ivQRCode = findViewById(R.id.ivQRCode);
@@ -100,45 +113,53 @@ public class ApiDialog extends BaseDialog {
                     newApi = newApi.replace("./", "clan://localhost/");
                 }
                 // 用户手动保存过即置手动标记：此后内置/远程 JSON 不再覆盖该接口（含清空操作）
-                markManual(HawkConfig.API_URL);
-                markManual(HawkConfig.LIVE_URL);
-                markManual(HawkConfig.EPG_URL);
-                markManual(HawkConfig.PROXY_SERVER);
-                // 点播接口：允许清空保存（清空后 Hawk 中就是空串）
-                if (!newApi.isEmpty()) {
-                    ArrayList<String> history = Hawk.get(HawkConfig.API_HISTORY, new ArrayList<String>());
-                    if (!history.contains(newApi))
-                        history.add(0, newApi);
-                    if (history.size() > 20)
-                        history.remove(20);
-                    Hawk.put(HawkConfig.API_HISTORY, history);
-                }
-                if (listener != null) {
-                    listener.onchange(newApi);
+                // 仅在当前模式涉及的表单上打标记，避免无关接口被误锁。
+                if (mode != MODE_LIVE) {
+                    markManual(HawkConfig.API_URL);
+                    // 点播接口：允许清空保存（清空后 Hawk 中就是空串）
+                    Hawk.put(HawkConfig.API_URL, newApi);
+                    if (!newApi.isEmpty()) {
+                        ArrayList<String> history = Hawk.get(HawkConfig.API_HISTORY, new ArrayList<String>());
+                        if (!history.contains(newApi))
+                            history.add(0, newApi);
+                        if (history.size() > 20)
+                            history.remove(20);
+                        Hawk.put(HawkConfig.API_HISTORY, history);
+                    }
+                    if (listener != null) {
+                        listener.onchange(newApi);
+                    }
                 }
                 dismiss();
-                // Capture Live input into Settings & Live History (max 20)
-                Hawk.put(HawkConfig.LIVE_URL, newLive);
-                if (!newLive.isEmpty()) {
-                    ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
-                    if (!liveHistory.contains(newLive))
-                        liveHistory.add(0, newLive);
-                    if (liveHistory.size() > 20)
-                        liveHistory.remove(20);
-                    Hawk.put(HawkConfig.LIVE_HISTORY, liveHistory);
+                if (mode != MODE_VOD) {
+                    markManual(HawkConfig.LIVE_URL);
+                    markManual(HawkConfig.EPG_URL);
+                    // Capture Live input into Settings & Live History (max 20)
+                    Hawk.put(HawkConfig.LIVE_URL, newLive);
+                    if (!newLive.isEmpty()) {
+                        ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
+                        if (!liveHistory.contains(newLive))
+                            liveHistory.add(0, newLive);
+                        if (liveHistory.size() > 20)
+                            liveHistory.remove(20);
+                        Hawk.put(HawkConfig.LIVE_HISTORY, liveHistory);
+                    }
+                    // Capture EPG input into Settings
+                    Hawk.put(HawkConfig.EPG_URL, newEPG);
+                    if (!newEPG.isEmpty()) {
+                        ArrayList<String> EPGHistory = Hawk.get(HawkConfig.EPG_HISTORY, new ArrayList<String>());
+                        if (!EPGHistory.contains(newEPG))
+                            EPGHistory.add(0, newEPG);
+                        if (EPGHistory.size() > 20)
+                            EPGHistory.remove(20);
+                        Hawk.put(HawkConfig.EPG_HISTORY, EPGHistory);
+                    }
                 }
-                // Capture EPG input into Settings
-                Hawk.put(HawkConfig.EPG_URL, newEPG);
-                if (!newEPG.isEmpty()) {
-                    ArrayList<String> EPGHistory = Hawk.get(HawkConfig.EPG_HISTORY, new ArrayList<String>());
-                    if (!EPGHistory.contains(newEPG))
-                        EPGHistory.add(0, newEPG);
-                    if (EPGHistory.size() > 20)
-                        EPGHistory.remove(20);
-                    Hawk.put(HawkConfig.EPG_HISTORY, EPGHistory);
+                if (mode == MODE_ALL) {
+                    markManual(HawkConfig.PROXY_SERVER);
+                    // Capture oroxy server input into Settings
+                    Hawk.put(HawkConfig.PROXY_SERVER, newProxyServer);
                 }
-                // Capture oroxy server input into Settings
-                Hawk.put(HawkConfig.PROXY_SERVER, newProxyServer);
             }
         });
         findViewById(R.id.apiHistory).setOnClickListener(new View.OnClickListener() {
@@ -257,7 +278,20 @@ public class ApiDialog extends BaseDialog {
                 }
             }
         });
+        applyMode();
         refreshQRCode();
+    }
+
+    /** 按入口隐藏无关表单：点播入口只配点播源，直播入口只配直播源/EPG */
+    private void applyMode() {
+        if (mode == MODE_VOD) {
+            findViewById(R.id.ll_liveHistory).setVisibility(View.GONE);
+            findViewById(R.id.ll_EPGHistory).setVisibility(View.GONE);
+            findViewById(R.id.ll_proxy).setVisibility(View.GONE);
+        } else if (mode == MODE_LIVE) {
+            findViewById(R.id.ll_apiHistory).setVisibility(View.GONE);
+            findViewById(R.id.ll_proxy).setVisibility(View.GONE);
+        }
     }
 
     private void refreshQRCode() {

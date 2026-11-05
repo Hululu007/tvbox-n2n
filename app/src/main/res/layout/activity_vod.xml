@@ -56,7 +56,7 @@
             android:gravity="left|center_vertical"
             android:nextFocusDown="@id/mGridViewCategory"
             android:nextFocusLeft="@id/tvBack"
-            android:nextFocusRight="@id/tvFind"
+            android:nextFocusRight="@id/tvVodSetting"
             android:singleLine="true"
             android:text="@string/app_name"
             android:textAlignment="gravity"
@@ -75,6 +75,21 @@
             android:focusable="true"
             android:padding="@dimen/vs_5"
             android:src="@drawable/hm_search" />
+
+        <!-- 点播源配置：输入点播接口地址 + 手机扫码配置（仅显示点播接口表单） -->
+        <ImageView
+            android:id="@+id/tvVodSetting"
+            android:layout_width="@dimen/vs_50"
+            android:layout_height="@dimen/vs_50"
+            android:layout_marginStart="@dimen/vs_15"
+            android:layout_marginLeft="@dimen/vs_15"
+            android:background="@drawable/button_dialog_vod"
+            android:clickable="true"
+            android:contentDescription="点播源设置"
+            android:focusable="true"
+            android:nextFocusLeft="@id/tvName"
+            android:padding="@dimen/vs_8"
+            android:src="@drawable/hm_settings" />
 
         <TextView
             android:id="@+id/tvDate"

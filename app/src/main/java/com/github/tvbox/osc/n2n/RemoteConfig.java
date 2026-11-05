@@ -153,6 +153,14 @@ public class RemoteConfig {
     public static final String K_REMOTE_RAW = "rc_remote_raw";
     /** 点播启动等待画面配置（主接口下发，点播界面加载接口/切源时展示） */
     public static final String K_VOD_SPLASH = "rc_vod_splash";
+    /** 主接口预设占位图（json "placeholderImage"）：图片下载完成前先显示该图 */
+    public static final String K_PLACEHOLDER = "rc_placeholder_image";
+    /** 桌面/界面（屏幕）配置数组（json "screens" 原文） */
+    public static final String K_SCREENS = "rc_screens";
+    /** 默认加载的界面 id（json "defaultScreen"，缺省 standard=当前首页） */
+    public static final String K_DEFAULT_SCREEN = "rc_default_screen";
+    /** 接口强制覆盖策略（json "forceOverride"）："*"=全部覆盖，或 "api,live,epg,proxy" 子集 */
+    public static final String K_FORCE_OVERRIDE = "rc_force_override";
 
     /** 最近一次加载的主配置 JSON（入口/主题/hin2n 播种等逻辑读取） */
     private static volatile JSONObject sConfig = null;
@@ -239,6 +247,8 @@ public class RemoteConfig {
         public String icon;    // 图标：http(s) URL 或内置 drawable 名（如 hm_search），空=兜底图标
         public String url;     // app 未安装时的 APK 下载地址（可选）
         public String theme;   // vod: 自定义点播界面独立主题（主题索引/中文名/英文别名），空=跟随全局主题
+        public String pic;     // 酒店桌面布局用：入口大图/背景图（可选，http(s) 或 drawable 名）
+        public String desc;    // 酒店桌面布局用：入口副标题（可选）
     }
 
     public interface Callback {
@@ -1081,10 +1091,51 @@ public class RemoteConfig {
                 applySettingsDefaults(st, true);
             }
         }
-        applyEndpoint(ctx, j, "api", HawkConfig.API_URL, "点播接口", forceRemote);
-        applyEndpoint(ctx, j, "live", HawkConfig.LIVE_URL, "直播接口", forceRemote);
-        applyEndpoint(ctx, j, "epg", HawkConfig.EPG_URL, "EPG 接口", forceRemote);
-        applyEndpoint(ctx, j, "proxy", HawkConfig.PROXY_SERVER, "代理地址", forceRemote);
+        // 图片占位图：主接口下发后，所有图片下载完成前先显示该预设图
+        if (j.has("placeholderImage")) {
+            Hawk.put(K_PLACEHOLDER, j.optString("placeholderImage", "").trim());
+        } else if (j.has("imagePlaceholder")) {
+            Hawk.put(K_PLACEHOLDER, j.optString("imagePlaceholder", "").trim());
+        } else if (!remoteOnly) {
+            Hawk.delete(K_PLACEHOLDER);
+        }
+        // 接口强制覆盖策略：缺省（不配置）时用户手动配置的接口优先；
+        // 支持布尔（true=全部接口强制覆盖）或对象 {"api":true,"live":false,...}
+        if (j.has("forceOverride")) {
+            Hawk.put(K_FORCE_OVERRIDE, parseForceOverride(j.opt("forceOverride")));
+        } else if (!remoteOnly) {
+            Hawk.delete(K_FORCE_OVERRIDE);
+        }
+        // 桌面/界面（屏幕）配置：主界面可按 defaultScreen 加载酒店 IPTV 等布局
+        if (j.has("screens")) {
+            JSONArray screens = j.optJSONArray("screens");
+            Hawk.put(K_SCREENS, screens == null ? "" : screens.toString());
+            String def = j.optString("defaultScreen", "").trim();
+            Hawk.put(K_DEFAULT_SCREEN, def.isEmpty() ? "standard" : def);
+            // 显式配置 defaultScreen 但 screens 里没有该 id 时回退标准首页
+            if (screens != null && !def.isEmpty() && !def.equals("standard")) {
+                boolean found = false;
+                for (int i = 0; i < screens.length(); i++) {
+                    JSONObject s = screens.optJSONObject(i);
+                    if (s != null && def.equals(s.optString("id", ""))) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    Hawk.put(K_DEFAULT_SCREEN, "standard");
+                }
+            }
+        } else if (j.has("defaultScreen")) {
+            Hawk.put(K_DEFAULT_SCREEN, j.optString("defaultScreen", "standard").trim());
+        } else if (!remoteOnly) {
+            Hawk.delete(K_SCREENS);
+            Hawk.put(K_DEFAULT_SCREEN, "standard");
+        }
+        applyEndpoint(ctx, j, "api", HawkConfig.API_URL, "点播接口", forceRemote || forceOverrideFor("api"));
+        applyEndpoint(ctx, j, "live", HawkConfig.LIVE_URL, "直播接口", forceRemote || forceOverrideFor("live"));
+        applyEndpoint(ctx, j, "epg", HawkConfig.EPG_URL, "EPG 接口", forceRemote || forceOverrideFor("epg"));
+        applyEndpoint(ctx, j, "proxy", HawkConfig.PROXY_SERVER, "代理地址", forceRemote || forceOverrideFor("proxy"));
         if (j.has("theme")) {
             int ti = ThemeManager.indexFromConfig(j.optString("theme", ""));
             if (ti >= 0) {
@@ -1168,10 +1219,172 @@ public class RemoteConfig {
         if (v.isEmpty()) {
             return;
         }
+        // 用户手动配置过该接口且主接口未要求强制覆盖：保留用户配置
+        if (!force && Boolean.TRUE.equals(Hawk.get(hawkKey + "_manual", false))) {
+            return;
+        }
         if (!"api".equals(key)) {
             v = resolveInterfaceUrl(v);
         }
         Hawk.put(hawkKey, v);
+    }
+
+    /** 解析 json "forceOverride"：布尔=全部接口；对象=按 api/live/epg/proxy 逐项；字符串=子集 */
+    private static String parseForceOverride(Object o) {
+        if (o instanceof Boolean) {
+            return ((Boolean) o) ? "*" : "";
+        }
+        if (o instanceof JSONObject) {
+            JSONObject obj = (JSONObject) o;
+            StringBuilder sb = new StringBuilder();
+            String[] keys = {"api", "live", "epg", "proxy"};
+            for (String k : keys) {
+                if (obj.optBoolean(k, false)) {
+                    if (sb.length() > 0) sb.append(',');
+                    sb.append(k);
+                }
+            }
+            return sb.toString();
+        }
+        if (o instanceof String) {
+            String s = ((String) o).trim().toLowerCase();
+            if ("true".equals(s) || "all".equals(s) || "*".equals(s)) return "*";
+            return s.replace(" ", "");
+        }
+        return "";
+    }
+
+    /** 该接口是否被主接口要求强制覆盖（无视用户手动配置） */
+    public static boolean forceOverrideFor(String key) {
+        String s = Hawk.get(K_FORCE_OVERRIDE, "");
+        if (s == null || s.isEmpty()) {
+            return false;
+        }
+        return "*".equals(s) || ("," + s + ",").contains("," + key + ",");
+    }
+
+    /** 主接口预设占位图（下载完成前先显示；为空=使用内置占位图） */
+    public static String placeholderImage() {
+        return Hawk.get(K_PLACEHOLDER, "");
+    }
+
+    /** 桌面/界面（屏幕）配置：id/name/layout/api/live/epg + 外观与入口，见 docs 配置示例 */
+    public static class Screen {
+        public String id = "";
+        public String name = "";
+        public String layout = "standard";
+        public String api = "";
+        public String live = "";
+        public String epg = "";
+        public String title = "";
+        public String logo = "";
+        public String background = "";
+        public String ticker = "";
+        public String layoutUrl = "";
+        public int columns = 3;
+        public int rows = 2;
+        public boolean showClock = true;
+        public List<Entry> entries = null;
+
+        public static Screen from(JSONObject o) {
+            Screen s = new Screen();
+            if (o == null) {
+                return s;
+            }
+            s.id = o.optString("id", "");
+            s.name = o.optString("name", s.id);
+            s.layout = o.optString("layout", "standard");
+            s.api = o.optString("api", "");
+            s.live = o.optString("live", "");
+            s.epg = o.optString("epg", "");
+            s.title = o.optString("title", "");
+            s.logo = o.optString("logo", "");
+            s.background = o.optString("background", "");
+            s.ticker = o.optString("ticker", "");
+            s.layoutUrl = o.optString("layoutUrl", "");
+            s.columns = Math.max(1, Math.min(6, o.optInt("columns", 3)));
+            s.rows = Math.max(1, Math.min(4, o.optInt("rows", 2)));
+            s.showClock = o.optBoolean("showClock", true);
+            JSONArray arr = o.optJSONArray("entries");
+            if (arr != null) {
+                s.entries = new ArrayList<>();
+                for (int i = 0; i < arr.length(); i++) {
+                    JSONObject e = arr.optJSONObject(i);
+                    if (e == null) continue;
+                    Entry entry = new Entry();
+                    entry.name = e.optString("name", "");
+                    entry.type = e.optString("type", "page");
+                    entry.target = e.optString("target", "");
+                    entry.icon = e.optString("icon", "");
+                    entry.pkg = e.optString("pkg", "");
+                    entry.url = e.optString("url", "");
+                    entry.theme = e.optString("theme", "");
+                    entry.pic = e.optString("pic", "");
+                    entry.desc = e.optString("desc", "");
+                    s.entries.add(entry);
+                }
+            }
+            return s;
+        }
+    }
+
+    /** 全部桌面/界面配置（screens 数组） */
+    public static List<Screen> screens() {
+        List<Screen> list = new ArrayList<>();
+        String raw = Hawk.get(K_SCREENS, "");
+        if (raw == null || raw.isEmpty()) {
+            return list;
+        }
+        try {
+            JSONArray arr = new JSONArray(raw);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o != null) {
+                    Screen s = Screen.from(o);
+                    if (!s.id.isEmpty()) {
+                        list.add(s);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return list;
+    }
+
+    /** 默认加载的界面 id（standard=当前首页） */
+    public static String defaultScreenId() {
+        return Hawk.get(K_DEFAULT_SCREEN, "standard");
+    }
+
+    public static Screen findScreen(String id) {
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        for (Screen s : screens()) {
+            if (id.equals(s.id)) {
+                return s;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 应用某个界面自带的接口（每个界面可单独一个接口）。
+     * 规则与主接口一致：用户手动配置过且未要求强制覆盖时保留用户配置。
+     */
+    public static void applyScreenEndpoints(Screen s) {
+        if (s == null) {
+            return;
+        }
+        if (!s.api.isEmpty() && (forceOverrideFor("api") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.API_URL + "_manual", false)))) {
+            Hawk.put(HawkConfig.API_URL, s.api);
+        }
+        if (!s.live.isEmpty() && (forceOverrideFor("live") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.LIVE_URL + "_manual", false)))) {
+            Hawk.put(HawkConfig.LIVE_URL, resolveInterfaceUrl(s.live));
+        }
+        if (!s.epg.isEmpty() && (forceOverrideFor("epg") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.EPG_URL + "_manual", false)))) {
+            Hawk.put(HawkConfig.EPG_URL, resolveInterfaceUrl(s.epg));
+        }
     }
 
     /**

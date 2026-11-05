@@ -407,8 +407,90 @@ public class HomeActivity extends BaseActivity {
             dataInitOk = true;
             jarInitOk = true;
         }
+        // 主接口通过 screens/defaultScreen 指定加载的界面（酒店 IPTV 桌面等）
+        jumpToScreenIfNeeded();
         jumpToLiveIfNeeded();
         upgradeCheckOnce();
+    }
+
+    /** 非 standard 默认界面只跳转一次，避免主接口回调重复进入 */
+    private static boolean screenJumped = false;
+
+    private void jumpToScreenIfNeeded() {
+        if (screenJumped) {
+            return;
+        }
+        screenJumped = true;
+        String id = com.github.tvbox.osc.n2n.RemoteConfig.defaultScreenId();
+        if (id == null || id.isEmpty() || "standard".equals(id)) {
+            return;
+        }
+        com.github.tvbox.osc.n2n.RemoteConfig.Screen s = com.github.tvbox.osc.n2n.RemoteConfig.findScreen(id);
+        if (s == null || "standard".equalsIgnoreCase(s.layout)) {
+            return;
+        }
+        com.github.tvbox.osc.n2n.RemoteConfig.applyScreenEndpoints(s);
+        sSkipAppExit = true;
+        Intent intent = new Intent(this, com.github.tvbox.osc.ui.activity.HotelActivity.class);
+        intent.putExtra("screenId", s.id);
+        startActivity(intent);
+        finish();
+        overridePendingTransition(0, 0);
+    }
+
+    /** 界面（屏幕）切换：列出主接口 screens 配置的多个界面 */
+    public void showScreenSwitch() {
+        List<com.github.tvbox.osc.n2n.RemoteConfig.Screen> screens =
+                com.github.tvbox.osc.n2n.RemoteConfig.screens();
+        if (screens.isEmpty()) {
+            Toast.makeText(this, "主接口未配置 screens 界面列表", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        SelectDialog<com.github.tvbox.osc.n2n.RemoteConfig.Screen> dialog = new SelectDialog<>(this);
+        TvRecyclerView tvRecyclerView = dialog.findViewById(R.id.list);
+        tvRecyclerView.setLayoutManager(new V7GridLayoutManager(dialog.getContext(), 1));
+        dialog.setTip("选择界面");
+        dialog.setAdapter(tvRecyclerView, new SelectDialogAdapter.SelectDialogInterface<com.github.tvbox.osc.n2n.RemoteConfig.Screen>() {
+            @Override
+            public void click(com.github.tvbox.osc.n2n.RemoteConfig.Screen value, int pos) {
+                com.github.tvbox.osc.n2n.RemoteConfig.applyScreenEndpoints(value);
+                // layout=standard 的界面回到标准首页
+                openScreen("standard".equalsIgnoreCase(value.layout) ? "standard" : value.id);
+            }
+
+            @Override
+            public String getDisplay(com.github.tvbox.osc.n2n.RemoteConfig.Screen val) {
+                return val.name == null || val.name.isEmpty() ? val.id : val.name;
+            }
+        }, new DiffUtil.ItemCallback<com.github.tvbox.osc.n2n.RemoteConfig.Screen>() {
+            @Override
+            public boolean areItemsTheSame(@NonNull @NotNull com.github.tvbox.osc.n2n.RemoteConfig.Screen oldItem,
+                                           @NonNull @NotNull com.github.tvbox.osc.n2n.RemoteConfig.Screen newItem) {
+                return oldItem.id.equals(newItem.id);
+            }
+
+            @Override
+            public boolean areContentsTheSame(@NonNull @NotNull com.github.tvbox.osc.n2n.RemoteConfig.Screen oldItem,
+                                              @NonNull @NotNull com.github.tvbox.osc.n2n.RemoteConfig.Screen newItem) {
+                return oldItem.id.equals(newItem.id);
+            }
+        }, screens, 0);
+        dialog.show();
+    }
+
+    /** 打开指定界面：standard=首页，其它=酒店桌面 Activity */
+    private void openScreen(String id) {
+        sSkipAppExit = true;
+        Intent intent;
+        if (id == null || id.isEmpty() || "standard".equals(id)) {
+            intent = new Intent(this, HomeActivity.class);
+        } else {
+            intent = new Intent(this, com.github.tvbox.osc.ui.activity.HotelActivity.class);
+            intent.putExtra("screenId", id);
+        }
+        finish();
+        startActivity(intent);
+        overridePendingTransition(0, 0);
     }
 
     /** 主接口结果监听只注册一次（主题切换重启时进程内状态已为 OK，不再重复注册） */

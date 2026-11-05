@@ -7,6 +7,10 @@
   "live": "live/live.txt",
   "epg": "epg/epg.json",
   "proxy": "",
+  "placeholderImage": "",
+  "forceOverride": false,
+  "defaultScreen": "standard",
+  "screens": [],
 
   "appMarket": {
     "url": "market/list.php?category={category}&sort={sort}&page={page}&pageSize={pageSize}&keyword={keyword}",

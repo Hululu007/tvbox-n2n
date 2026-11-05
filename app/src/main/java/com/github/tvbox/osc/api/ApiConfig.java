@@ -643,7 +643,8 @@ public class ApiConfig {
                         putLiveHistory(extUrlFix);
                         // Overwrite with Live URL from Settings
                         if (StringUtils.isBlank(liveURL)) {
-                            if (!Hawk.get(HawkConfig.LIVE_URL + "_manual", false)) {
+                            if (com.github.tvbox.osc.n2n.RemoteConfig.forceOverrideFor("live")
+                                    || !Hawk.get(HawkConfig.LIVE_URL + "_manual", false)) {
                                 Hawk.put(HawkConfig.LIVE_URL, extUrlFix);
                             } else {
                                 // 用户手动清空过：不再使用 JSON 的直播地址
@@ -668,7 +669,8 @@ public class ApiConfig {
                         putEPGHistory(epg);
                         // Overwrite with EPG URL from Settings
                         if (StringUtils.isBlank(epgURL)) {
-                            if (!Hawk.get(HawkConfig.EPG_URL + "_manual", false)) {
+                            if (com.github.tvbox.osc.n2n.RemoteConfig.forceOverrideFor("epg")
+                                    || !Hawk.get(HawkConfig.EPG_URL + "_manual", false)) {
                                 Hawk.put(HawkConfig.EPG_URL, epg);
                             }
                         } else {
@@ -700,7 +702,8 @@ public class ApiConfig {
                                 putEPGHistory(epg);
                                 // Overwrite with EPG URL from Settings
                                 if (StringUtils.isBlank(epgURL)) {
-                                    if (!Hawk.get(HawkConfig.EPG_URL + "_manual", false)) {
+                                    if (com.github.tvbox.osc.n2n.RemoteConfig.forceOverrideFor("epg")
+                                            || !Hawk.get(HawkConfig.EPG_URL + "_manual", false)) {
                                         Hawk.put(HawkConfig.EPG_URL, epg);
                                     }
                                 } else {
@@ -714,7 +717,8 @@ public class ApiConfig {
                                 putLiveHistory(url);
                                 // Overwrite with Live URL from Settings
                                 if (StringUtils.isBlank(liveURL)) {
-                                    if (!Hawk.get(HawkConfig.LIVE_URL + "_manual", false)) {
+                                    if (com.github.tvbox.osc.n2n.RemoteConfig.forceOverrideFor("live")
+                                            || !Hawk.get(HawkConfig.LIVE_URL + "_manual", false)) {
                                         Hawk.put(HawkConfig.LIVE_URL, url);
                                     } else {
                                         // 用户手动清空过：不再使用 JSON 的直播地址

@@ -140,6 +140,13 @@ public class EntryDispatcher {
             Toast.makeText(act, grid ? R.string.hm_style_grid : R.string.hm_style_line, Toast.LENGTH_SHORT).show();
             // 重建入口，使 style 图标状态同步（网格/列表图标自动切换）
             HomeEntry.refresh(act);
+        } else if ("screenSwitch".equals(target)) {
+            // 切换主界面布局（主接口 screens 配置的酒店 IPTV 桌面等）
+            if (act instanceof HomeActivity) {
+                ((HomeActivity) act).showScreenSwitch();
+            } else if (act instanceof com.github.tvbox.osc.ui.activity.HotelActivity) {
+                ((com.github.tvbox.osc.ui.activity.HotelActivity) act).showScreenSwitch();
+            }
         } else if ("clearCache".equals(target)) {
             if (act instanceof HomeActivity) {
                 ((HomeActivity) act).clearHomeCache();
@@ -188,7 +195,14 @@ public class EntryDispatcher {
         }
         try {
             if (icon != null && (icon.startsWith("http://") || icon.startsWith("https://"))) {
-                Glide.with(ctx).load(icon).into(iv);
+                // 与其它图片一致：先显示主接口预设图，下载完成后替换
+                com.bumptech.glide.RequestBuilder<android.graphics.drawable.Drawable> request =
+                        Glide.with(ctx).load(icon);
+                String preset = RemoteConfig.placeholderImage();
+                if (preset != null && !preset.isEmpty()) {
+                    request = request.thumbnail(Glide.with(ctx).load(preset));
+                }
+                request.into(iv);
                 return;
             }
             if (icon != null && !icon.isEmpty()) {

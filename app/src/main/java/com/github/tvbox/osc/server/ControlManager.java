@@ -47,6 +47,30 @@ public class ControlManager {
         mContext = context;
     }
 
+    /**
+     * 手机/电脑网页端扫码配置：立即写入本地并标记「用户手动配置」，
+     * 这样即使配置对话框已关闭也能生效；主接口未要求强制覆盖时保留用户配置。
+     */
+    private void saveFromPhone(String hawkKey, String historyKey, String url) {
+        try {
+            String v = url == null ? "" : url.trim();
+            Hawk.put(hawkKey, v);
+            Hawk.put(hawkKey + "_manual", true);
+            if (historyKey != null && !v.isEmpty()) {
+                java.util.ArrayList<String> history = Hawk.get(historyKey, new java.util.ArrayList<String>());
+                if (!history.contains(v)) {
+                    history.add(0, v);
+                }
+                if (history.size() > 20) {
+                    history.remove(20);
+                }
+                Hawk.put(historyKey, history);
+            }
+            // 点播/直播接口变更后，回到对应界面时由界面自行重新加载
+        } catch (Throwable ignored) {
+        }
+    }
+
     public String getAddress(boolean local) {
         return local ? mServer.getLoadAddress() : mServer.getServerAddress();
     }
@@ -74,21 +98,28 @@ public class ControlManager {
 
                 @Override
                 public void onApiReceived(String url) {
+                    saveFromPhone(com.github.tvbox.osc.util.HawkConfig.API_URL,
+                            com.github.tvbox.osc.util.HawkConfig.API_HISTORY, url);
                     EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_API_URL_CHANGE, url));
                 }
 
                 @Override
                 public void onLiveReceived(String url) {
+                    saveFromPhone(com.github.tvbox.osc.util.HawkConfig.LIVE_URL,
+                            com.github.tvbox.osc.util.HawkConfig.LIVE_HISTORY, url);
                     EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_LIVE_URL_CHANGE, url));
                 }
 
                 @Override
                 public void onEpgReceived(String url) {
+                    saveFromPhone(com.github.tvbox.osc.util.HawkConfig.EPG_URL,
+                            com.github.tvbox.osc.util.HawkConfig.EPG_HISTORY, url);
                     EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_EPG_URL_CHANGE, url));
                 }
 
                 @Override
                 public void onProxysReceived(String url) {
+                    saveFromPhone(com.github.tvbox.osc.util.HawkConfig.PROXY_SERVER, null, url);
                     EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_PROXYS_CHANGE, url));
                 }
 

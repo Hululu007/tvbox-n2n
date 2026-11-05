@@ -10,7 +10,8 @@
 
 ## 1. 配置入口
 
-App 内无设置页，所有配置来自 JSON。编译前修改：
+主配置来自 JSON；点播界面右上角齿轮、直播界面「直播源配置」提供接口地址与手机扫码配置入口。
+这些手动配置默认优先于主接口，除非主接口设置 `forceOverride`。编译前修改：
 
 ```java
 // app/src/main/java/com/github/tvbox/osc/n2n/RemoteConfig.java
@@ -47,6 +48,9 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | 11 | 升级包下载 | `upgrade.url` | —（APK 二进制） | ✅* | APK 文件 |
 | 12 | 应用市场 APK 下载 | 条目 `downloadUrl` | —（APK 二进制） | ✅* | APK 文件 |
 | 13 | P2P 直播 | `tkp2p://...` | 由直播源决定 | — | P2P 协议 |
+| 14 | 图片预设占位图 | `placeholderImage` | — | ✅ | 图片 URL |
+| 15 | 界面布局插件 | `screens[].layoutUrl` | ✅ | ✅ | 布局 JSON |
+| 16 | 界面独立接口 | `screens[].api/live/epg` | ✅ | ✅ | 同点播/直播/EPG |
 
 > *下载地址建议直接写完整 URL；相对地址支持由服务端/客户端场景决定，**接口数据**字段优先使用完整地址更稳妥。
 
@@ -58,12 +62,17 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "live": "index.php?r=live&enc=ke",          // 相对地址 → 自动拼主配置地址的域名+目录
   "epg": "index.php?r=epg&enc=ke",
   "proxy": "",
+  "placeholderImage": "",                 // 图片下载完成前显示的预设占位图
+  "forceOverride": false,                 // false=用户手动配置优先；true=主接口强制覆盖
+  "defaultScreen": "standard",            // standard=标准首页；其它=下方 screens 中的界面 id
+  "screens": [],                          // 酒店 IPTV 等桌面布局（见 2.1.1）
   "bootStart": true,
   "settings": { "homeRecStyle": true },
   "home": {
     "sourceName": "TKLauncher",          // 左上角显示的名称（主接口统一定义；空=显示 App 名称）
-    "recMovies": [                        // 推荐影片（主接口提供）：首页推荐 + 点播界面「热播推荐」首屏均只取该字段
+    "recMovies": [                        // 推荐影片（主接口提供）：首页推荐 + 点播界面「热播推荐」共用；
       { "name": "演示影片一", "pic": "https://placehold.co/300x400/png", "note": "9.0" }
+      // 未配置时回退豆瓣热播；settings.homeRec=2 时使用观看历史
     ]
   },
   "appMarket": {
@@ -78,6 +87,40 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   }
 }
 ```
+
+### 2.1.1 界面 / 酒店 IPTV 桌面（`screens`）
+
+```jsonc
+"defaultScreen": "hotel_demo",
+"screens": [
+  {
+    "id": "hotel_demo",
+    "name": "酒店桌面",
+    "layout": "hotel_grid",             // hotel_grid / hotel_list / hotel_showcase
+    "api": "http://hotel.example.com/vod.json",   // 可选：本界面独立接口
+    "live": "http://hotel.example.com/live.json",
+    "epg": "http://hotel.example.com/epg.json",
+    "title": "欢迎入住",
+    "logo": "https://hotel.example.com/logo.png",
+    "background": "https://hotel.example.com/bg.jpg",
+    "ticker": "前台电话 8888    祝您入住愉快",
+    "columns": 3,
+    "rows": 2,
+    "showClock": true,
+    "layoutUrl": "",                    // 可选：布局插件 JSON 地址（按需下载并缓存本地）
+    "entries": [
+      { "name": "点播", "type": "page", "target": "vod",  "icon": "hm_vod" },
+      { "name": "直播", "type": "page", "target": "live", "icon": "hm_live" },
+      { "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings" }
+    ]
+  }
+]
+```
+
+- `defaultScreen` 填不存在的 id 会自动回退 `standard`。
+- `screens[].api/live/epg` 在该界面启动时应用；用户手动配置过且 `forceOverride=false` 时保留用户配置。
+- `layoutUrl` 下载失败回退上次缓存，首次无缓存回退主接口内联配置。
+- 更多示例（含“小白教程”）见 [tvbox-dev.md](file:///f:/tvbox-n2n/docs/tvbox-dev.md#11-小白教程新增一个界面--酒店-iptv-桌面布局)。
 
 ### 2.2 点播源（`api`）示例
 

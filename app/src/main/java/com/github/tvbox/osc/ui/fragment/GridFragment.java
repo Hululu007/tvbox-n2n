@@ -395,6 +395,22 @@ public class GridFragment extends BaseLazyFragment {
         gridAdapter.setEnableLoadMore(false);
     }
 
+    /**
+     * 热播推荐数据异步返回后刷新（豆瓣推荐等网络数据到达时，首屏可能已用空列表建好）
+     */
+    public void setRecommendVideos(List<Movie.Video> videos) {
+        if (!isRecommendSort()) {
+            return;
+        }
+        recommendVideos.clear();
+        if (videos != null) {
+            recommendVideos.addAll(videos);
+        }
+        if (gridAdapter != null && mGridView != null) {
+            loadRecommend();
+        }
+    }
+
     private void toggleFilterStatus() {
         if (sortData!=null && sortData.filters != null && !sortData.filters.isEmpty()) {
             int count = sortData.filterSelectCount();

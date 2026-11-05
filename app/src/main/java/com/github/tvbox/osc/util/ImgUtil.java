@@ -122,27 +122,45 @@ public class ImgUtil {
 
     public static void load(String url, ImageView view, int roundingRadius, int newWidth, int newHeight) {
         view.setScaleType(ImageView.ScaleType.CENTER);
+        String preset = com.github.tvbox.osc.n2n.RemoteConfig.placeholderImage();
         if (TextUtils.isEmpty(url)) {
-            view.setImageResource(R.drawable.img_loading_placeholder);
-        } else {
-            if (roundingRadius == 0) roundingRadius = 1;
-            RequestOptions requestOptions = new RequestOptions()
-                .format(DecodeFormat.PREFER_RGB_565)
-                .diskCacheStrategy(getDiskCacheStrategy(4))
-                .dontAnimate()
-                .transform(new CenterCrop(), new RoundedCorners(roundingRadius));
-            if (newWidth > 0 && newHeight > 0) {
-                requestOptions = requestOptions.override(newWidth, newHeight);
+            // 无图片地址：直接显示主接口预设图（未配置时用内置占位图）
+            if (preset == null || preset.isEmpty()) {
+                view.setImageResource(R.drawable.img_loading_placeholder);
+            } else {
+                Glide.with(App.getInstance())
+                    .asBitmap()
+                    .load(getUrl(preset))
+                    .error(R.drawable.img_loading_placeholder)
+                    .into(view);
             }
-            Glide.with(App.getInstance())
-                .asBitmap()
-                .load(getUrl(url))
-                .error(R.drawable.img_loading_placeholder)
-                .placeholder(R.drawable.img_loading_placeholder)
-                .listener(getListener(view, ImageView.ScaleType.FIT_XY))
-                .apply(requestOptions)
-                .into(view);
+            return;
         }
+        if (roundingRadius == 0) roundingRadius = 1;
+        RequestOptions requestOptions = new RequestOptions()
+            .format(DecodeFormat.PREFER_RGB_565)
+            .diskCacheStrategy(getDiskCacheStrategy(4))
+            .dontAnimate()
+            .transform(new CenterCrop(), new RoundedCorners(roundingRadius));
+        if (newWidth > 0 && newHeight > 0) {
+            requestOptions = requestOptions.override(newWidth, newHeight);
+        }
+        // 图片加载：先显示主接口预设图（thumbnail），正式图片下载完成后自动替换，
+        // 与参考项目 TVboxOSC 的加载顺序一致；主接口未配置预设图时用内置占位图。
+        com.bumptech.glide.RequestBuilder<Bitmap> presetBuilder = null;
+        if (preset != null && !preset.isEmpty()) {
+            presetBuilder = Glide.with(App.getInstance()).asBitmap().load(getUrl(preset));
+        }
+        com.bumptech.glide.RequestBuilder<Bitmap> request = Glide.with(App.getInstance())
+            .asBitmap()
+            .load(getUrl(url))
+            .error(R.drawable.img_loading_placeholder)
+            .placeholder(R.drawable.img_loading_placeholder)
+            .listener(getListener(view, ImageView.ScaleType.FIT_XY));
+        if (presetBuilder != null) {
+            request = request.thumbnail(presetBuilder);
+        }
+        request.apply(requestOptions).into(view);
     }
 
     /*

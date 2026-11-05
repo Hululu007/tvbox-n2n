@@ -446,3 +446,135 @@ kapt/runner 偶发抖动先直接 rerun；hin2n native 失败看 `externalNative
 - [tvbox-config.example.jsonc](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc)：带中文注释的全量 demo（推荐照此修改 assets 文件；含加密下发 secretKey、捐助 donate、系统设置/捐助入口等全部对接字段）
 - [tvbox-config.example.json](file:///f:/tvbox-n2n/docs/tvbox-config.example.json)：纯 JSON 版（无注释）
 - hin2n 组网使用/字段说明：[hin2n.md](file:///f:/tvbox-n2n/docs/hin2n.md)
+
+## 11. 小白教程：新增一个界面 / 酒店 IPTV 桌面布局
+
+本节按「完全不懂代码也能操作」的顺序写。新增界面**不需要改代码、不需要重新发版**，只要改主接口 JSON。
+
+### 11.1 先理解 4 个概念
+
+| 概念 | 含义 | 对应字段 |
+| --- | --- | --- |
+| 主接口 | App 启动拉取的配置 JSON | 服务器上的 config 接口 |
+| 界面（屏幕） | 一个独立的桌面，例如「酒店桌面」「员工桌面」 | `screens[]` |
+| 默认界面 | 启动后直接加载哪个界面 | `defaultScreen` |
+| 布局 | 界面的外观样式 | `layout` |
+
+内置布局（可直接用）：
+
+- `standard`：原来的标准首页（不填 `defaultScreen` 就是它）。
+- `hotel_grid`：宫格大卡片，适合酒店电视首页。
+- `hotel_list`：左侧纵向大菜单 + 右侧大图预览，适合入口较少的场景。
+- `hotel_showcase`：顶部大图 + 底部一排入口，适合品牌宣传。
+
+### 11.2 第一步：加一个酒店桌面（最小示例）
+
+在主接口 JSON 最外层加入：
+
+```json
+"defaultScreen": "hotel_demo",
+"screens": [
+  {
+    "id": "hotel_demo",
+    "name": "酒店桌面",
+    "layout": "hotel_grid",
+    "title": "欢迎入住",
+    "ticker": "前台电话 8888    祝您入住愉快",
+    "columns": 3,
+    "rows": 2,
+    "showClock": true,
+    "entries": [
+      { "name": "点播", "type": "page", "target": "vod",  "icon": "hm_vod" },
+      { "name": "直播", "type": "page", "target": "live", "icon": "hm_live" },
+      { "name": "搜索", "type": "page", "target": "search", "icon": "hm_search" },
+      { "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings" }
+    ]
+  }
+]
+```
+
+保存后重启 App：启动会直接进入这个酒店桌面。`entries` 的写法与 `topEntries` 完全一致，
+额外支持 `pic`（卡片大图）和 `desc`（副标题）。
+
+### 11.3 第二步：每个界面单独用一套接口（可选）
+
+在对应的 `screens` 元素里加 `api` / `live` / `epg`：
+
+```json
+{
+  "id": "hotel_demo",
+  "api": "http://hotel-a.example.com/vod.json",
+  "live": "http://hotel-a.example.com/live.json",
+  "epg": "http://hotel-a.example.com/epg.json"
+}
+```
+
+进入该界面时会自动应用这套接口；点播/直播界面随后使用的就是这套接口。
+规则与主接口一致：用户手动配置过且 `forceOverride=false` 时，保留用户配置。
+
+### 11.4 第三步：用「布局插件」下发外观（推荐给连锁酒店）
+
+把上面的界面配置单独存成一个 JSON 文件，例如
+`http://your-domain/layouts/hotel_a.json`，内容：
+
+```json
+{
+  "layout": "hotel_list",
+  "title": "XX 酒店",
+  "background": "https://your-domain/bg.jpg",
+  "logo": "https://your-domain/logo.png",
+  "ticker": "欢迎光临，如需帮助请拨打 8000",
+  "columns": 2,
+  "rows": 3
+}
+```
+
+然后在主接口里只写：
+
+```json
+{
+  "id": "hotel_a",
+  "name": "XX 酒店",
+  "layoutUrl": "http://your-domain/layouts/hotel_a.json"
+}
+```
+
+App 启动时会按需下载该 JSON 并缓存到本地 `filesDir/hotel_layout_*.json`；
+下载失败自动使用上一次缓存，首次无缓存则回退主接口内联配置。
+**以后只改布局 JSON 即可更新界面，不用重新发版。**
+
+### 11.5 常见问题
+
+1. **改了 JSON 没生效？** 检查 `defaultScreen` 是否等于某个 `screens[].id`；
+   填了不存在的 id 会自动回退标准首页。
+2. **界面上的图标不显示？** `icon` 可填内置 drawable 名（如 `hm_vod`、`hm_live`），
+   也可填 http(s) 图片地址。
+3. **想保留原来的首页？** 把 `defaultScreen` 删除或设为 `"standard"`。
+4. **多个界面怎么切换？** 在入口里加
+   `{ "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings" }`，
+   点击后会列出 `screens` 中配置的全部界面。
+
+### 11.6 开发者：新增一个原生布局（需要改代码）
+
+只有需要「JSON 表达不了」的特殊布局时才这样做：
+
+1. 在 `HotelActivity#render()` 的 `if/else` 链中增加一个分支，例如
+   `else if ("hotel_mine".equals(layout)) buildMineLayout();`；
+2. 仿照 `buildGridLayout()` / `buildListLayout()` / `buildShowcaseLayout()` 写一个
+   `buildMineLayout()`，内部用 `createTile(entry, horizontal)` 生成可聚焦入口，
+   点击统一走 `EntryDispatcher.open(this, entry)`；
+3. 需要新字段时，在 `RemoteConfig.Screen` 里加字段，并在 `Screen.from()` 中解析；
+4. 主接口里写 `"layout": "hotel_mine"` 即可启用；
+5. 改完执行 `./gradlew :app:compileGenericNormalDebugJavaWithJavac` 自检（需 JDK 17）。
+
+### 11.7 本次新增能力速查
+
+| 功能 | 字段/入口 |
+| --- | --- |
+| 图片先显示主接口预设图 | 主接口 `placeholderImage` |
+| 接口是否强制覆盖 | 主接口 `forceOverride`（布尔或对象） |
+| 点播源设置（含手机扫码） | 点播界面右上角齿轮图标 |
+| 直播源 + EPG 设置（含手机扫码） | 直播界面菜单「直播源配置」 |
+| 酒店 IPTV 桌面 | `screens` + `defaultScreen` |
+| 布局插件下载缓存 | `screens[].layoutUrl` |
+| 界面切换 | 入口 `type=feature, target=screenSwitch` |

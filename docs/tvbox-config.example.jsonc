@@ -178,7 +178,10 @@
   ],
 
   // ==================== 接口地址（JSON 是唯一配置来源） ====================
-  // 应用内无设置页，每次加载都以 JSON 为准。接口均支持密文下发，远程请求自动携带
+  // 接口默认以主接口下发为准；若用户通过「点播/直播设置」或手机扫码手动配置过接口，
+  // 则保留用户配置（不强制覆盖）。需要主接口无条件覆盖时把 forceOverride 设为 true
+  // 或对象形式 {"api":true,"live":true,"epg":true,"proxy":true}。
+  // 接口均支持密文下发，远程请求自动携带
   // 本机参数。live/epg/proxy/upgrade/appMarket/自定义点播若未写 http(s)://，
   // 自动拼接主配置来源地址（CONFIG_URL / remoteConfigUrl）的协议 + 域名/IP + 目录；
   // 配置为本地文件/assets 时回退拼接主接口 api 的域名/IP。
@@ -187,6 +190,17 @@
   "live": "",                          // 直播源接口（推荐 JSON；兼容 txt / m3u）
   "epg": "",                           // 节目单接口（JSON 格式，支持多天下发；留空用内置默认 https://epg.112114.xyz/）
   "proxy": "",                         // 代理地址
+
+  // ==================== 图片占位图 ====================
+  // 所有海报/背景/入口图片在下载完成前先显示该图（主接口预设图）；
+  // 为空则使用 App 内置占位图。加载顺序与 TVboxOSC 一致：先占位图，下载完成后替换。
+  "placeholderImage": "",
+
+  // ==================== 接口强制覆盖 ====================
+  // false（默认）/不配置：用户手动配置过 api/live/epg/proxy 时保留用户配置；
+  // true：主接口强制覆盖全部接口；对象形式可逐项控制：
+  // {"api": true, "live": false, "epg": true, "proxy": false}
+  "forceOverride": false,
 
   // ==================== 直播 EPG 节目表 ====================
   // 节目表显示天数（含今天，范围 1~9，默认 3 = 昨天/今天/明天），日期列表以今天为中心。
@@ -383,5 +397,35 @@
     // 追加示例：
     // ,{ "name": "应用", "type": "page", "target": "apps",   "icon": "hm_drawer" }
     // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod", "theme": "1" }
+  ],
+
+  // ==================== 界面（屏幕）/ 酒店 IPTV 桌面 ====================
+  // 主界面可根据主接口配置加载不同的桌面布局；每个界面可以有自己的点播/直播/EPG 接口。
+  // defaultScreen = "standard" 时使用当前标准首页；填 screens 中某个 id 时启动直接进入该界面。
+  // layout：hotel_grid（宫格大卡片）/ hotel_list（左侧菜单+右侧预览）/ hotel_showcase（顶部大图+底部入口）。
+  // layoutUrl：布局插件 JSON 地址，开机按需下载并缓存到本地（filesDir/hotel_layout_*.json），
+  //            下载失败自动回退上次缓存；便于只下发 JSON 开发新布局，无需发版。
+  // entries 非空时覆盖默认入口，字段与 topEntries 相同，另支持 pic（卡片大图）和 desc（副标题）。
+  "defaultScreen": "standard",
+  "screens": [
+    // {
+    //   "id": "hotel_demo",
+    //   "name": "酒店桌面示例",
+    //   "layout": "hotel_grid",
+    //   "api": "", "live": "", "epg": "",
+    //   "title": "欢迎入住",
+    //   "logo": "",
+    //   "background": "",
+    //   "ticker": "前台电话 8888    祝您入住愉快",
+    //   "columns": 3,
+    //   "rows": 2,
+    //   "showClock": true,
+    //   "layoutUrl": "",
+    //   "entries": [
+    //     { "name": "点播", "type": "page", "target": "vod",  "icon": "hm_vod" },
+    //     { "name": "直播", "type": "page", "target": "live", "icon": "hm_live" },
+    //     { "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings" }
+    //   ]
+    // }
   ]
 }

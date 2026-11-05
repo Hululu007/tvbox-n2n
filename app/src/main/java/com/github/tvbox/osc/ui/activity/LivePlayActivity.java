@@ -2102,9 +2102,12 @@ public class LivePlayActivity extends BaseActivity {
                 }
                 liveSettingItemAdapter.selectItem(position, select, false);
                 break;
-            case 6:// 直播历史
+            case 6:// 直播源配置（原「直播历史」入口）
                 switch (position) {
                     case 0:
+                        showLiveSourceConfig();
+                        break;
+                    case 1:
                         ArrayList<String> liveHistory = Hawk.get(HawkConfig.LIVE_HISTORY, new ArrayList<String>());
                         if (liveHistory.isEmpty())
                             return;
@@ -2487,12 +2490,49 @@ public class LivePlayActivity extends BaseActivity {
         selectChannelGroup(lastChannelGroupIndex, false, lastLiveChannelIndex);
     }
 
+    /** 直播源配置：直播源地址 + EPG 地址 + 手机扫码（仅显示直播相关表单） */
+    private void showLiveSourceConfig() {
+        final String oldLive = Hawk.get(HawkConfig.LIVE_URL, "");
+        final String oldEpg = Hawk.get(HawkConfig.EPG_URL, "");
+        com.github.tvbox.osc.ui.dialog.ApiDialog dialog =
+                new com.github.tvbox.osc.ui.dialog.ApiDialog(this, com.github.tvbox.osc.ui.dialog.ApiDialog.MODE_LIVE);
+        dialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
+            @Override
+            public void onDismiss(android.content.DialogInterface d) {
+                String newLive = Hawk.get(HawkConfig.LIVE_URL, "");
+                String newEpg = Hawk.get(HawkConfig.EPG_URL, "");
+                boolean changed = (oldLive == null ? "" : oldLive).equals(newLive == null ? "" : newLive)
+                        && (oldEpg == null ? "" : oldEpg).equals(newEpg == null ? "" : newEpg);
+                if (!changed) {
+                    restartLive();
+                }
+            }
+        });
+        dialog.show();
+    }
+
+    /** 重启直播界面：重新拉取最新直播源与 EPG */
+    private void restartLive() {
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                android.content.Intent intent = new android.content.Intent(LivePlayActivity.this, LivePlayActivity.class);
+                finish();
+                startActivity(intent);
+                overridePendingTransition(0, 0);
+            }
+        }, 300);
+    }
+
     private boolean isListOrSettingLayoutVisible() {
         return tvLeftChannelListLayout.getVisibility() == View.VISIBLE || tvRightSettingLayout.getVisibility() == View.VISIBLE;
     }
 
     private void initLiveSettingGroupList() {
-        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "节目源解码", "渲染方式", "超时换源", "偏好设置", "直播历史", "退出直播"));
+        ArrayList<String> groupNames = new ArrayList<>(Arrays.asList("线路选择", "画面比例", "节目源解码", "渲染方式", "超时换源", "偏好设置", "直播源配置", "退出直播"));
         ArrayList<ArrayList<String>> itemsArrayList = new ArrayList<>();
         ArrayList<String> sourceItems = new ArrayList<>();
         ArrayList<String> scaleItems = new ArrayList<>(Arrays.asList("默认", "16:9", "4:3", "填充", "原始", "裁剪"));
@@ -2500,7 +2540,7 @@ public class LivePlayActivity extends BaseActivity {
         ArrayList<String> renderItems = new ArrayList<>(Arrays.asList("TextureView", "SurfaceView"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
         ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道"));
-        ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("列表历史"));
+        ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("配置直播源(含EPG)", "直播源历史"));
         ArrayList<String> exitConfirm = new ArrayList<>(Arrays.asList("确定"));
         itemsArrayList.add(sourceItems);
         itemsArrayList.add(scaleItems);

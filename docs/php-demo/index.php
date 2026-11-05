@@ -233,6 +233,13 @@ switch ($route) {
             'live'  => tk_rel_url('r=live', $enc),  // 直播源（JSON / txt / m3u 均可）
             'epg'   => tk_rel_url('r=epg', $enc),   // EPG 节目单（JSON，支持多天）
             'proxy' => '',                            // 代理地址（本地代理用，非服务器接口）
+            // 图片占位图：所有海报/背景图下载完成前先显示该图（为空=内置占位图）
+            'placeholderImage' => '',
+            // 接口强制覆盖：false/不配置=用户手动配置的接口优先；true=全部强制覆盖；
+            // 也可用对象逐项控制： ['api'=>true,'live'=>false,'epg'=>false,'proxy'=>false]
+            'forceOverride' => false,
+            // 默认加载的界面 id：standard=当前标准首页；其它值对应下方 screens 中的 id
+            'defaultScreen' => 'standard',
             // ==================================================================
 
             // ==================================================================
@@ -360,6 +367,34 @@ switch ($route) {
                 ['name' => '组网', 'type' => 'page', 'target' => 'hin2n',   'icon' => 'ic_hin2n'],
                 ['name' => '系统', 'type' => 'page', 'target' => 'system',  'icon' => 'hm_settings'],
                 ['name' => '捐助', 'type' => 'page', 'target' => 'donate',  'icon' => 'hm_fav'],
+            ],
+            // ==================================================================
+
+            // ==================================================================
+            // 【界面（屏幕）/ 酒店 IPTV 桌面】
+            //  每个界面可单独配置接口；layout 支持 hotel_grid / hotel_list / hotel_showcase
+            //  layoutUrl=布局插件 JSON 地址（按需下载缓存本地，便于只改 JSON 开发新界面）
+            //  entries 非空时覆盖默认入口（name/type/target/icon/pic/desc）
+            'screens' => [
+                // [
+                //     'id' => 'hotel_demo',
+                //     'name' => '酒店桌面示例',
+                //     'layout' => 'hotel_grid',
+                //     'api' => '', 'live' => '', 'epg' => '',
+                //     'title' => '欢迎入住',
+                //     'logo' => '',
+                //     'background' => '',
+                //     'ticker' => '前台电话 8888    祝您入住愉快',
+                //     'columns' => 3,
+                //     'rows' => 2,
+                //     'showClock' => true,
+                //     'layoutUrl' => '',
+                //     'entries' => [
+                //         ['name' => '点播', 'type' => 'page', 'target' => 'vod', 'icon' => 'hm_vod'],
+                //         ['name' => '直播', 'type' => 'page', 'target' => 'live', 'icon' => 'hm_live'],
+                //         ['name' => '切换界面', 'type' => 'feature', 'target' => 'screenSwitch', 'icon' => 'hm_settings'],
+                //     ],
+                // ],
             ],
             // ==================================================================
 

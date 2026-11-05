@@ -18,9 +18,11 @@ This repo relies on the following third-party projects:
 - **应用名「桌面」+ 独立包名**：generic=`TKLauncher.app`、hisense=`TKLauncher.hisense`，与其它 TVBox 区分，可并存安装
 - **内置系统桌面**：清单直接声明 HOME/DEFAULT（参考 MQLauncher），安装后即可作为桌面；已移除应用内「选择桌面/设为桌面」功能与入口
 - **hin2n 组网独立 App 入口**：首页「历史」入口行的「组网」卡片或顶栏图标按包名拉起独立 App `wang.switchy.hin2n`，未安装时按主接口 `hin2n.apkUrl` 下载安装；TVBox 本身不再内置 hin2n 代码
-- **全部配置由 JSON 下发，应用内无设置页**：APK 内不再打包任何配置 JSON；远程/本地地址在 `RemoteConfig.CONFIG_URL` 代码中手动指定（远程可热更新，本地可用文件），配置示例见 `docs/`
-- **点播直接显示分类 + 切源原地重载**：进入点播界面即显示「热播推荐 + 点播分类」并默认加载首屏；切源时复用本地缓存的接口配置重新解析、重载新源的 jar/js/py 插件并强制刷新分类，全程停留在点播界面（不返回首页、不重启界面），旧源的迟到响应会被丢弃
-- **点播首分类「热播推荐」**：固定为首个分类并默认选中，数据只取主配置 `home.recMovies`（未配置时显示空态）
+- **主配置由 JSON 下发 + 界面内接口配置**：APK 内不打包配置 JSON；远程/本地地址在 `RemoteConfig.CONFIG_URL` 指定；点播界面右上角齿轮、直播界面「直播源配置」可配置接口地址并支持手机扫码。用户手动配置默认优先，主接口 `forceOverride` 可强制覆盖
+- **点播直接显示分类 + 切源重启**：进入点播界面即显示「热播推荐 + 点播分类」；选源后与 TVboxOSC 一致，重启点播界面并按新源重新加载分类与推荐
+- **点播首分类「热播推荐」与主界面一致**：主配置 `home.recMovies` 优先；未配置回退豆瓣热播；`settings.homeRec=2` 时使用观看历史
+- **图片加载优化**：主接口 `placeholderImage` 作为预设占位图，图片下载完成前先显示、完成后自动替换（与 TVboxOSC 一致）
+- **酒店 IPTV 桌面 / 多界面**：主接口 `screens` + `defaultScreen` 控制启动加载哪个界面，内置 `hotel_grid` / `hotel_list` / `hotel_showcase` 三种布局；每个界面可独立配置点播/直播/EPG 接口；`layoutUrl` 布局插件按需下载并缓存本地
 - **主接口失败全屏报错**：主配置无法加载/访问且无缓存时直接显示报错页（重试/退出），不再加载其它界面；点播接口提示只在点播界面出现
 - **首页推荐默认多行**：`settings.homeRecStyle` 默认 `true`（网格），可配置为单行
 - **应用市场 TV 搜索**：搜索弹窗内置 A-Z/0-9 屏幕键盘，遥控器方向键 + OK 输入，支持按首字母搜索

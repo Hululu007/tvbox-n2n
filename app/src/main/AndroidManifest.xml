@@ -71,6 +71,12 @@
             </intent-filter>
         </activity>
 
+        <!-- 酒店 IPTV 桌面：主接口 defaultScreen 指定的非 standard 界面在此加载 -->
+        <activity
+            android:name=".ui.activity.HotelActivity"
+            android:screenOrientation="sensorLandscape"
+            android:exported="false"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" />
         <activity
             android:name=".ui.activity.ConfigErrorActivity"
             android:screenOrientation="sensorLandscape"

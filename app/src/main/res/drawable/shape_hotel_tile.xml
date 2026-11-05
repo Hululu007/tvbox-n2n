@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 酒店 IPTV 桌面入口卡片：普通/选中两种状态 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/vs_12" />
+            <solid android:color="#33FFC107" />
+            <stroke android:width="@dimen/vs_2" android:color="#FFFFC107" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="@dimen/vs_12" />
+            <solid android:color="#1AFFFFFF" />
+            <stroke android:width="@dimen/vs_1" android:color="#33FFFFFF" />
+        </shape>
+    </item>
+</selector>
