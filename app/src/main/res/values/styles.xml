@@ -14,7 +14,10 @@
         <item name="android:windowFullscreen">true</item>
         <item name="android:windowContentOverlay">@null</item>
         <item name="windowNoTitle">true</item>
-        <item name="android:windowBackground">@android:color/transparent</item>
+        <!-- 兜底深色背景：避免 BaseActivity.onCreate 动态设置 windowBackground 之前窗口透明，
+             旧 Activity finish 到新 Activity setContentView 之间显示 WindowManager 默认黑屏。
+             运行时会被 BaseActivity 动态设置的主题渐变色覆盖。 -->
+        <item name="android:windowBackground">#FF1A1A2E</item>
     </style>
 
     <!-- ============ 颜色主题（ThemeManager.java 中的 STYLES 数组顺序必须与此一致） ============ -->

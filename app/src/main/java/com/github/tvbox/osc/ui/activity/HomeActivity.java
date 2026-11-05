@@ -332,11 +332,13 @@ public class HomeActivity extends BaseActivity {
         }
     }
 
-    private boolean dataInitOk = false;
-    private boolean jarInitOk = false;
+    // ★ 改为 static：进程级跟踪，主题切换重启 Activity（进程未杀）时直接跳过 loadConfig/loadJar，
+    // 大幅缩短 Activity 重启后的首帧显示时间。冷启动时类加载初始化 false，正常加载后置 true。
+    private static boolean dataInitOk = false;
+    private static boolean jarInitOk = false;
 
     /** 直播模式每次启动只跳转一次，避免 initData 多次回调重复打开直播页 */
-    private boolean liveModeJumped = false;
+    private static boolean liveModeJumped = false;
 
     /** 开启「启动时进直播」时跳到直播页（关闭时保持首页） */
     private void jumpToLiveIfNeeded() {

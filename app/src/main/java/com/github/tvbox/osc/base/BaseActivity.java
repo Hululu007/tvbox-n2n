@@ -87,6 +87,25 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         } catch (Throwable th) {
             th.printStackTrace();
         }
+        // ★ 关键修复：setTheme 之后立刻给 Window 设置主题渐变背景，
+        // 避免 styles.xml 里 windowBackground=transparent 导致 Activity 切换间隙
+        // （旧 Activity finish → 新 Activity setContentView 之前）窗口完全透明，
+        // WindowManager 显示默认黑屏的问题。
+        // 动态设置的渐变背景会被后续 onResume 的 changeWallpaper（有 /wp 壁纸时）覆盖。
+        try {
+            int[] pair = com.github.tvbox.osc.n2n.ThemeManager.currentBgPair();
+            GradientDrawable gd = new GradientDrawable();
+            gd.setColors(pair);
+            gd.setOrientation(GradientDrawable.Orientation.TL_BR);
+            getWindow().setBackgroundDrawable(gd);
+        } catch (Throwable ignored) {
+            // 兜底：至少设一个深色，确保窗口不是透明的
+            try {
+                getWindow().setBackgroundDrawable(new GradientDrawable(
+                        GradientDrawable.Orientation.TL_BR,
+                        new int[]{0xFF1A1A2E, 0xFF16213E}));
+            } catch (Throwable ignored2) {}
+        }
         // Android 4.4：把 drawable/ 里硬编码的主题蓝就地替换为当前主题色（API>=21 走 ?attr 无需处理）
         try {
             com.github.tvbox.osc.n2n.ThemeDrawableFix.apply(this);
