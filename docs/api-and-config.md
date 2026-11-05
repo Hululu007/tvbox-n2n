@@ -60,6 +60,12 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "proxy": "",
   "bootStart": true,
   "settings": { "homeRecStyle": true },
+  "home": {
+    "sourceName": "TKLauncher",          // 左上角显示的名称（主接口统一定义；空=显示 App 名称）
+    "recMovies": [                        // 首页推荐数据（主接口提供；配置后不再请求豆瓣/点播接口）
+      { "name": "演示影片一", "pic": "https://placehold.co/300x400/png", "note": "9.0" }
+    ]
+  },
   "appMarket": {
     "url": "index.php?r=market&category={category}&sort={sort}&page={page}&pageSize={pageSize}&keyword={keyword}&enc=ke",
     "detailUrl": "index.php?r=detail&pkg={packageName}&enc=ke",
@@ -97,14 +103,36 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 ### 2.3 直播源（`live`）示例
 
+推荐 JSON 格式（客户端同时兼容传统 txt / m3u 文本源，按内容自动识别）：
+
+```json
+[
+  {
+    "group": "央视",
+    "channels": [
+      { "name": "CCTV-1 综合", "urls": ["https://example.com/cctv1.m3u8", "https://example.com/cctv1-2.m3u8$线路2"] },
+      { "name": "CCTV-13 新闻", "urls": ["https://example.com/cctv13.m3u8"] }
+    ]
+  },
+  {
+    "group": "网页源",
+    "channels": [
+      { "name": "WebView 直播", "urls": ["webview://https://example.com/live/page.html"] },
+      { "name": "Video 嗅探", "urls": ["video://https://example.com/live/video.html"] }
+    ]
+  },
+  {
+    "group": "P2P",
+    "channels": [
+      { "name": "TKP2P 频道", "urls": ["tkp2p://https://example.com/live/p2p.m3u8"] }
+    ]
+  }
+]
 ```
-#EXTM3U
-央视,#genre#
-CCTV-1 综合,https://example.com/cctv1.m3u8
-CCTV-13 新闻,https://example.com/cctv13.m3u8
-卫视,#genre#
-湖南卫视,https://example.com/hunan.m3u8
-```
+
+- 顶层为分组数组（或 `{"groups":[...]}` 对象形式）；每个频道含 `name` 与 `urls`，`地址$线路名` 可为地址命名；
+- **支持的节目类型（播放地址协议）**：`http(s)` 直链（m3u8/flv/mp4 等）、`rtmp://`、`rtsp://`、`webview://`（WebView 直接播网页）、`video://`（WebView 嗅探网页视频）、`tkp2p://`（内置 P2P）；
+- 兼容的文本格式：`分组,#genre#` + `频道,url#url2`（txt）、`#EXTM3U` + `#EXTINF`（m3u）。
 
 ### 2.4 EPG（`epg`）示例
 

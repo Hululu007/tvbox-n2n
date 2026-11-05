@@ -61,43 +61,11 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
     /** hin2n 组网内置模块入口（随入口行一起滚动） */
     private LinearLayout tvHin2nHome;
     public static HomeHotVodAdapter homeHotVodAdapter;
-    private List<Movie.Video> homeSourceRec;
     public static TvRecyclerView tvHotListForGrid;
     public static TvRecyclerView tvHotListForLine;
 
     public static UserFragment newInstance() {
         return new UserFragment();
-    }
-
-    public static UserFragment newInstance(List<Movie.Video> recVod) {
-        return new UserFragment().setArguments(recVod);
-    }
-
-    public UserFragment setArguments(List<Movie.Video> recVod) {
-        this.homeSourceRec = recVod;
-        return this;
-    }
-
-    /**
-     * 首页中间一行入口已改为默认即时加载（HomeActivity.initView 直接创建本 Fragment），
-     * 点播接口的「站点推荐」数据回来后通过本方法仅更新推荐列表，不重建入口行。
-     * 仅在首页内容模式为「站点推荐」(HOME_REC==1) 时生效，其余模式（豆瓣热播/观看历史）忽略。
-     */
-    public void updateHomeRec(List<Movie.Video> recVod) {
-        try {
-            if (recVod == null) {
-                return;
-            }
-            this.homeSourceRec = recVod;
-            if (Hawk.get(HawkConfig.HOME_REC, 0) == 1 && homeHotVodAdapter != null) {
-                // 站点推荐数据到达：标题同步改为「站点推荐」（首次创建时数据还没回来，
-                // 标题会先显示为豆瓣/推荐，这里纠正，避免标题与内容不一致）
-                homeHotVodAdapter.setLabel("站点推荐");
-                homeHotVodAdapter.setNewData(recVod);
-            }
-        } catch (Throwable th) {
-            th.printStackTrace();
-        }
     }
 
     /**
@@ -237,10 +205,12 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         // 导致网格内部滚动、入口行无法随内容一起滚动（根因）
         tvHotListForGrid.setHasFixedSize(false);
         int spanCount = 5;
-        if (Hawk.get(HawkConfig.HOME_REC, 0) == 1 && homeSourceRec!=null) {
-            style=ImgUtil.initStyle();
+        // 首页推荐改由主接口（远程配置 home.recMovies）提供；配置后为海报网格样式
+        List<Movie.Video> customRec = RemoteConfig.homeRecMovies();
+        if (Hawk.get(HawkConfig.HOME_REC, 0) != 2 && !customRec.isEmpty()) {
+            style = ImgUtil.initStyle();
         }
-        if(style!=null && Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
+        if(style!=null) {
             spanCount=ImgUtil.spanCountByStyle(style,spanCount);
         }
         tvHotListForGrid.setLayoutManager(new V7GridLayoutManager(this.mContext, spanCount));
@@ -248,19 +218,11 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         // 入口行（历史一行）即可随下方内容一起上/下滚动（与单行模式行为一致）
         tvHotListForGrid.setNestedScrollingEnabled(false);
         // 推荐列表左上角标题：
-        //  - 模式 0（豆瓣热播）：json 配置了 home.recMovies 时改叫「推荐」，不再请求豆瓣；
-        //  - 模式 1（站点推荐）：有站点推荐数据叫「站点推荐」，没有时回退豆瓣/自定义推荐；
+        //  - 模式 0/1（推荐）：主接口配置了 home.recMovies 时叫「推荐」，未配置回退「豆瓣热播」；
         //  - 模式 2（观看历史）不显示该标题。
-        List<Movie.Video> customRec = RemoteConfig.homeRecMovies();
         String tvRate = "";
-        if (Hawk.get(HawkConfig.HOME_REC, 0) == 0) {
+        if (Hawk.get(HawkConfig.HOME_REC, 0) == 0 || Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
             tvRate = customRec.isEmpty() ? "豆瓣热播" : "推荐";
-        } else if (Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
-            if (homeSourceRec != null) {
-                tvRate = "站点推荐";
-            } else {
-                tvRate = customRec.isEmpty() ? "豆瓣热播" : "推荐";
-            }
         }
         homeHotVodAdapter = new HomeHotVodAdapter(style, tvRate);
         homeHotVodAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
@@ -481,25 +443,18 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
     /**
      * 初始化首页推荐列表（首页内容模式由 HawkConfig.HOME_REC 决定）。
      *
-     * <p>加载优先级（2026-10-23 需求 5）：</p>
+     * <p>主页面已去除对点播接口的引用，推荐数据统一由主接口下发：</p>
      * <ol>
-     *   <li>模式 1 且首页站点已返回推荐数据：直接显示站点推荐；</li>
      *   <li>模式 2：前台 {@link #onFragmentResume()} 已填充观看历史，这里不再处理；</li>
-     *   <li>其余情况（豆瓣模式 / 站点推荐回退）：json 配置了 home.recMovies 时直接显示
-     *       自定义影片列表，<b>完全不发豆瓣请求</b>；未配置才走原有豆瓣热播（含当日缓存）。</li>
+     *   <li>模式 0/1（推荐）：主接口配置了 home.recMovies 时直接显示该列表，<b>完全不发豆瓣请求</b>；
+     *       未配置才走原有豆瓣热播（含当日缓存）。</li>
      * </ol>
      */
     private void initHomeHotVod(HomeHotVodAdapter adapter) {
-        if (Hawk.get(HawkConfig.HOME_REC, 0) == 1) {
-            if (homeSourceRec != null) {
-                adapter.setNewData(homeSourceRec);
-                return;
-            }
-            // 站点推荐尚未返回：若有自定义推荐，先顶上，避免空白等待
-        } else if (Hawk.get(HawkConfig.HOME_REC, 0) == 2) {
+        if (Hawk.get(HawkConfig.HOME_REC, 0) == 2) {
             return;
         }
-        // 自定义推荐影片优先：配置后不再请求豆瓣（豆瓣接口在部分网络/风控下会返回空列表）
+        // 推荐改由主接口（远程配置 home.recMovies）提供：配置后不再请求豆瓣
         List<Movie.Video> customRec = RemoteConfig.homeRecMovies();
         if (!customRec.isEmpty()) {
             adapter.setNewData(customRec);

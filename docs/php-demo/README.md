@@ -34,7 +34,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 |-----|------------------|------|
 | `index.php?r=config` | `CONFIG_URL` | 远程主配置 |
 | `index.php?r=api` | `api` | 点播源配置（TVBox 标准 JSON） |
-| `index.php?r=live` | `live` | 直播源 txt |
+| `index.php?r=live` | `live` | 直播源 JSON（客户端兼容 txt/m3u） |
 | `index.php?r=epg&ch={频道名}&date={yyyy-MM-dd}&days={天数}` | `epg` | 节目单 JSON（支持一次返回多天） |
 | `index.php?r=market&category={category}&sort={sort}&page={page}&pageSize={pageSize}&keyword={keyword}` | `appMarket.url` | 应用市场列表 |
 | `index.php?r=detail&pkg={packageName}` | `appMarket.detailUrl` | 应用详情 |
@@ -46,7 +46,27 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 `r=config` 返回完整系统配置：接口地址、`epgDays`、`settings` 全量设置项、首页 `home`、`themes`、`tkp2p`、`topEntries`/`homeEntries`、应用市场、升级与捐助等，字段含义与 [配置示例](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 一致。
 
-### 3.1 EPG JSON 格式
+### 3.1 直播 JSON 格式
+
+请求：`index.php?r=live`
+
+```json
+[
+  {
+    "group": "央视",
+    "channels": [
+      { "name": "CCTV-1 综合", "urls": ["https://example.com/cctv1.m3u8", "https://example.com/cctv1-2.m3u8$线路2"] }
+    ]
+  }
+]
+```
+
+- 顶层为分组数组（或 `{"groups":[...]}` 对象形式，客户端均可识别）；每个分组含 `group` 与 `channels`；
+- 同一频道多个播放地址写入 `urls` 数组，`地址$线路名` 可为地址命名；
+- **支持的节目类型（播放地址协议）**：`http(s)` 直链（m3u8/flv/mp4 等）、`rtmp://`、`rtsp://`、`webview://`（WebView 直接播网页）、`video://`（WebView 嗅探网页视频）、`tkp2p://`（内置 P2P，引擎见主配置 `tkp2p` 段）；
+- 客户端同时兼容传统 txt（`分组,#genre#` / `频道,url#url2`）与 m3u（`#EXTM3U`/`#EXTINF`）文本源，按内容自动识别。
+
+### 3.2 EPG JSON 格式
 
 请求：`index.php?r=epg&ch=CCTV-1&date=2026-11-04&days=3`（`days` 省略时为 `1`，范围 1~9；也兼容 `name` 参数）。
 
@@ -95,7 +115,7 @@ $out = bin2hex(openssl_encrypt($plain, 'AES-128-ECB', substr($secret, 0, 16), OP
 
 ### 4.3 注意事项
 
-- 客户端会自动识别明文/密文；**响应内容类型必须是 JSON / 直播 txt**（EPG 也已统一为 JSON），解密后客户端靠首字符 `{`、`[`、`/`、`#EXTM3U`、`#genre#` 判定（`<` 仅兼容旧 XMLTV）；
+- 客户端会自动识别明文/密文；**响应内容类型必须是 JSON / 直播 txt（直播推荐用 JSON）**，解密后客户端靠首字符 `{`、`[`、`/`、`#EXTM3U`、`#genre#` 判定（`<` 仅兼容旧 XMLTV）；
 - 加密输出时 `Content-Type` 改为 `text/plain`，不要把密文包在 JSON 字符串里；
 - 换密钥后旧密文立即失效，客户端会自动回退到明文/缓存（视接口而定）。
 

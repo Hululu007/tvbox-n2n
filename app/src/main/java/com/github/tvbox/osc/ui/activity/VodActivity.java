@@ -231,17 +231,24 @@ public class VodActivity extends BaseActivity {
         sourceViewModel.sortResult.observe(this, new Observer<AbsSortXml>() {
             @Override
             public void onChanged(AbsSortXml absXml) {
-                // 不生成 my0 首页 Tab（withMy = false）
-                String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
-                if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
-                    sortAdapter.setNewData(DefaultConfig.adjustSort(key, absXml.classes.sortList, false));
-                } else {
-                    sortAdapter.setNewData(DefaultConfig.adjustSort(key, new ArrayList<>(), false));
+                if (isFinishing() || isDestroyed()) {
+                    return;
                 }
-                initViewPager();
-                SourceBean home = ApiConfig.get().getHomeSourceBean();
-                if (home != null && home.getName() != null && !home.getName().isEmpty()) {
-                    tvName.setText(home.getName());
+                try {
+                    // 不生成 my0 首页 Tab（withMy = false）
+                    String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
+                    if (absXml != null && absXml.classes != null && absXml.classes.sortList != null) {
+                        sortAdapter.setNewData(DefaultConfig.adjustSort(key, absXml.classes.sortList, false));
+                    } else {
+                        sortAdapter.setNewData(DefaultConfig.adjustSort(key, new ArrayList<>(), false));
+                    }
+                    initViewPager();
+                    SourceBean home = ApiConfig.get().getHomeSourceBean();
+                    if (home != null && home.getName() != null && !home.getName().isEmpty()) {
+                        tvName.setText(home.getName());
+                    }
+                } catch (Throwable th) {
+                    th.printStackTrace();
                 }
             }
         });
@@ -405,20 +412,16 @@ public class VodActivity extends BaseActivity {
             dialog.setAdapter(tvRecyclerView, new SelectDialogAdapter.SelectDialogInterface<SourceBean>() {
                 @Override
                 public void click(SourceBean value, int pos) {
+                    // 换源前取消旧源请求，避免旧响应晚到覆盖新列表
+                    SourceBean old = ApiConfig.get().getHomeSourceBean();
+                    if (old != null && old.getKey() != null) {
+                        com.lzy.okgo.OkGo.getInstance().cancelTag(old.getKey() + "_sort");
+                    }
                     ApiConfig.get().setSourceBean(value);
                     fDialog.dismiss();
-                    // 提示并自动返回主界面刷新数据（主界面 onResume 检测标志位后强制刷新）
-                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」，即将返回主界面刷新并重新进入点播", Toast.LENGTH_LONG).show();
-                    HomeActivity.sRefreshOnResume = true;
-                    HomeActivity.sReopenVodAfterRefresh = true;
-                    mHandler.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (!isFinishing() && !isDestroyed()) {
-                                finish();
-                            }
-                        }
-                    }, 1500);
+                    // 切换源后直接在本界面刷新点播分类列表，不再返回主界面刷新
+                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」", Toast.LENGTH_SHORT).show();
+                    reloadHome();
                 }
 
                 @Override
@@ -442,10 +445,24 @@ public class VodActivity extends BaseActivity {
 
     /** 重新加载当前源分类（切换源后强制绕过 homeContent 缓存重新拉取） */
     void reloadHome() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        SourceBean home = ApiConfig.get().getHomeSourceBean();
+        String key = home != null && home.getKey() != null ? home.getKey() : "";
+        // 源名立即跟随切换结果更新，不必等分类数据返回
+        if (home != null && home.getName() != null && !home.getName().isEmpty()) {
+            tvName.setText(home.getName());
+        }
         showLoading();
         currentSelected = 0;
         sortFocused = 0;
-        String key = ApiConfig.get().getHomeSourceBean() != null ? ApiConfig.get().getHomeSourceBean().getKey() : "";
+        if (key.isEmpty()) {
+            // 源未就绪：清空列表，避免残留上一个源的内容
+            sortAdapter.setNewData(new ArrayList<MovieSort.SortData>());
+            initViewPager();
+            return;
+        }
         sourceViewModel.getSort(key, true);
     }
 }

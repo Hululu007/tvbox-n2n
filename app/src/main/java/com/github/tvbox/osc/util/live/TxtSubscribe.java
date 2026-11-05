@@ -1,7 +1,9 @@
 package com.github.tvbox.osc.util.live;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 import java.io.BufferedReader;
 import java.io.StringReader;
@@ -17,11 +19,99 @@ public class TxtSubscribe {
     private static final Pattern GROUP_PATTERN = Pattern.compile("group-title=\"(.*?)\"");
 
     public static void parse(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap, String str) {
+        if (str == null) {
+            return;
+        }
+        String trimmed = str.trim();
+        // JSON 直播源（与 EPG 的 JSON 格式对齐）：数组或 {"groups":[...]} 均支持，
+        // 解析成功直接返回；结构不符则回退到 txt/m3u 文本解析
+        if ((trimmed.startsWith("[") || trimmed.startsWith("{")) && parseJson(linkedHashMap, trimmed)) {
+            return;
+        }
         if (str.startsWith("#EXTM3U")) {
             parseM3u(linkedHashMap, str);
         } else {
             parseTxt(linkedHashMap, str);
         }
+    }
+
+    /**
+     * JSON 直播格式（与 {@link #live2JsonArray} 输出结构互逆）：
+     * <pre>
+     * [ {"group":"分组名","channels":[{"name":"频道名","urls":["url1","url2$线路2"]}]} ]
+     * 或 {"groups":[ ...同上... ]}
+     * </pre>
+     * url 支持 http(s)/rtsp/rtmp 直链及 webview://、video://、tkp2p:// 三种特殊协议，
+     * 「url$线路名」可为多线路地址命名（与 txt 源「#」分隔多链接等价）。
+     *
+     * @return true=识别并解析出有效分组；false=不是预期 JSON 结构，调用方继续走文本解析
+     */
+    private static boolean parseJson(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap, String str) {
+        try {
+            JsonElement root = JsonParser.parseString(str);
+            JsonArray groups = null;
+            if (root.isJsonArray()) {
+                groups = root.getAsJsonArray();
+            } else if (root.isJsonObject() && root.getAsJsonObject().has("groups")) {
+                JsonElement ge = root.getAsJsonObject().get("groups");
+                if (ge != null && ge.isJsonArray()) {
+                    groups = ge.getAsJsonArray();
+                }
+            }
+            if (groups == null) {
+                return false;
+            }
+            for (JsonElement groupEle : groups) {
+                if (!groupEle.isJsonObject()) continue;
+                JsonObject g = groupEle.getAsJsonObject();
+                String groupName = optString(g, "group");
+                if (groupName.isEmpty()) groupName = optString(g, "name");
+                if (groupName.isEmpty()) groupName = "未分组";
+                LinkedHashMap<String, ArrayList<String>> channel = linkedHashMap.get(groupName);
+                if (channel == null) {
+                    channel = new LinkedHashMap<>();
+                }
+                JsonElement channelsEle = g.get("channels");
+                if (channelsEle != null && channelsEle.isJsonArray()) {
+                    for (JsonElement chEle : channelsEle.getAsJsonArray()) {
+                        if (!chEle.isJsonObject()) continue;
+                        JsonObject c = chEle.getAsJsonObject();
+                        String name = optString(c, "name");
+                        if (name.isEmpty()) name = "未命名";
+                        ArrayList<String> urls = channel.get(name);
+                        if (urls == null) {
+                            urls = new ArrayList<>();
+                        }
+                        JsonElement urlsEle = c.get("urls");
+                        if (urlsEle != null && urlsEle.isJsonArray()) {
+                            for (JsonElement uEle : urlsEle.getAsJsonArray()) {
+                                if (!uEle.isJsonPrimitive()) continue;
+                                String url = uEle.getAsString().trim();
+                                if (!url.isEmpty() && !urls.contains(url)) urls.add(url);
+                            }
+                        } else {
+                            // 兼容单链接写法 {"url":"..."}
+                            String url = optString(c, "url");
+                            if (!url.isEmpty() && !urls.contains(url)) urls.add(url);
+                        }
+                        if (!urls.isEmpty()) {
+                            channel.put(name, urls);
+                        }
+                    }
+                }
+                if (!channel.isEmpty()) {
+                    linkedHashMap.put(groupName, channel);
+                }
+            }
+            return !linkedHashMap.isEmpty();
+        } catch (Throwable th) {
+            return false;
+        }
+    }
+
+    private static String optString(JsonObject obj, String key) {
+        JsonElement ele = obj == null ? null : obj.get(key);
+        return ele != null && ele.isJsonPrimitive() ? ele.getAsString().trim() : "";
     }
 
     private static void parseM3u(LinkedHashMap<String, LinkedHashMap<String, ArrayList<String>>> linkedHashMap, String str) {

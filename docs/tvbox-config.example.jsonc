@@ -24,7 +24,7 @@
 //   本系统所有接收接口（主配置（远程/本地）/ 远程配置 remoteConfigUrl / 点播 api /
 //   直播 live / EPG / 自定义点播 type=vod 的 target / 应用市场 appMarket /
 //   升级检查 upgrade.checkUrl）均支持密文下发：
-//   内容是 json（EPG 也是 JSON；直播为 txt；兼容 jsonc）直接解析，不是 json 自动解密后加载，用户无感知。
+//   内容是 json（EPG 也是 JSON；直播推荐 JSON、兼容 txt/m3u；兼容 jsonc）直接解析，不是 json 自动解密后加载，用户无感知。
 //   支持两种密文形态（自动识别）：
 //     ① ke 前缀模式（推荐，App 端零配置）：
 //        密文 = ke(19 位小写 hex) + bin2hex(AES-128-ECB(数据, ke 前 16 位))
@@ -115,10 +115,10 @@
                                         //   （输入框、按钮等界面元素）
     "buttonBgColor": "",                // 按钮底色，空=主题半透明色
                                         //   （接口配置弹窗「确定 / 存储权限」按钮）
-    // 首页自定义推荐影片：数组非空时，首页「豆瓣热播」直接显示这里配置的影片，
-    // 不再请求豆瓣接口（弱网/豆瓣风控导致列表为空时特别有用）。
+    // 首页推荐影片：由主接口直接提供（首页推荐数据源，主页面不再引用点播接口数据）。
+    // 数组非空时首页推荐直接显示这里配置的影片，不再请求豆瓣接口；空数组=回退豆瓣热播。
     // 字段：name=片名（必填） pic=封面 note=角标文字 id=影片ID sourceKey=站点key。
-    // 配了 id+sourceKey 点击直接进详情；只配 name 时点击按片名搜索；空数组=保持豆瓣逻辑。
+    // 配了 id+sourceKey 点击直接进详情；只配 name 时点击按片名搜索。
     // 配置后推荐列表标题显示为「推荐」。
     "recMovies": [
       // { "name": "示例影片A", "pic": "https://example.com/a.jpg", "note": "9.1" },
@@ -184,7 +184,7 @@
   // 配置为本地文件/assets 时回退拼接主接口 api 的域名/IP。
   "api": "",                           // 点播源接口（JSON 格式见 docs/vod.config.example.json）；
                                        //   留空且配置了 live 时可作纯直播盒子（不弹「源地址为空」）
-  "live": "",                          // 直播源接口（txt / m3u / json）
+  "live": "",                          // 直播源接口（推荐 JSON；兼容 txt / m3u）
   "epg": "",                           // 节目单接口（JSON 格式，支持多天下发；留空用内置默认 https://epg.112114.xyz/）
   "proxy": "",                         // 代理地址
 
@@ -224,7 +224,7 @@
     // ---- 首页选项 ----
     "homeShowSource": true,            // 数据源显示：true=首页显示当前源名称，false=隐藏
     "homeSearchPosition": false,       // 搜索按钮位置：true=上方（顶栏），false=下方（历史行）
-    "homeRec": 1,                      // 首页推荐内容：0=豆瓣热播 1=站点推荐 2=观看历史
+    "homeRec": 1,                      // 首页推荐内容：0=推荐（主接口 home.recMovies，未配置回退豆瓣） 1=推荐（同 0） 2=观看历史
     "homeNum": 4,                      // 历史条数：0=20条 1=40条 2=60条 3=80条 4=100条
     "homeRecStyle": true,              // 首页多行网格：true=多行（默认） false=单行横滑
     "homeDefaultShow": false,          // 启动时进直播：false=关闭（进入首页） true=开启（直接进入直播）

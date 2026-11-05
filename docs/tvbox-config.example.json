@@ -32,6 +32,11 @@
   "epgDays": 3,
   "aliLicenseKey": "",
 
+  "home": {
+    "sourceName": "TKLauncher",
+    "recMovies": []
+  },
+
   "settings": {
     "homeShowSource": true,
     "homeSearchPosition": false,

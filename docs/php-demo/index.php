@@ -7,9 +7,9 @@
  *   http://your-domain/php-demo/index.php?r=config&enc=ke
  *
  * 路由一览（enc 可选 none|ke|fixed，默认 none）：
- *   index.php?r=config                 远程主配置（App 入口）
+ *   index.php?r=config                 远程主配置（App 入口，定义左上角名称/首页推荐）
  *   index.php?r=api                    点播源配置（TVBox 标准 JSON）
- *   index.php?r=live                   直播源（txt，支持密文）
+ *   index.php?r=live                   直播源（JSON，支持密文，含全部节目类型示例）
  *   index.php?r=epg                    节目单（JSON，支持密文，可多天）
  *   index.php?r=market                 应用市场列表（模板占位符）
  *   index.php?r=detail&pkg=xxx         应用市场详情
@@ -164,7 +164,8 @@ switch ($route) {
             // ---- 首页外观 ----
             'home' => [
                 'bgImage' => '',
-                'sourceName' => '',
+                // 左上角显示的名称：主接口统一定义，首页始终显示此文字（空=显示 App 名称）
+                'sourceName' => 'TKLauncher',
                 'entryBgColor' => '',
                 'iconColor' => '',
                 'textColor' => '',
@@ -172,7 +173,13 @@ switch ($route) {
                 'inputBgColor' => '',
                 'buttonBgColor' => '',
                 'show' => ['home' => true, 'live' => true, 'vod' => true],
-                'recMovies' => [],
+                // 首页推荐数据：由主接口直接提供（配置后不再请求豆瓣/点播接口）。
+                // id+sourceKey 存在时点击进详情；仅 name 时点击按名称聚合搜索。
+                'recMovies' => [
+                    ['name' => '演示影片一', 'pic' => 'https://placehold.co/300x400/png', 'note' => '9.0'],
+                    ['name' => '演示影片二', 'pic' => 'https://placehold.co/300x400/png', 'note' => '8.5'],
+                    ['name' => '演示影片三', 'pic' => 'https://placehold.co/300x400/png', 'note' => '8.0'],
+                ],
             ],
             // ---- tkp2p:// 原生 P2P 直播 ----
             'tkp2p' => [
@@ -298,13 +305,40 @@ switch ($route) {
         break;
 
     case 'live':
-        $live = "#EXTM3U\n"
-            . "央视,#genre#\n"
-            . "CCTV-1 综合,https://example.com/cctv1.m3u8\n"
-            . "CCTV-13 新闻,https://example.com/cctv13.m3u8\n"
-            . "卫视,#genre#\n"
-            . "湖南卫视,https://example.com/hunan.m3u8\n";
-        tk_output($live, 'text/plain; charset=utf-8');
+        // 直播源统一返回 JSON（客户端同时兼容 txt/m3u 文本源）：
+        //   [ {"group":"分组","channels":[{"name":"频道","urls":["url1","url2$线路2"]}]} ]
+        // 同一频道多个播放地址写入 urls 数组；「地址$线路名」可为地址命名。
+        // 支持的节目类型（播放地址协议）：
+        //   http(s) 直链  ：m3u8/flv/mp4 等常规流媒体（含自定义 UA/Referer 参数追加写法）
+        //   rtmp://、rtsp://：传统推流/监控协议
+        //   webview://    ：WebView 直接播放网页（页面自带播放器时）
+        //   video://      ：WebView 嗅探网页中的视频流播放（无直链的网页直播）
+        //   tkp2p://      ：内置 P2P 直播（参数与 http(s) 相同，引擎由主配置 tkp2p 段控制）
+        $live = [
+            ['group' => '央视', 'channels' => [
+                ['name' => 'CCTV-1 综合', 'urls' => [
+                    'https://example.com/cctv1.m3u8',
+                    'https://example.com/cctv1-2.m3u8$线路2',
+                ]],
+                ['name' => 'CCTV-13 新闻', 'urls' => ['https://example.com/cctv13.m3u8']],
+            ]],
+            ['group' => '卫视', 'channels' => [
+                ['name' => '湖南卫视', 'urls' => ['https://example.com/hunan.m3u8']],
+                ['name' => '浙江卫视', 'urls' => ['https://example.com/zhejiang.m3u8']],
+            ]],
+            ['group' => '网页源', 'channels' => [
+                ['name' => 'WebView 直播', 'urls' => ['webview://https://example.com/live/page.html']],
+                ['name' => 'Video 嗅探', 'urls' => ['video://https://example.com/live/video.html']],
+            ]],
+            ['group' => 'P2P', 'channels' => [
+                ['name' => 'TKP2P 频道', 'urls' => ['tkp2p://https://example.com/live/p2p.m3u8']],
+            ]],
+            ['group' => '其他协议', 'channels' => [
+                ['name' => 'RTMP 示例', 'urls' => ['rtmp://example.com/live/stream']],
+                ['name' => 'RTSP 示例', 'urls' => ['rtsp://example.com:554/stream']],
+            ]],
+        ];
+        tk_output(json_encode($live, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'application/json; charset=utf-8');
         break;
 
     case 'epg':

@@ -61,7 +61,7 @@ tvbox-n2n/
 | 字段 | 落盘规则 |
 |------|----------|
 | `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次加载配置时覆盖缓存值 |
-| `home.recMovies`（首页自定义推荐） | `home` 段内的数组，每次启动随 `home` 一起覆盖：**数组非空时**首页推荐列表直接显示配置的影片（`name`/`pic`/`note`/`id`/`sourceKey`），**不再请求豆瓣**，标题显示「推荐」；配 `id`+`sourceKey` 点击进详情，只配 `name` 点击按片名搜索；空数组/全注释 = 保持原有豆瓣逻辑 |
+| `home.recMovies`（首页推荐） | `home` 段内的数组，每次启动随 `home` 一起覆盖：**数组非空时**首页推荐列表直接显示配置的影片（`name`/`pic`/`note`/`id`/`sourceKey`），**不再请求豆瓣、也不再请求点播接口 homeContent**，标题显示「推荐」；配 `id`+`sourceKey` 点击进详情，只配 `name` 点击按片名搜索；空数组/全注释 = 回退豆瓣热播（2026-11-05 起首页推荐统一由主接口提供，主页面不再引用点播接口数据） |
 | `loadSuccessDuration` / `warningAutoClose` | 前者=点播接口加载成功顶部提示的自动关闭秒数（0=不显示，默认 3，0~60）；后者=免责声明 `warningText` 弹窗的自动关闭秒数（0=不自动关闭，默认 0，0~120，按钮带倒计时） |
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
 | `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
@@ -153,7 +153,7 @@ tvbox-n2n/
 
 - **点播/首页 NPE 自动重启**：`ApiConfig.getHomeSourceBean()` 永不返回 null（未就绪时返回 `emptyHome`，key=""），`SourceViewModel.getSort()` 原代码 `getSource(sourceKey).getType()` 在 key 为空/源未加载时直接 NPE → 进程被杀 → 系统自动重启 app（用户表现「点击点播 app 自动重启」）。修复：`getSort()` 开头对 `getSource()` 判空，null 时 `sortResult.postValue(null)` 走正常空态展示。
 - **n2n 连接自动重启 + 无日志**：`N2NService.onStartCommand` 链路中 `intent.getBundleExtra` 取值无空判、`vpn_session_name[version]` 无越界保护、native `startEdge()` 只被 `catch(Exception)` 保护（`UnsatisfiedLinkError` 是 Error，会穿透）——任一触发即杀进程，且 edge.log 尚未创建导致「无日志输出」。修复：整链 `try/catch(Throwable)` + `appendEdgeLog()` 把失败原因（含 lib 加载失败提示）写进 edge 日志文件，界面日志页直接可见；`stopEdge()`/`getEdgeStatus()` 同样 Throwable 防护（EventBus 订阅线程崩溃同样会杀进程）。
-- **主屏左上源名显示规则**（`HomeActivity.applySourceName()`，2026-10-22 调整）：**固定显示**内置 JSON `home.sourceName` 文字（未配置回退 app 名称），**不再随点播接口切换/换源变化**。`initViewModel` 观察者与 `onResume` 两处统一走该方法。**2026-10-23：左上角名称取消切源入口与焦点**——`tvName` 在布局与代码中均置 `clickable=false / focusable=false`，移除点击/长按监听（切源仍可用 MENU 键或设置页）；首页容器不再用 LoadSir 遮罩初始加载，顶栏、入口行、公告在首帧一起渲染，历史一行不再等点播接口加载完成才出现。
+- **主屏左上源名显示规则**（`HomeActivity.applySourceName()`，2026-10-22 调整）：**固定显示**内置 JSON `home.sourceName` 文字（未配置回退 app 名称），**不再随点播接口切换/换源变化**；`onResume` 统一走该方法。**2026-10-23：左上角名称取消切源入口与焦点**——`tvName` 在布局与代码中均置 `clickable=false / focusable=false`，移除点击/长按监听（切源仍可用 MENU 键或设置页）；首页容器不再用 LoadSir 遮罩初始加载，顶栏、入口行、公告在首帧一起渲染，历史一行不再等点播接口加载完成才出现。**2026-11-05：`initViewModel`/`sortResult` 观察者已随「主页面去除点播接口引用」一并移除**。
 - **全局未捕获异常防护**（2026-10-22）：[App.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/base/App.java) `initCrashHandler()` 在 onCreate 最前面安装 `Thread.setDefaultUncaughtExceptionHandler`——任何线程未捕获异常（含配置接口后主页刷新链路）把堆栈追加写 `filesDir/crash.log`（>512KB 自动重写），后台线程异常尽力 Toast「程序出现异常，即将自动重启」，随后 `killProcess` 自行结束进程，**不交给系统默认 handler，避免弹「tvbox结束运行」**。配套加固：`SourceViewModel.getSort()` type 0/1 的 `onSuccess` 解析（sortXml/sortJson）与 type 3 的 finally 解析块都包了 `try/catch(Throwable)`（解析失败回落 `postValue(null)`）；`HomeActivity` sortResult observer 与 loadConfig error 弹窗加 `isFinishing()/isDestroyed()` 守卫。
 - **点播接口通知 / 公告条（2026-10-23）**：① 首页、点播、直播三处公告字号统一（见 §3.3 NoticeBar 行），`duration` 到期后同内容不再重新显示；② 新增顶层 `loadSuccessDuration`：点播接口首次加载成功时在首页顶部显示非模态提示（不抢焦点、带剩余秒数倒计时），到点自动移除，0=不显示（默认 3）；③ 新增顶层 `warningAutoClose`：点播接口 `warningText` 免责声明弹窗支持 N 秒后自动关闭（按钮显示「确定 (Ns)」倒计时），0=保持原行为必须手动确认（默认 0）；④ 新增 `home.recMovies`：首页自定义推荐影片，配置后不再请求豆瓣（见 §3.2）。
 
@@ -164,9 +164,15 @@ tvbox-n2n/
 - 用户按主页键时由 **Android 系统桌面选择器**决定默认桌面；想换回原桌面走系统设置 → 主页/默认应用。
 - applicationId：generic=`TKLauncher.app`，hisense=`TKLauncher.hisense`（可共存）；Android 要求包名至少含一个「.」。
 
-### 3.10 点播切源自动返回首页刷新并重新进入点播
+### 3.10 点播切源界面内直接刷新（2026-11-05 调整）
 
-[VodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/VodActivity.java) `showSiteSwitch()` 点击回调：Toast「已切换到「xxx」，即将返回主界面刷新并重新进入点播」→ 置 `HomeActivity.sRefreshOnResume=true` 与 `HomeActivity.sReopenVodAfterRefresh=true` → 延迟 `finish()`。`HomeActivity.onResume` 检测到 `sRefreshOnResume` 后 `reloadHome()`（内部重启 + `forceSortRefresh=true`）。新建的 HomeActivity 在 `onCreate` 捕获并清零静态标记（存入实例字段 `reopenVodAfterLoad`，避免旧实例误消费）；`sortResult` 刷新成功且 `absXml != null` 时延迟 300ms 自动 `startActivity(VodActivity)`。
+[VodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/VodActivity.java) `showSiteSwitch()` 点击回调：先 `OkGo.cancelTag(旧源key + "_sort")` 取消旧源未完成的分类请求 → `ApiConfig.get().setSourceBean(value)` → Toast「已切换到「xxx」」→ 直接调用本界面 `reloadHome()`（`sourceViewModel.getSort(key, true)` 强制绕过 `sortCache` 重新拉取当前源分类，源名立即更新到左上角）。**不再返回主界面刷新，也不再自动重建首页/重新进入点播**，根除了旧流程（finish → HomeActivity 重建 → 再 startActivity(VodActivity)）中的闪退与 Activity 重建竞态。
+
+配套调整：
+
+- **主页面已去除对点播接口的全部引用**：`HomeActivity` 不再持有 `SourceViewModel`、不观察 `sortResult`、不再请求 `homeContent`；`sRefreshOnResume` / `sReopenVodAfterRefresh` 静态标记与 `UserFragment.updateHomeRec()` 一并删除。
+- **首页推荐改由主接口提供**：`UserFragment.initHomeHotVod()` 在 `home.recMovies` 非空时直接展示（标题「推荐」），空数组才回退豆瓣热播（含当日缓存）；`homeRec` 模式 0/1 均走该逻辑，模式 2 仍为观看历史。
+- **首页切源（MENU 键 / feature=siteSwitch）**：仅 `setSourceBean` + Toast，不再 `reloadHome()` 重建首页（首页内容已不依赖点播源）。
 
 ### 3.11 接口加密协议（ConfigCrypto）
 

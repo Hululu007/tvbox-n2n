@@ -1,6 +1,5 @@
 package com.github.tvbox.osc.ui.activity;
 
-import android.Manifest;
 import android.app.Activity;
 import android.content.Context;
 import android.annotation.SuppressLint;
@@ -21,8 +20,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
-import androidx.lifecycle.Observer;
-import androidx.lifecycle.ViewModelProvider;
 import androidx.constraintlayout.widget.ConstraintLayout;
 import androidx.recyclerview.widget.DiffUtil;
 
@@ -30,7 +27,6 @@ import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.App;
 import com.github.tvbox.osc.base.BaseActivity;
-import com.github.tvbox.osc.bean.AbsSortXml;
 import com.github.tvbox.osc.bean.SourceBean;
 import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.server.ControlManager;
@@ -42,9 +38,7 @@ import com.github.tvbox.osc.util.AppManager;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.FileUtils;
 import com.github.tvbox.osc.util.HawkConfig;
-import com.github.tvbox.osc.util.LOG;
 import com.github.tvbox.osc.util.MD5;
-import com.github.tvbox.osc.viewmodel.SourceViewModel;
 import com.orhanobut.hawk.Hawk;
 import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 import com.owen.tvrecyclerview.widget.TvRecyclerView;
@@ -73,15 +67,6 @@ public class HomeActivity extends BaseActivity {
     /** 内部重启标记：主题一键切换等自重启时置 true，onDestroy 跳过 appExit 杀进程 */
     private static boolean sSkipAppExit = false;
 
-    /** 点播界面切源后返回主界面时置位：onResume 检测并强制刷新首页数据 */
-    public static boolean sRefreshOnResume = false;
-
-    /** 切源回到首页刷新完成后，自动重新进入点播（保留静态标记，reloadHome 重建 Activity 后仍有效） */
-    public static boolean sReopenVodAfterRefresh = false;
-
-    /** 本实例创建时捕获的「刷新后自动进点播」标记，避免旧实例误消费静态标记 */
-    private boolean reopenVodAfterLoad = false;
-
     private LinearLayout topLayout;
     private LinearLayout contentLayout;
     private TextView tvName;
@@ -91,7 +76,6 @@ public class HomeActivity extends BaseActivity {
     private ImageView tvDraw;
     private ImageView tvN2n;
     private TextView tvDate;
-    private SourceViewModel sourceViewModel;
     private UserFragment userFragment;
     private final Handler mHandler = new Handler();
     private long mExitTime = 0;
@@ -136,16 +120,12 @@ public class HomeActivity extends BaseActivity {
             }
         }, "home-servers").start();
         initView();
-        initViewModel();
         useCacheConfig = false;
         Intent intent = getIntent();
         if (intent != null && intent.getExtras() != null) {
             Bundle bundle = intent.getExtras();
             useCacheConfig = bundle.getBoolean("useCache", false);
         }
-        // 刷新后自动进点播：由新创建的首页实例捕获并消费静态标记
-        reopenVodAfterLoad = sReopenVodAfterRefresh;
-        sReopenVodAfterRefresh = false;
         initData();
     }
 
@@ -239,9 +219,8 @@ public class HomeActivity extends BaseActivity {
             }
         });
         // 中间一行入口（历史/点播/直播/…）与下方内容区立即默认加载：
-        // 不再等待点播接口的 sortResult 回来才创建 UserFragment，
-        // 这样未配置点播接口（仅直播）或点播接口加载失败时，入口行也和顶部一行一样立即可用；
-        // 点播数据回来后由 sortResult 观察者调用 UserFragment.updateHomeRec 仅更新推荐数据。
+        // 主页面不再引用点播接口数据，推荐内容改由主接口（远程配置 home.recMovies）下发；
+        // 未配置点播接口（仅直播）时，入口行也和顶部一行一样立即可用。
         try {
             userFragment = UserFragment.newInstance();
             getSupportFragmentManager().beginTransaction()
@@ -252,7 +231,7 @@ public class HomeActivity extends BaseActivity {
         }
         setLoadSir(this.contentLayout);
         // 立即切成成功态：保证 LoadSir 注册后内容区（含「历史」入口行）从首帧就可见，
-        // 与顶部标题行同一时机加载；后续数据通过 UserFragment 的观察者增量刷新。
+        // 与顶部标题行同一时机加载。
         showSuccess();
     }
 
@@ -325,57 +304,9 @@ public class HomeActivity extends BaseActivity {
         return true;
     }
 
-    private boolean skipNextUpdate = false;
-    private void initViewModel() {
-        sourceViewModel = new ViewModelProvider(this).get(SourceViewModel.class);
-        sourceViewModel.sortResult.observe(this, new Observer<AbsSortXml>() {
-            @Override
-            public void onChanged(AbsSortXml absXml) {
-                if (skipNextUpdate) {
-                    skipNextUpdate = false;
-                    return;
-                }
-                if (isFinishing() || isDestroyed()) {
-                    return;
-                }
-                try {
-                    if (userFragment == null) {
-                        // 兼容路径：initView 中的即时创建失败时，仍在此处兜底创建
-                        userFragment = UserFragment.newInstance(absXml == null ? null : absXml.videoList);
-                        getSupportFragmentManager().beginTransaction()
-                                .replace(R.id.homeFragmentContainer, userFragment)
-                                .commitNowAllowingStateLoss();
-                    } else {
-                        // 中间一行入口已在 initView 默认加载，这里只把点播推荐数据喂给已存在的
-                        // UserFragment（更新「站点推荐」列表），不重建入口行，避免换源时入口闪烁重排
-                        userFragment.updateHomeRec(absXml == null ? null : absXml.videoList);
-                    }
-                    showSuccess();
-                    // takagen99 : Switch to show / hide source title
-                    applySourceName();
-                    // 点播切源 → 返回首页刷新 → 刷新完成后自动重新进入点播
-                    if (reopenVodAfterLoad) {
-                        reopenVodAfterLoad = false;
-                        if (absXml != null && !isFinishing() && !isDestroyed()) {
-                            mHandler.postDelayed(new Runnable() {
-                                @Override
-                                public void run() {
-                                    if (!isFinishing() && !isDestroyed()) {
-                                        startActivity(new Intent(HomeActivity.this, VodActivity.class));
-                                    }
-                                }
-                            }, 300);
-                        }
-                    }
-                } catch (Throwable ignored) {
-                }
-            }
-        });
-    }
-
     /**
      * 左上角名称显示规则（2026-10-22 起固定为纯标题）：
-     * 始终显示内置 json「home.sourceName」配置的文字，不再随点播接口/当前源切换而变化；
+     * 始终显示主接口 json「home.sourceName」配置的文字，不再随点播接口/当前源切换而变化；
      * sourceName 为空时回退显示 app 名称。
      * 自 2026-10-23 起该标题已取消点击与焦点，仅作展示（切源入口从首页移除）。
      */
@@ -460,27 +391,13 @@ public class HomeActivity extends BaseActivity {
         }
 
         if (dataInitOk && jarInitOk) {
-            boolean forceSortRefresh = getIntent() != null && getIntent().getBooleanExtra("forceSortRefresh", false);
-            // 未配置点播接口（仅直播）时 homeSourceBean 为空壳、key 为 null：
-            // 直接通知观察者空数据即可（UserFragment 已默认加载，入口行立即可用），
-            // 不再触发任何点播网络请求
-            String homeKey = ApiConfig.get().getHomeSourceBean().getKey();
-            if (homeKey == null || homeKey.isEmpty()) {
-                sourceViewModel.sortResult.postValue(null);
-            } else {
-                sourceViewModel.getSort(homeKey, forceSortRefresh);
-            }
-            if (hasPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
-                LOG.e("有");
-            } else {
-                LOG.e("无");
-            }
+            // 主页面已去除对点播接口的全部引用：点播分类/推荐数据由点播界面自身加载，
+            // 首页推荐改由主接口（远程配置 home.recMovies）提供，这里无需再请求点播数据
             return;
         }
         // 首帧不再用 LoadSir 遮住内容区（原 tvNameAnimation + showLoading）：
         // 顶部标题行、扩展入口栏、中间「历史/点播/直播/...」入口行、公告条都在启动时一起渲染，
-        // 与顶部行加载方式一致；点播接口数据到达后由 UserFragment 观察者增量刷新推荐列表，
-        // 不再出现「顶部已显示、历史一行要等接口加载完才出现」的先后差。
+        // 与顶部行加载方式一致；首页推荐由主接口配置直接提供，不再等待点播接口数据。
         tvName.clearAnimation();
         if (dataInitOk && !jarInitOk) {
             if (!ApiConfig.get().getSpider().isEmpty()) {
@@ -783,12 +700,6 @@ public class HomeActivity extends BaseActivity {
         }
         mHandler.post(mRunnable);
 
-        // 点播界面切换源后返回：重建首页并强制刷新当前源数据
-        if (sRefreshOnResume) {
-            sRefreshOnResume = false;
-            reloadHome();
-        }
-
         // 桌面模式在清单中直接声明 HOME（参考 MQLauncher），不再在应用内引导选择桌面
 
     }
@@ -871,7 +782,9 @@ public class HomeActivity extends BaseActivity {
                 @Override
                 public void click(SourceBean value, int pos) {
                     ApiConfig.get().setSourceBean(value);
-                    reloadHome();
+                    // 主页面不再引用点播接口数据，切源后无需重建首页；
+                    // 点播内容在点播界面内切换源时自行刷新
+                    Toast.makeText(HomeActivity.this, "已切换到「" + value.getName() + "」", Toast.LENGTH_SHORT).show();
                 }
 
                 @Override
@@ -900,15 +813,12 @@ public class HomeActivity extends BaseActivity {
         intent.setFlags(Intent.FLAG_ACTIVITY_CLEAR_TASK);
         Bundle bundle = new Bundle();
         bundle.putBoolean("useCache", true);
-        // 切换源 / 配置重载后重建首页：强制重新拉取当前源 homeContent，绕过 sortCache
-        bundle.putBoolean("forceSortRefresh", true);
         intent.putExtras(bundle);
         HomeActivity.this.startActivity(intent);
         finish();
     }
 
     private void refreshEmpty() {
-        skipNextUpdate = true;
         showSuccess();
         tvName.clearAnimation();
     }
