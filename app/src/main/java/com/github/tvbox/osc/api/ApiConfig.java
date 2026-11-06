@@ -1492,6 +1492,15 @@ public class ApiConfig {
         return liveChannelGroupList;
     }
 
+    /**
+     * 直播源地址变更后清空内存中的直播分组列表。
+     * 否则 LivePlayActivity 启动时仍会拿到旧分组（groupName=旧 URL），
+     * 从而加载旧直播源，表现为「客户端改了直播接口却没生效」。
+     */
+    public void clearLives() {
+        liveChannelGroupList.clear();
+    }
+
     public List<IJKCode> getIjkCodes() {
         return ijkCodes;
     }

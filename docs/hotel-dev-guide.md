@@ -15,7 +15,7 @@
 
 - 主配置：[config.json](./demo/hotel/config.json)
 - 布局插件：[layout-grid.json](./demo/hotel/layout-grid.json)、[layout-list.json](./demo/hotel/layout-list.json)、[layout-showcase.json](./demo/hotel/layout-showcase.json)
-- 服务端：[php-demo/index.php](./php-demo/index.php) 的 `r=config`（默认 `defaultScreen` 就是酒店桌面）与 `r=hotel_layout&id=grid|list|showcase`
+- 服务端：[php-demo/index.php](./php-demo/index.php) 的 `r=config`（默认 `defaultScreen` 为 `standard` 标准首页，需体验酒店桌面时改为某个 `screens[].id`）与 `r=hotel_layout&id=grid|list|showcase`
 
 ---
 
@@ -79,8 +79,8 @@ http://你的服务器/demo/hotel/config.json
 
 4. 首次启动 → 若 `defaultScreen` 指向酒店界面，直接进入酒店桌面。
 
-> 只想验证酒店桌面而不改代码：把 `CONFIG_URL` 指向 `index.php?r=config` 后重新打包即可
-> （php-demo 默认 `defaultScreen` 就是 `hotel_demo`）。
+> 只想验证酒店桌面而不改代码：把 `CONFIG_URL` 指向 `index.php?r=config` 后，
+> 把 php-demo 中 `defaultScreen` 改为 `hotel_demo` 重新打包即可（php-demo 默认 `defaultScreen` 为 `standard`）。
 
 ---
 

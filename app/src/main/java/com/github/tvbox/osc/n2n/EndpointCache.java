@@ -53,8 +53,11 @@ public final class EndpointCache {
             }
             ApiConfig.get().invalidateConfig();
         } else if (KEY_LIVE.equals(key) || KEY_EPG.equals(key)) {
-            // 直播源变化：EPG 频道名/日期缓存可能对应旧源，一并清空
+            // 直播源变化：EPG 频道名/日期缓存可能对应旧源，一并清空；
+            // 同时清掉 ApiConfig 内存中的直播分组列表，否则 LivePlayActivity
+            // 仍按旧分组的 URL 加载旧直播源（客户端改接口不生效）。
             EpgCache.clear();
+            ApiConfig.get().clearLives();
         } else {
             return;
         }

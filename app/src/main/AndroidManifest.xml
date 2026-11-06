@@ -55,11 +55,14 @@
 
         <!-- 桌面：参考 MQLauncher 直接在主 Activity 声明 HOME/DEFAULT，
              安装后即出现在系统桌面选择器，按 HOME 键可直接进入本应用；
-             不再提供应用内「选择桌面/设为桌面」开关。 -->
+             不再提供应用内「选择桌面/设为桌面」开关。
+             launchMode=singleTask 是系统桌面的标准配置：按 HOME 时复用已有实例，
+             避免反复创建 HomeActivity 导致黑屏 / 任务栈错乱。 -->
         <activity
             android:name=".ui.activity.HomeActivity"
             android:screenOrientation="sensorLandscape"
             android:exported="true"
+            android:launchMode="singleTask"
             android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation" >
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

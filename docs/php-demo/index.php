@@ -243,7 +243,7 @@ switch ($route) {
             'forceOverride' => false,
             // 默认加载的界面 id：standard=当前标准首页；其它值必须与下方 screens 数组中的 id 精确一致，
             // 不存在会自动回退 standard
-            'defaultScreen' => 'hotel_demo',
+            'defaultScreen' => 'standard',
             // ==================================================================
 
             // ==================================================================

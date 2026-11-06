@@ -547,8 +547,13 @@ public class NoticeBar {
 
     /**
      * 「整条走完 + 停顿」模式：公告文本从右侧完全进入，向左完整走出一遍后，
-     * 停顿 notice.pause 秒，再重复。用属性动画平移 translationX 实现，
-     * 不与 TextView 的 marquee/Scroller 状态耦合。
+     * 停顿 notice.pause 秒，再重复。
+     *
+     * <p>实现要点：用 scrollX（View 内容滚动）而不是 translationX（整 View 平移），
+     * 这样 TextView 的背景色/背景图固定不动，只有文字在滚动——修复「公告背景随文字一起滚动」。</p>
+     *
+     * <p>为了让文字「从右侧进入」，在原文前补一段宽度等于屏宽的前导空格，
+     * 然后把 scrollX 从 0 平滑动画到（前导空格宽 + 文字宽），文字就会从右向左完整走一遍。</p>
      */
     private static void startPauseScroll(final Activity act, final TextView tv, final String text,
                                          final int speedPxPerSec, final int pauseSec, final ScreenState ss) {
@@ -571,10 +576,19 @@ public class NoticeBar {
                 if (textWidth <= 0) {
                     return;
                 }
-                // 起点：文本左边缘在屏幕右侧外；终点：文本右边缘移出屏幕左侧
-                final float fromX = viewWidth;
-                final float toX = -textWidth;
-                final int duration = (int) ((fromX - toX) / (float) Math.max(1, speedPxPerSec) * 1000f);
+                // 前导空格：宽度 ≥ 屏宽，使文字初始位于屏幕右侧外
+                StringBuilder lead = new StringBuilder();
+                float oneSpace = tv.getPaint().measureText(" ");
+                int spaces = oneSpace > 0 ? (int) Math.ceil(viewWidth / oneSpace) + 1 : 0;
+                for (int i = 0; i < spaces; i++) {
+                    lead.append(' ');
+                }
+                final String padded = lead.toString() + text;
+                final float leadWidth = tv.getPaint().measureText(lead.toString());
+                // 滚动终点：前导空格完全滚出 + 文字完全滚出
+                final int fromScroll = 0;
+                final int toScroll = (int) Math.ceil(leadWidth + textWidth);
+                final int duration = (int) (toScroll / (float) Math.max(1, speedPxPerSec) * 1000f);
                 final Runnable[] loopRef = new Runnable[1];
                 final Runnable loop = new Runnable() {
                     @Override
@@ -585,14 +599,15 @@ public class NoticeBar {
                         if (act.isFinishing() || act.isDestroyed()) {
                             return;
                         }
-                        tv.setTranslationX(fromX);
-                        ValueAnimator va = ValueAnimator.ofFloat(fromX, toX);
+                        tv.setText(padded);
+                        tv.scrollTo(0, 0);
+                        ValueAnimator va = ValueAnimator.ofInt(fromScroll, toScroll);
                         va.setDuration(Math.max(1, duration));
                         va.setInterpolator(new LinearInterpolator());
                         va.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
                             @Override
                             public void onAnimationUpdate(ValueAnimator animation) {
-                                tv.setTranslationX((Float) animation.getAnimatedValue());
+                                tv.scrollTo((Integer) animation.getAnimatedValue(), 0);
                             }
                         });
                         va.addListener(new AnimatorListenerAdapter() {
@@ -631,6 +646,7 @@ public class NoticeBar {
         }
         if (ss.view != null) {
             ss.view.setTranslationX(0f);
+            ss.view.scrollTo(0, 0);
         }
     }
 

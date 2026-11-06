@@ -101,6 +101,10 @@ public class HomeActivity extends BaseActivity {
 
     @Override
     protected void init() {
+        // 每次新建 HomeActivity 都重新评估是否跳转到非 standard 桌面。
+        // screenJumped 仅用于避免同一实例内主接口回调重复跳转，不能跨实例持久化——
+        // 否则作为系统桌面时，第二次按 HOME 会停在 standard 首页而不进入酒店桌面。
+        screenJumped = false;
         // takagen99: Added to allow read string
         res = getResources();
 
@@ -678,6 +682,21 @@ public class HomeActivity extends BaseActivity {
             // 否则仅提示用户，再按一次退出应用
             mExitTime = System.currentTimeMillis();
             Toast.makeText(mContext, getString(R.string.hm_exit), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * singleTask 模式下，按 HOME 键会把已有 HomeActivity 实例拉到前台并回调此方法。
+     * 此时需重新评估是否跳转非 standard 桌面，否则会一直停在 standard 首页。
+     */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        screenJumped = false;
+        if (dataInitOk) {
+            jumpToScreenIfNeeded();
+            jumpToLiveIfNeeded();
         }
     }
 
