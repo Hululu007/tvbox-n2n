@@ -69,6 +69,8 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "screens": [],                          // 酒店 IPTV 等桌面布局（见 2.1.1）
   "bootStart": true,
   "notice": {                             // 滚动公告：纯字符串=系统 marquee（短文本不滚）；对象=自定义滚动（短文本也会滚，推荐）
+                                          // 全局唯一公告条：固定在当前窗口最顶层（decorView 最后一个子 View），
+                                          // 切换首页/直播/点播/酒店等界面时复用同一个 View，继续滚动，不会重新加载/回到开头
     "text": "欢迎使用 TKLauncher",
     "speed": 50,                          // 像素/秒，>0 才启用自定义滚动
     "pause": 8,                           // 整条公告完整走完一遍后停顿的秒数（>0 生效；只配 pause 时默认速度 100）

@@ -732,22 +732,32 @@ public class HomeActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
-        // APK 下载完成但缺「未知来源」权限、从系统设置返回后自动继续安装
-        com.github.tvbox.osc.n2n.ApkDownloader.resumePendingInstall(this);
+        // 兜底：个别 ROM 上布局恢复/资源未就绪时 findViewById 可能返回 null，
+        // 这里任何 UI 刷新异常都不能让 onResume 抛出，否则会形成「进程被杀 → 系统重启 → 再次崩溃」的黑屏循环。
+        try {
+            com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
+            // APK 下载完成但缺「未知来源」权限、从系统设置返回后自动继续安装
+            com.github.tvbox.osc.n2n.ApkDownloader.resumePendingInstall(this);
 
-        // takagen99 : Switch to show / hide source title
-        applySourceName();
+            // takagen99 : Switch to show / hide source title
+            applySourceName();
 
-        // takagen99: Icon Placement（JSON topEntries 整体替换顶栏时，固定图标显隐由 HomeEntry 全权控制）
-        if (tvFind != null && com.github.tvbox.osc.n2n.RemoteConfig.topEntries() == null) {
-            if (Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
-                tvFind.setVisibility(View.VISIBLE);
-            } else {
-                tvFind.setVisibility(View.GONE);
+            // takagen99: Icon Placement（JSON topEntries 整体替换顶栏时，固定图标显隐由 HomeEntry 全权控制）
+            if (tvFind != null && com.github.tvbox.osc.n2n.RemoteConfig.topEntries() == null) {
+                if (Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
+                    tvFind.setVisibility(View.VISIBLE);
+                } else {
+                    tvFind.setVisibility(View.GONE);
+                }
             }
+        } catch (Throwable th) {
+            th.printStackTrace();
         }
-        mHandler.post(mRunnable);
+        // 时钟刷新独立兜底，保证上面异常时右上角时间仍能更新
+        try {
+            mHandler.post(mRunnable);
+        } catch (Throwable ignored) {
+        }
 
         // 桌面模式在清单中直接声明 HOME（参考 MQLauncher），不再在应用内引导选择桌面
 
@@ -792,6 +802,8 @@ public class HomeActivity extends BaseActivity {
         hideLoadSuccessNotice();
         // 免责声明自动关闭倒计时同样需要停止
         stopWarningCountdown();
+        // 解除本窗口对全局公告 View 的持有（避免静态 View 反向持有已销毁的 Activity）
+        com.github.tvbox.osc.n2n.NoticeBar.detach(this);
         super.onDestroy();
         EventBus.getDefault().unregister(this);
         if (sSkipAppExit) {

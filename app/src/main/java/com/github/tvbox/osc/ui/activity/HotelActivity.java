@@ -625,6 +625,7 @@ public class HotelActivity extends BaseActivity {
         } catch (Throwable ignored) {
         }
         NoticeBar.hideOn(tvTicker, NoticeBar.SCREEN_HOTEL);
+        NoticeBar.detach(this);
         super.onDestroy();
     }
 }

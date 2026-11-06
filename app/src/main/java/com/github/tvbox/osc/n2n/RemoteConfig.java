@@ -552,10 +552,10 @@ public class RemoteConfig {
                 Entry e = new Entry();
                 e.name = o.optString("name", "");
                 e.type = o.optString("type", "").trim();
-                e.target = o.optString("target", "").trim();
-                e.pkg = o.optString("pkg", "");
-                e.icon = o.optString("icon", "");
-                e.url = o.optString("url", "");
+                e.target = normalizeEntryUrl(o.optString("target", ""));
+                e.pkg = o.optString("pkg", "").trim();
+                e.icon = o.optString("icon", "").trim();
+                e.url = normalizeEntryUrl(o.optString("url", ""));
                 e.theme = o.optString("theme", "").trim();
                 if (e.type.isEmpty()) {
                     // 兼容旧格式：有 pkg 即 app 入口
@@ -1422,6 +1422,34 @@ public class RemoteConfig {
     }
 
     /**
+     * 规范化配置里的入口/接口地址：去掉首尾空白、反引号、成对引号。
+     *
+     * <p>常见问题：从文档复制示例时把 URL 一起复制成了 {@code `http://...`}，
+     * 带反引号的地址既不会被识别为绝对地址（会当成相对路径拼接成非法 URL），
+     * 点播入口也就打不开、看起来像「没有显示」。这里统一容错。</p>
+     */
+    public static String normalizeEntryUrl(String url) {
+        if (url == null) {
+            return "";
+        }
+        String u = url.trim();
+        while (u.length() >= 2) {
+            char c = u.charAt(0);
+            char last = u.charAt(u.length() - 1);
+            boolean pair = (c == '`' && last == '`')
+                    || (c == '"' && last == '"')
+                    || (c == '\'' && last == '\'')
+                    || (c == '<' && last == '>')
+                    || (c == '[' && last == ']');
+            if (!pair) {
+                break;
+            }
+            u = u.substring(1, u.length() - 1).trim();
+        }
+        return u;
+    }
+
+    /**
      * 其它接口相对地址解析：不带 http:// / https:// 的地址，优先使用**配置来源地址**
      * （{@link #CONFIG_URL} 或二次远程配置 remoteConfigUrl 的实际拉取地址）的
      * 协议 + 域名 + 端口 + 所在目录拼接；配置来自本地文件/assets 或尚未加载成功时，
@@ -1437,7 +1465,7 @@ public class RemoteConfig {
         if (url == null) {
             return "";
         }
-        String u = url.trim();
+        String u = normalizeEntryUrl(url);
         if (u.isEmpty()) {
             return u;
         }

@@ -86,7 +86,8 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 
 > 滚动公告对象还支持 `pause`（整条公告完整走完一遍后停顿的秒数）、`speed`（像素/秒）、
 > `duration`（自动隐藏秒数）、`show`（按首页/直播/点播/酒店分别开关）。
-> 修改后立即重启滚动，无需重启 App。
+> 公告条是**全局唯一、固定在窗口最顶层**的：切换首页/直播/点播/酒店等界面时复用同一个 View 继续滚动，
+> 不会在每个界面重新加载；修改配置后立即按新样式重启滚动，无需重启 App。
 
 > **相对地址规则**：`live`、`epg`、`proxy`、`upgrade.checkUrl`、`appMarket.url/detailUrl`、自定义点播入口等，未写 `http://` 或 `https://` 时，**优先拼接主配置来源地址**（`CONFIG_URL` / `remoteConfigUrl`）的协议 + 域名/IP + 所在目录；配置来自本地文件/assets 时回退拼接主接口 `api` 的域名/IP。例如主配置地址为 `http://1.2.3.4:8080/php-demo/index.php?r=config`，`live = index.php?r=live` → `http://1.2.3.4:8080/php-demo/index.php?r=live`。
 
@@ -113,6 +114,9 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 - **系统**：打开 Android 系统设置（网络、显示、日期等）；
 - **捐助**：项目介绍与收款二维码（由 JSON 配置）；
 - 首页入口行与顶栏可由 JSON 的 `homeEntries` / `topEntries` 整体替换；
+- 入口可配 `type=vod` 打开独立「影院」界面（`target` 填点播接口 JSON 地址，可加 `theme` 指定独立主题），
+  例如 `{"name":"我的影院","type":"vod","target":"http://tianku.net/tvzy/tv/1.json","icon":"hm_vod","theme":"1"}`；
+  `target` 首尾误带的反引号/引号会被自动去掉，粘贴示例时不用担心；
 - 首页推荐默认**多行**；可用 JSON `settings.homeRecStyle = false` 改为单行；
 - 未配置点播接口时也可把本机当作纯直播盒子使用。
 

@@ -377,6 +377,9 @@ switch ($route) {
             // 【首页历史一行入口】（非空数组会覆盖内置默认；空数组/删除则回退内置）
             'homeEntries' => [
                 ['name' => '点播', 'type' => 'page', 'target' => 'vod',     'icon' => 'hm_vod'],
+                // 自定义点播界面（影院）：type=vod，target 填点播接口 JSON 地址（不要带反引号/引号），
+                // theme 指定该界面独立主题，留空则跟随全局主题
+                ['name' => '我的影院', 'type' => 'vod', 'target' => 'http://tianku.net/tvzy/tv/1.json', 'icon' => 'hm_vod', 'theme' => '1'],
                 ['name' => '直播', 'type' => 'page', 'target' => 'live',    'icon' => 'hm_live'],
                 ['name' => '搜索', 'type' => 'page', 'target' => 'search',  'icon' => 'hm_search'],
                 ['name' => '收藏', 'type' => 'page', 'target' => 'collect', 'icon' => 'hm_fav'],
