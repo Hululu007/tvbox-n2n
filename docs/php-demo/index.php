@@ -257,6 +257,8 @@ switch ($route) {
             //                'pause'     = 整条公告完整走完一遍后停顿的秒数（>0 生效；只配 pause 时默认速度 100）
             //                'textColor' / 'bgColor' / 'alpha' / 'fontSize' / 'position' / 'duration'
             //                'show'      = 按界面开关：['home'=>true,'live'=>true,'vod'=>true,'hotel'=>true]
+            //   客户端表现：公告条固定在窗口最顶层（悬浮于所有界面内容之上），
+            //   滚动时背景固定、仅文字移动；切换界面时沿用上一界面的滚动位置继续，不会重新加载。
             'notice' => [
                 'text' => '欢迎使用 TKLauncher · 如有问题请联系前台 xxx-xxxxxxx',
                 'speed' => 50,

@@ -87,7 +87,10 @@ public class HomeActivity extends BaseActivity {
             @SuppressLint("SimpleDateFormat")
 			//修改时间分隔符
             SimpleDateFormat timeFormat = new SimpleDateFormat(getString(R.string.hm_date1) + " | " + getString(R.string.hm_date2));
-            tvDate.setText(timeFormat.format(date));
+            // 视图可能尚未初始化（布局 inflate 失败等）：空判断避免 onResume 阶段 NPE 崩溃黑屏
+            if (tvDate != null) {
+                tvDate.setText(timeFormat.format(date));
+            }
             mHandler.postDelayed(this, 1000);
         }
     };
@@ -105,10 +108,18 @@ public class HomeActivity extends BaseActivity {
         // screenJumped 仅用于避免同一实例内主接口回调重复跳转，不能跨实例持久化——
         // 否则作为系统桌面时，第二次按 HOME 会停在 standard 首页而不进入酒店桌面。
         screenJumped = false;
+
+        // 先完成视图绑定：后续任何步骤（含 getResources / EventBus 注册）异常，
+        // 也不会导致 tvName/tvDate 为 null，从而避免 onResume 里 NPE 造成「再次启动黑屏」。
+        initView();
         // takagen99: Added to allow read string
         res = getResources();
 
-        EventBus.getDefault().register(this);
+        try {
+            EventBus.getDefault().register(this);
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
         // 远程控制/局域网 Web 服务端口绑定与 AndServer 路由扫描较慢，移到后台线程，不阻塞首页首帧
         new Thread(new Runnable() {
             @Override
@@ -123,7 +134,6 @@ public class HomeActivity extends BaseActivity {
                 }
             }
         }, "home-servers").start();
-        initView();
         useCacheConfig = false;
         Intent intent = getIntent();
         if (intent != null && intent.getExtras() != null) {
@@ -148,6 +158,9 @@ public class HomeActivity extends BaseActivity {
         this.tvN2n = findViewById(R.id.tvN2n);
         this.tvDate = findViewById(R.id.tvDate);
         this.contentLayout = findViewById(R.id.contentLayout);
+        // 顶栏视图缺失（布局 inflate 退回空容器）时，下面的监听绑定会 NPE；
+        // 整段兜底，保证内容区/入口行仍能创建，不会因顶栏异常导致整页黑屏。
+        try {
         // 首页左上角名称：仅作为标题展示，不再作为「切换点播源」入口。
         // 2026-10-23 按需求取消该入口及其焦点：TV 遥控器上下左右不会再落到这里，
         // 切源统一走 MENU 键 / 设置页；长按清缓存也一并移除（避免误触导致重载）。
@@ -220,6 +233,9 @@ public class HomeActivity extends BaseActivity {
                 startActivity(new Intent(Settings.ACTION_DATE_SETTINGS));
             }
         });
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
         // 中间一行入口（历史/点播/直播/…）与下方内容区立即默认加载：
         // 主页面不再引用点播接口数据，推荐内容改由主接口（远程配置 home.recMovies）下发；
         // 未配置点播接口（仅直播）时，入口行也和顶部一行一样立即可用。
@@ -231,10 +247,16 @@ public class HomeActivity extends BaseActivity {
         } catch (Throwable th) {
             th.printStackTrace();
         }
-        setLoadSir(this.contentLayout);
-        // 立即切成成功态：保证 LoadSir 注册后内容区（含「历史」入口行）从首帧就可见，
-        // 与顶部标题行同一时机加载。
-        showSuccess();
+        try {
+            if (this.contentLayout != null) {
+                setLoadSir(this.contentLayout);
+            }
+            // 立即切成成功态：保证 LoadSir 注册后内容区（含「历史」入口行）从首帧就可见，
+            // 与顶部标题行同一时机加载。
+            showSuccess();
+        } catch (Throwable th) {
+            th.printStackTrace();
+        }
         // 首页扩展（hin2n 入口 / 自定义入口栏 / 滚动公告）：放在内容区创建之后并整段兜底，
         // 扩展初始化异常不能中断 initView，否则 UserFragment 未创建、内容区空白表现为黑屏
         try {
@@ -321,6 +343,11 @@ public class HomeActivity extends BaseActivity {
      * 自 2026-10-23 起该标题已取消点击与焦点，仅作展示（切源入口从首页移除）。
      */
     private void applySourceName() {
+        // 布局 inflate 失败（BaseActivity 会退回空容器）时 tvName 为 null，
+        // 这里必须空判断，否则 onResume 直接抛 NPE → 活动无法恢复 → 黑屏死循环
+        if (tvName == null) {
+            return;
+        }
         String sn = com.github.tvbox.osc.n2n.RemoteConfig.homeSourceName();
         if (sn.isEmpty()) {
             tvName.setText(R.string.app_name);
@@ -390,10 +417,12 @@ public class HomeActivity extends BaseActivity {
         }
 
         // takagen99: Set Style either Grid or Line
-        if (Hawk.get(HawkConfig.HOME_REC_STYLE, true)) {
-            tvStyle.setImageResource(R.drawable.hm_up_down);
-        } else {
-            tvStyle.setImageResource(R.drawable.hm_left_right);
+        if (tvStyle != null) {
+            if (Hawk.get(HawkConfig.HOME_REC_STYLE, true)) {
+                tvStyle.setImageResource(R.drawable.hm_up_down);
+            } else {
+                tvStyle.setImageResource(R.drawable.hm_left_right);
+            }
         }
 
         // 首页只依赖主接口（主配置 RemoteConfig），点播接口的所有字段/插件/提示均延迟到点播界面加载。
@@ -711,7 +740,7 @@ public class HomeActivity extends BaseActivity {
         applySourceName();
 
         // takagen99: Icon Placement（JSON topEntries 整体替换顶栏时，固定图标显隐由 HomeEntry 全权控制）
-        if (com.github.tvbox.osc.n2n.RemoteConfig.topEntries() == null) {
+        if (tvFind != null && com.github.tvbox.osc.n2n.RemoteConfig.topEntries() == null) {
             if (Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true)) {
                 tvFind.setVisibility(View.VISIBLE);
             } else {
@@ -840,7 +869,9 @@ public class HomeActivity extends BaseActivity {
 
     private void refreshEmpty() {
         showSuccess();
-        tvName.clearAnimation();
+        if (tvName != null) {
+            tvName.clearAnimation();
+        }
     }
 
     // ==================== 点播接口加载成功通知（可配置自动关闭秒数） ====================

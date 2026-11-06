@@ -68,6 +68,8 @@ public class NoticeBar {
         ValueAnimator scrollAnim;
         /** 滚动代次：每次启动/停止滚动自增，用于让上一次遗留的延时任务失效 */
         int scrollToken;
+        /** 上一窗口的滚动位置：切换界面（视图重建）时从这里接着滚，避免公告「重新加载」回到起点 */
+        int savedScroll;
     }
 
     private static ScreenState getOrCreate(String screen) {
@@ -84,7 +86,15 @@ public class NoticeBar {
         if (act == null) {
             return;
         }
-        TextView tv = SCREEN_HOME.equals(screen) ? act.findViewById(R.id.tvNotice) : obtainOverlay(act, screen);
+        // 三个界面统一使用窗口最顶层叠加层（decorView）：公告不会再被页面自身布局遮挡。
+        // 首页布局自带的 tvNotice 仅隐藏不再使用，避免同一条公告显示两份。
+        if (SCREEN_HOME.equals(screen)) {
+            View builtin = act.findViewById(R.id.tvNotice);
+            if (builtin != null) {
+                builtin.setVisibility(View.GONE);
+            }
+        }
+        TextView tv = obtainOverlay(act, screen);
         if (tv == null) {
             return;
         }
@@ -101,7 +111,7 @@ public class NoticeBar {
             hideScreen(ss);
             STATES.remove(screen);
         }
-        TextView tv = SCREEN_HOME.equals(screen) ? act.findViewById(R.id.tvNotice) : findOverlay(act, screen);
+        TextView tv = findOverlay(act, screen);
         if (tv != null) {
             tv.setVisibility(View.GONE);
         }
@@ -153,7 +163,13 @@ public class NoticeBar {
     public static void stopScroll() {
         for (ScreenState ss : STATES.values()) {
             cancelAutoHide(ss);
+            // 界面销毁前记录滚动位置，下个界面渲染时接着滚，避免公告「重新加载」回到起点
+            if (ss.view != null) {
+                ss.savedScroll = ss.view.getScrollX();
+            }
             stopSpeedScroll(ss);
+            // 界面已销毁：释放对旧视图的静态引用，避免泄漏（滚动位置已保存在 savedScroll）
+            ss.view = null;
         }
     }
 
@@ -179,6 +195,13 @@ public class NoticeBar {
      */
     private static void render(final Activity act, final TextView tv, String screen) {
         final ScreenState ss = getOrCreate(screen);
+        // 记录旧视图：切换界面时渲染目标换成了新窗口的 TextView，旧滚动循环必须重建
+        final TextView prevView = ss.view;
+        if (prevView != null && prevView != tv && prevView.getScrollX() > 0) {
+            // 记住上一界面的滚动位置，新窗口的公告从该位置接着滚（不再「重新加载」）。
+            // 若旧界面销毁时 stopScroll() 已保存过位置（其上 scrollX 已被归零），这里不再覆盖。
+            ss.savedScroll = prevView.getScrollX();
+        }
         ss.view = tv;
         String notice = RemoteConfig.notice();
         JSONObject st = RemoteConfig.noticeStyle();
@@ -289,7 +312,7 @@ public class NoticeBar {
         if (speed > 0) {
             tv.setSelected(false);
             tv.setEllipsize(null);
-            boolean sameScrolling = ss.speedRun != null && ss.speed == speed
+            boolean sameScrolling = ss.speedRun != null && prevView == tv && ss.speed == speed
                     && ss.pause == pause && text.equals(ss.scrollText);
             if (!sameScrolling) {
                 ss.scrollText = text;
@@ -417,12 +440,29 @@ public class NoticeBar {
     // ==================== 动态叠加层（直播/点播） ====================
 
     private static TextView findOverlay(Activity act, String screen) {
-        ViewGroup content = act.findViewById(android.R.id.content);
-        if (content == null) {
+        // 挂在窗口最顶层的 decorView 上：公告条始终位于页面所有内容（含底部栏/浮层）之上，
+        // 不再被各界面自身布局遮挡。
+        ViewGroup root = noticeRoot(act);
+        if (root == null) {
             return null;
         }
-        View exist = content.findViewWithTag(TAG_PREFIX + screen);
+        View exist = root.findViewWithTag(TAG_PREFIX + screen);
         return exist instanceof TextView ? (TextView) exist : null;
+    }
+
+    /** 公告条容器：窗口 decorView（FrameLayout），保证公告位于所有内容之上 */
+    private static ViewGroup noticeRoot(Activity act) {
+        if (act == null || act.isFinishing() || act.isDestroyed()) {
+            return null;
+        }
+        try {
+            View decor = act.getWindow().getDecorView();
+            if (decor instanceof ViewGroup) {
+                return (ViewGroup) decor;
+            }
+        } catch (Throwable ignored) {
+        }
+        return act.findViewById(android.R.id.content);
     }
 
     private static TextView obtainOverlay(Activity act, String screen) {
@@ -430,7 +470,7 @@ public class NoticeBar {
         if (exist != null) {
             return exist;
         }
-        ViewGroup content = act.findViewById(android.R.id.content);
+        ViewGroup content = noticeRoot(act);
         if (content == null) {
             return null;
         }
@@ -520,10 +560,14 @@ public class NoticeBar {
                 // 由右向左：每个周期平移一个 periodPx，回到起点时内容与终点重合，无缝衔接
                 final int periodPx = (int) Math.ceil(unitWidth);
                 final int duration = (int) (periodPx / (float) Math.max(1, speedPxPerSec) * 1000f);
+                // 上一个窗口留下的滚动位置：从该位置继续滚，切换界面时公告看起来是连续的
+                int startOffset = Math.min(Math.max(ss.savedScroll, 0), Math.max(0, periodPx - 1));
+                ss.savedScroll = 0;
                 final Scroller scroller = new Scroller(act, new LinearInterpolator());
                 tv.setScroller(scroller);
-                tv.scrollTo(0, 0);
-                scroller.startScroll(0, 0, periodPx, 0, Math.max(1, duration));
+                tv.scrollTo(startOffset, 0);
+                scroller.startScroll(startOffset, 0, periodPx - startOffset, 0,
+                        Math.max(1, (int) (duration * (periodPx - startOffset) / (float) periodPx)));
                 // 用局部变量持有自身引用：只有它仍是当前 speedRun 时才继续循环，
                 // 防止上一段滚动被替换后旧循环仍在后台重复发送任务（多循环叠加导致滚动抖动）
                 final Runnable loop = new Runnable() {
@@ -586,9 +630,13 @@ public class NoticeBar {
                 final String padded = lead.toString() + text;
                 final float leadWidth = tv.getPaint().measureText(lead.toString());
                 // 滚动终点：前导空格完全滚出 + 文字完全滚出
-                final int fromScroll = 0;
                 final int toScroll = (int) Math.ceil(leadWidth + textWidth);
                 final int duration = (int) (toScroll / (float) Math.max(1, speedPxPerSec) * 1000f);
+                // 首个循环从上一窗口的滚动位置接着走（切换界面不回到起点），后续循环从 0 开始
+                final int[] fromHolder = {
+                        Math.min(Math.max(ss.savedScroll, 0), Math.max(0, toScroll - 1))
+                };
+                ss.savedScroll = 0;
                 final Runnable[] loopRef = new Runnable[1];
                 final Runnable loop = new Runnable() {
                     @Override
@@ -600,8 +648,9 @@ public class NoticeBar {
                             return;
                         }
                         tv.setText(padded);
-                        tv.scrollTo(0, 0);
-                        ValueAnimator va = ValueAnimator.ofInt(fromScroll, toScroll);
+                        tv.scrollTo(fromHolder[0], 0);
+                        ValueAnimator va = ValueAnimator.ofInt(fromHolder[0], toScroll);
+                        fromHolder[0] = 0;
                         va.setDuration(Math.max(1, duration));
                         va.setInterpolator(new LinearInterpolator());
                         va.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
