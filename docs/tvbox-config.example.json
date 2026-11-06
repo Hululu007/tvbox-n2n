@@ -29,7 +29,12 @@
     "notes": ""
   },
 
-  "notice": "欢迎使用桌面版 TKLauncher",
+  "notice": {
+    "text": "欢迎使用桌面版 TKLauncher",
+    "speed": 50,
+    "textColor": "#FFFFFFFF",
+    "bgColor": "#CC000000"
+  },
   "bootStart": true,
   "hin2nEntry": true,
   "checkInterval": 30,

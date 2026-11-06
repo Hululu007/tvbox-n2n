@@ -232,8 +232,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         homeHotVodAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
             @Override
             public void onItemClick(BaseQuickAdapter adapter, View view, int position) {
-                if (ApiConfig.get().getSourceBeanList().isEmpty())
-                    return;
+                // 首页设计上不预加载点播接口，源列表为空是常态，不能在此整体拦截点击：
+                // 详情分支（下方）已自带空源守卫并提示，搜索分支本就不依赖源列表
                 Movie.Video vod = ((Movie.Video) adapter.getItem(position));
                 // 防御：数据刷新瞬间 position 可能已越界/对应项被移除，取不到条目直接忽略点击
                 if (vod == null) {

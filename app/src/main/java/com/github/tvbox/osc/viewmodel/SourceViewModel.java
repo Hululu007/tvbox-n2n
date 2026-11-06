@@ -653,6 +653,11 @@ public class SourceViewModel extends ViewModel {
     // searchContent
     public void getSearch(String sourceKey, String wd) {
         SourceBean sourceBean = ApiConfig.get().getSource(sourceKey);
+        if (sourceBean == null) {
+            // 源已切换或接口未加载成功：回传空结果，避免 worker 线程空指针触发全局崩溃重启
+            EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_SEARCH_RESULT, null));
+            return;
+        }
         int type = sourceBean.getType();
         if (type == 3) {
             try {
@@ -738,6 +743,11 @@ public class SourceViewModel extends ViewModel {
     // searchContent
     public void getQuickSearch(String sourceKey, String wd) {
         SourceBean sourceBean = ApiConfig.get().getSource(sourceKey);
+        if (sourceBean == null) {
+            // 源已切换或接口未加载成功：回传空结果，避免 worker 线程空指针触发全局崩溃重启
+            EventBus.getDefault().post(new RefreshEvent(RefreshEvent.TYPE_QUICK_SEARCH_RESULT, null));
+            return;
+        }
         int type = sourceBean.getType();
         if (type == 3) {
             try {

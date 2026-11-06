@@ -47,6 +47,32 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 `r=config` 返回完整系统配置：接口地址、`epgDays`、`settings` 全量设置项、首页 `home`、`themes`、`tkp2p`、`topEntries`/`homeEntries`、应用市场、升级与捐助等，字段含义与 [配置示例](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 一致。
 
+### 3.0 滚动公告（`notice`）
+
+`notice` 字段支持两种写法：
+
+| 写法 | 示例 | 行为 |
+|------|------|------|
+| 纯字符串 | `"notice": "欢迎使用 TKLauncher"` | 走 Android 系统 marquee；**短于一屏的文本不会滚**（Android 固有行为） |
+| 对象（推荐） | 见下方 | 走客户端自定义滚动，**短文本也会滚** |
+
+对象写法：
+
+```json
+{
+  "notice": {
+    "text": "欢迎使用 TKLauncher · 前台电话 xxx-xxxxxxx",
+    "speed": 50,
+    "textColor": "#FFFFFFFF",
+    "bgColor": "#FF000000"
+  }
+}
+```
+
+- `text`（必填）：公告内容；
+- `speed`（必填，>0）：滚动速度，单位像素/秒；设为 0 或缺失时回退系统 marquee；
+- `textColor` / `bgColor`（可选）：颜色 `#RRGGBB` 或 `#AARRGGBB`。
+
 ### 3.1 直播 JSON 格式
 
 请求：`index.php?r=live`

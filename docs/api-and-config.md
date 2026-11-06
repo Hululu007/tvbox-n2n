@@ -63,10 +63,17 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "epg": "index.php?r=epg&enc=ke",
   "proxy": "",
   "placeholderImage": "",                 // 图片下载完成前显示的预设占位图
-  "forceOverride": false,                 // false=用户手动配置优先；true=主接口强制覆盖
-  "defaultScreen": "standard",            // standard=标准首页；其它=下方 screens 中的界面 id
+  "forceOverride": false,                 // false=用户手动配置优先；true=主接口强制覆盖；
+                                          // 也可对象逐项控制：{"api":true,"live":true,"epg":false,"proxy":false}
+  "defaultScreen": "standard",            // standard=标准首页；其它值必须与下方 screens[].id 精确一致，不存在会自动回退
   "screens": [],                          // 酒店 IPTV 等桌面布局（见 2.1.1）
   "bootStart": true,
+  "notice": {                             // 滚动公告：纯字符串=系统 marquee（短文本不滚）；对象=自定义滚动（短文本也会滚，推荐）
+    "text": "欢迎使用 TKLauncher",
+    "speed": 50,                          // 像素/秒，必填且 >0 才启用自定义滚动
+    "textColor": "#FFFFFFFF",
+    "bgColor": "#FF000000"
+  },
   "settings": { "homeRecStyle": true },
   "home": {
     "sourceName": "TKLauncher",          // 左上角显示的名称（主接口统一定义；空=显示 App 名称）

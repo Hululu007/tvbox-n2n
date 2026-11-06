@@ -235,17 +235,29 @@ switch ($route) {
             'proxy' => '',                            // 代理地址（本地代理用，非服务器接口）
             // 图片占位图：所有海报/背景图下载完成前先显示该图（为空=内置占位图）
             'placeholderImage' => '',
-            // 接口强制覆盖：false/不配置=用户手动配置的接口优先；true=全部强制覆盖；
-            // 也可用对象逐项控制： ['api'=>true,'live'=>false,'epg'=>false,'proxy'=>false]
+            // 接口强制覆盖：false/不配置=用户手动配置的接口优先（点播/直播界面齿轮手动配过的接口不会被覆盖）；
+            //   true=全部强制覆盖；
+            //   也可用对象逐项控制： ['api'=>true,'live'=>true,'epg'=>true,'proxy'=>false]
+            // 开发/部署阶段建议设 true，上线后若允许运营在 App 端微调，再改回 false
             'forceOverride' => false,
-            // 默认加载的界面 id：standard=当前标准首页；其它值对应下方 screens 中的 id
+            // 默认加载的界面 id：standard=当前标准首页；其它值必须与下方 screens 数组中的 id 精确一致，
+            // 不存在会自动回退 standard
             'defaultScreen' => 'standard',
             // ==================================================================
 
             // ==================================================================
             // 【全局设置】
             'bootStart'            => true,          // TVBox 开机自启
-            'notice'               => '欢迎使用 TKLauncher',  // 滚动公告（字符串/对象均可）
+            // 滚动公告：支持两种写法
+            //   纯字符串 —— 走 Android 系统 marquee（短于一屏的文本不会滚，是系统固有行为）
+            //   对象     —— 走客户端自定义滚动，短文本也会滚（推荐）：
+            //                'text' = 公告内容（必填）
+            //                'speed' = 滚动速度，像素/秒（必填且 >0 才会启用自定义滚动）
+            //                'textColor' / 'bgColor'（可选，#RRGGBB 或 #AARRGGBB）
+            'notice' => [
+                'text' => '欢迎使用 TKLauncher · 如有问题请联系前台 xxx-xxxxxxx',
+                'speed' => 50,
+            ],
             'epgDays'              => 3,             // EPG 显示天数（1~9，默认3=昨天/今天/明天）
             'checkInterval'        => 30,            // 配置检查间隔（分钟）
             'loadSuccessDuration'  => 3,             // 点播接口加载成功通知自动关闭秒数（0~60）
@@ -375,26 +387,32 @@ switch ($route) {
             //  每个界面可单独配置接口；layout 支持 hotel_grid / hotel_list / hotel_showcase
             //  layoutUrl=布局插件 JSON 地址（按需下载缓存本地，便于只改 JSON 开发新界面）
             //  entries 非空时覆盖默认入口（name/type/target/icon/pic/desc）
+            //  启用：把上方 defaultScreen 改成这里的某个 id；defaultScreen 填不存在的 id 会自动回退 standard
             'screens' => [
-                // [
-                //     'id' => 'hotel_demo',
-                //     'name' => '酒店桌面示例',
-                //     'layout' => 'hotel_grid',
-                //     'api' => '', 'live' => '', 'epg' => '',
-                //     'title' => '欢迎入住',
-                //     'logo' => '',
-                //     'background' => '',
-                //     'ticker' => '前台电话 8888    祝您入住愉快',
-                //     'columns' => 3,
-                //     'rows' => 2,
-                //     'showClock' => true,
-                //     'layoutUrl' => '',
-                //     'entries' => [
-                //         ['name' => '点播', 'type' => 'page', 'target' => 'vod', 'icon' => 'hm_vod'],
-                //         ['name' => '直播', 'type' => 'page', 'target' => 'live', 'icon' => 'hm_live'],
-                //         ['name' => '切换界面', 'type' => 'feature', 'target' => 'screenSwitch', 'icon' => 'hm_settings'],
-                //     ],
-                // ],
+                [
+                    'id' => 'hotel_demo',
+                    'name' => '酒店桌面示例',
+                    'layout' => 'hotel_grid',
+                    'api' => '',                    // 留空=沿用主接口 api；填完整 URL=本界面独立接口
+                    'live' => '',                   // 留空=沿用主接口 live；支持相对地址
+                    'epg' => '',                    // 留空=沿用主接口 epg
+                    'proxy' => '',
+                    'title' => '欢迎入住',
+                    'subtitle' => '',
+                    'logo' => '',
+                    'background' => '',
+                    'ticker' => '前台电话 8888    祝您入住愉快',    // 顶栏跑马灯（纯字符串，Android marquee）
+                    'columns' => 3,
+                    'rows' => 2,
+                    'itemRatio' => 0,               // 0=默认 16:9；>0=宽高比（如 1.77 即 16:9，1.33 即 4:3）
+                    'showClock' => true,
+                    'layoutUrl' => '',              // 可选：布局插件 JSON 地址，按需下载并缓存本地
+                    'entries' => [
+                        ['name' => '点播',     'type' => 'page',    'target' => 'vod',           'icon' => 'hm_vod'],
+                        ['name' => '直播',     'type' => 'page',    'target' => 'live',          'icon' => 'hm_live'],
+                        ['name' => '切换界面', 'type' => 'feature', 'target' => 'screenSwitch',  'icon' => 'hm_settings'],
+                    ],
+                ],
             ],
             // ==================================================================
 
