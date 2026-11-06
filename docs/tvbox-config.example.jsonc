@@ -97,7 +97,9 @@
     "timeEnd": "",                      // 每日显示结束时间 "HH:mm"
     "expire": "",                       // 过期日期 "yyyy-MM-dd"（当天结束前仍显示），空=永不过期
     "speed": 60,                        // 自定义滚动速度（像素/秒），由右向左；0=系统跑马灯
-    "show": { "home": true, "live": true, "vod": true } // 分别控制首页/直播/点播是否显示
+    "pause": 8,                         // 整条公告完整走完一遍后停顿的秒数（0=传统无缝循环；
+                                        //   >0 时启用“单遍滚动+停顿”，只配 pause 不配 speed 时默认速度 100）
+    "show": { "home": true, "live": true, "vod": true, "hotel": true } // 分别控制首页/直播/点播/酒店是否显示
                                         // 也兼容 showOnHome/showOnLive/showOnVod 写法
   },
 
@@ -405,6 +407,10 @@
   // layout：hotel_grid（宫格大卡片）/ hotel_list（左侧菜单+右侧预览）/ hotel_showcase（顶部大图+底部入口）。
   // layoutUrl：布局插件 JSON 地址，开机按需下载并缓存到本地（filesDir/hotel_layout_*.json），
   //            下载失败自动回退上次缓存；便于只下发 JSON 开发新布局，无需发版。
+  //            插件只覆盖外观与入口（layout/title/logo/background/ticker/columns/rows/showClock/entries），
+  //            api/live/epg 请写在下面的 screens 项中（接口在插件加载前已应用）。
+  // 接口立即生效：screens[].api/live/epg 变化会立即清空点播缓存与 EPG 缓存并通知界面重载，无需重启 App。
+  // 滚动通知：screens[].ticker 优先；为空时回退顶层 notice（notice.show.hotel 控制是否显示）。
   // entries 非空时覆盖默认入口，字段与 topEntries 相同，另支持 pic（卡片大图）和 desc（副标题）。
   "defaultScreen": "standard",
   "screens": [

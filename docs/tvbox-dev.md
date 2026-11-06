@@ -60,7 +60,7 @@ tvbox-n2n/
 
 | 字段 | 落盘规则 |
 |------|----------|
-| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次加载配置时覆盖缓存值 |
+| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次加载配置时覆盖缓存值；`notice.speed`=像素/秒，`notice.pause`=整条公告走完一遍后的停顿秒数（>0 启用单遍滚动+停顿），`notice.show.hotel` 控制酒店界面是否显示全局公告 |
 | `home.recMovies`（首页推荐） | `home` 段内的数组，每次启动随 `home` 一起覆盖：**数组非空时**首页推荐列表直接显示配置的影片（`name`/`pic`/`note`/`id`/`sourceKey`），**不再请求豆瓣、也不再请求点播接口 homeContent**，标题显示「推荐」；配 `id`+`sourceKey` 点击进详情，只配 `name` 点击按片名搜索；空数组/全注释 = 回退豆瓣热播（2026-11-05 起首页推荐统一由主接口提供，主页面不再引用点播接口数据） |
 | `loadSuccessDuration` / `warningAutoClose` | 前者=点播接口加载成功顶部提示的自动关闭秒数（0=不显示，默认 3，0~60）；后者=免责声明 `warningText` 弹窗的自动关闭秒数（0=不自动关闭，默认 0，0~120，按钮带倒计时） |
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
@@ -450,6 +450,14 @@ kapt/runner 偶发抖动先直接 rerun；hin2n native 失败看 `externalNative
 ## 11. 小白教程：新增一个界面 / 酒店 IPTV 桌面布局
 
 本节按「完全不懂代码也能操作」的顺序写。新增界面**不需要改代码、不需要重新发版**，只要改主接口 JSON。
+
+> 需要从零开始、含布局插件制作与可运行 demo 的完整版，见
+> [酒店界面与布局插件从零开发完整指南](file:///f:/tvbox-n2n/docs/hotel-dev-guide.md)；
+> demo 文件在 `docs/demo/hotel/`，PHP 演示路由为 `?r=hotel_layout&id=grid|list|showcase`。
+>
+> 本次行为更新：切换界面后弹窗会勾选当前界面；界面未配置 `ticker` 时自动显示全局 `notice`；
+> `screens[].api/live/epg` 变更后立即清缓存并重载，无需重启 App；
+> 布局插件只覆盖外观/入口，接口请写在本屏 `api/live/epg`。
 
 ### 11.1 先理解 4 个概念
 

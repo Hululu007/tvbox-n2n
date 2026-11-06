@@ -15,9 +15,14 @@ import android.widget.TextView;
 
 import com.github.tvbox.osc.R;
 import com.github.tvbox.osc.base.BaseActivity;
+import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.n2n.EntryDispatcher;
+import com.github.tvbox.osc.n2n.NoticeBar;
 import com.github.tvbox.osc.n2n.RemoteConfig;
 import com.github.tvbox.osc.util.ImgUtil;
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -57,6 +62,8 @@ public class HotelActivity extends BaseActivity {
     private RemoteConfig.Screen screen;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private boolean clockRunning = false;
+    /** 上次渲染使用的配置版本，主接口配置更新后 onResume 自动重绘 */
+    private int lastConfigVersion = -1;
 
     private final Runnable clockTask = new Runnable() {
         @Override
@@ -97,6 +104,40 @@ public class HotelActivity extends BaseActivity {
         RemoteConfig.applyScreenEndpoints(screen);
         render();
         loadRemoteLayoutIfNeeded();
+        lastConfigVersion = RemoteConfig.configVersion();
+        EventBus.getDefault().register(this);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 主接口配置（screens/接口地址/公告）更新后无需重启，回到界面即刷新
+        if (RemoteConfig.configVersion() != lastConfigVersion) {
+            refreshFromConfig();
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onEndpointChanged(RefreshEvent event) {
+        if (event != null && event.type == RefreshEvent.TYPE_ENDPOINT_CHANGE) {
+            // 当前界面使用的接口发生变化：重新读取屏幕配置并重绘（公告/入口随主接口更新）
+            refreshFromConfig();
+        }
+    }
+
+    /** 重新读取当前屏幕配置并重绘（保留 screenId，插件布局会重新下载/回退缓存） */
+    private void refreshFromConfig() {
+        if (isFinishing() || isDestroyed()) {
+            return;
+        }
+        lastConfigVersion = RemoteConfig.configVersion();
+        String id = screen != null && screen.id != null ? screen.id : RemoteConfig.defaultScreenId();
+        RemoteConfig.Screen latest = RemoteConfig.findScreen(id);
+        if (latest != null) {
+            screen = latest;
+        }
+        render();
+        loadRemoteLayoutIfNeeded();
     }
 
     private void render() {
@@ -110,8 +151,9 @@ public class HotelActivity extends BaseActivity {
             clockRunning = true;
             clockTask.run();
         }
-        tvTicker.setText(screen.ticker == null ? "" : screen.ticker);
-        tvTicker.setSelected(true);
+        // 滚动通知：屏幕自带 ticker 优先；未配置时回退主接口 notice 全局公告。
+        // 支持 notice.speed / notice.pause（整条走完后的停顿秒数）。
+        NoticeBar.showOn(this, tvTicker, NoticeBar.SCREEN_HOTEL, screen.ticker);
         if (screen.background != null && !screen.background.isEmpty()) {
             ivBg.setVisibility(View.VISIBLE);
             ImgUtil.load(screen.background, ivBg, 0, 1920, 1080);
@@ -406,10 +448,12 @@ public class HotelActivity extends BaseActivity {
     // ================= 布局插件下载 / 缓存 =================
 
     private void loadRemoteLayoutIfNeeded() {
-        final String url = screen.layoutUrl;
-        if (url == null || url.isEmpty()) {
+        final String raw = screen.layoutUrl;
+        if (raw == null || raw.isEmpty()) {
             return;
         }
+        // 支持相对地址（相对主配置所在目录），与 live/epg 等接口解析规则一致
+        final String url = RemoteConfig.resolveInterfaceUrl(raw);
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -522,6 +566,16 @@ public class HotelActivity extends BaseActivity {
         com.owen.tvrecyclerview.widget.TvRecyclerView tvRecyclerView = dialog.findViewById(R.id.list);
         tvRecyclerView.setLayoutManager(new com.owen.tvrecyclerview.widget.V7GridLayoutManager(dialog.getContext(), 1));
         dialog.setTip("选择界面");
+        // 当前所在界面默认勾选（原实现固定传 0，切换后选中项不正确）
+        int selected = 0;
+        if (screen != null && screen.id != null) {
+            for (int i = 0; i < screens.size(); i++) {
+                if (screen.id.equals(screens.get(i).id)) {
+                    selected = i;
+                    break;
+                }
+            }
+        }
         dialog.setAdapter(tvRecyclerView,
                 new com.github.tvbox.osc.ui.adapter.SelectDialogAdapter.SelectDialogInterface<RemoteConfig.Screen>() {
                     @Override
@@ -545,7 +599,7 @@ public class HotelActivity extends BaseActivity {
                     public boolean areContentsTheSame(RemoteConfig.Screen oldItem, RemoteConfig.Screen newItem) {
                         return oldItem.id.equals(newItem.id);
                     }
-                }, screens, 0);
+                }, screens, selected);
         dialog.show();
     }
 
@@ -566,6 +620,11 @@ public class HotelActivity extends BaseActivity {
     protected void onDestroy() {
         clockRunning = false;
         handler.removeCallbacksAndMessages(null);
+        try {
+            EventBus.getDefault().unregister(this);
+        } catch (Throwable ignored) {
+        }
+        NoticeBar.hideOn(tvTicker, NoticeBar.SCREEN_HOTEL);
         super.onDestroy();
     }
 }

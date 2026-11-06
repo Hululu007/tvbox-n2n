@@ -70,9 +70,15 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "bootStart": true,
   "notice": {                             // 滚动公告：纯字符串=系统 marquee（短文本不滚）；对象=自定义滚动（短文本也会滚，推荐）
     "text": "欢迎使用 TKLauncher",
-    "speed": 50,                          // 像素/秒，必填且 >0 才启用自定义滚动
+    "speed": 50,                          // 像素/秒，>0 才启用自定义滚动
+    "pause": 8,                           // 整条公告完整走完一遍后停顿的秒数（>0 生效；只配 pause 时默认速度 100）
+    "duration": 0,                        // 自动隐藏秒数，0=常驻
+    "fontSize": 24,
     "textColor": "#FFFFFFFF",
-    "bgColor": "#FF000000"
+    "bgColor": "#FF000000",
+    "alpha": 100,
+    "position": "bottom",                 // top / bottom（酒店 ticker 固定在布局内，不受此字段影响）
+    "show": { "home": true, "live": true, "vod": true, "hotel": true }
   },
   "settings": { "homeRecStyle": true },
   "home": {
@@ -126,7 +132,13 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 - `defaultScreen` 填不存在的 id 会自动回退 `standard`。
 - `screens[].api/live/epg` 在该界面启动时应用；用户手动配置过且 `forceOverride=false` 时保留用户配置。
+- **接口立即生效**：接口地址变化会立即删除点播接口磁盘缓存、清空 EPG 缓存并把 `ApiConfig` 标记为未加载，
+  同时广播 `TYPE_ENDPOINT_CHANGE`，点播/直播/酒店界面立即重载，无需重启 App。
+- `layoutUrl` 是布局插件 JSON 地址：仅覆盖外观与入口（`layout/title/logo/background/ticker/columns/rows/showClock/entries`），
+  **接口地址请写在 `screens[]` 中**（插件加载时接口已应用）。
 - `layoutUrl` 下载失败回退上次缓存，首次无缓存回退主接口内联配置。
+- 滚动通知：`screens[].ticker` 优先；为空时回退顶层 `notice`（`notice.show.hotel` 控制是否显示）。
+- 从零教程与完整 demo：[hotel-dev-guide.md](file:///f:/tvbox-n2n/docs/hotel-dev-guide.md)、`docs/demo/hotel/`。
 - 更多示例（含“小白教程”）见 [tvbox-dev.md](file:///f:/tvbox-n2n/docs/tvbox-dev.md#11-小白教程新增一个界面--酒店-iptv-桌面布局)。
 
 ### 2.2 点播源（`api`）示例

@@ -54,8 +54,20 @@ public class ControlManager {
     private void saveFromPhone(String hawkKey, String historyKey, String url) {
         try {
             String v = url == null ? "" : url.trim();
+            String old = Hawk.get(hawkKey, "");
             Hawk.put(hawkKey, v);
             Hawk.put(hawkKey + "_manual", true);
+            // 手机/电脑下发接口后立即清空对应缓存，界面无需重启即可加载新接口
+            if (com.github.tvbox.osc.util.HawkConfig.API_URL.equals(hawkKey)) {
+                com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(mContext,
+                        com.github.tvbox.osc.n2n.EndpointCache.KEY_API, old, v);
+            } else if (com.github.tvbox.osc.util.HawkConfig.LIVE_URL.equals(hawkKey)) {
+                com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(mContext,
+                        com.github.tvbox.osc.n2n.EndpointCache.KEY_LIVE, old, v);
+            } else if (com.github.tvbox.osc.util.HawkConfig.EPG_URL.equals(hawkKey)) {
+                com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(mContext,
+                        com.github.tvbox.osc.n2n.EndpointCache.KEY_EPG, old, v);
+            }
             if (historyKey != null && !v.isEmpty()) {
                 java.util.ArrayList<String> history = Hawk.get(historyKey, new java.util.ArrayList<String>());
                 if (!history.contains(v)) {

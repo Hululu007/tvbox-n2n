@@ -153,6 +153,27 @@ public class EpgCache {
         }
     }
 
+    /**
+     * 清空全部 EPG 缓存（直播源 / EPG 接口地址变更后调用，避免继续使用旧接口的节目单）。
+     */
+    public static synchronized void clear() {
+        try {
+            File d = dirFor();
+            if (d == null || !d.exists()) {
+                return;
+            }
+            File[] files = d.listFiles();
+            if (files == null) {
+                return;
+            }
+            for (File f : files) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 清理超过 KEEP_DAYS 天的旧日期缓存（yyyy-MM-dd 字典序可直接比较） */
     private static void prune(JSONObject days) {
         try {

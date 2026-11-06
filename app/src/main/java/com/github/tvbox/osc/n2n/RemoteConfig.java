@@ -636,6 +636,7 @@ public class RemoteConfig {
             sConfig = cfg;
             sConfigBase = ""; // 本地/assets 配置无 URL 基准，相对接口地址回退拼接主接口 api 域名
             apply(app, cfg, false);
+            bumpConfigVersion();
             notifyPrimary(PRIMARY_OK);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
             if (!secondary.isEmpty()) {
@@ -695,8 +696,12 @@ public class RemoteConfig {
             JSONObject cfg = parseLoose(raw);
             sConfig = cfg;
             sConfigBase = url; // 相对接口地址以主配置所在目录为基准拼接
+            String oldRaw = Hawk.get(K_REMOTE_RAW, "");
             apply(app, cfg, false);
             Hawk.put(K_REMOTE_RAW, raw);
+            if (!raw.equals(oldRaw)) {
+                bumpConfigVersion();
+            }
             notifyPrimary(PRIMARY_OK);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
             if (!secondary.isEmpty()) {
@@ -748,9 +753,13 @@ public class RemoteConfig {
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject remote = parseLoose(raw);
             sConfigBase = url; // 相对接口地址以本次远程配置所在目录为基准拼接
+            String oldRaw = Hawk.get(K_REMOTE_RAW, "");
             apply(app, remote, true);
             // 缓存存解密后的明文：断网兜底无需再解密，与旧版本明文缓存格式兼容
             Hawk.put(K_REMOTE_RAW, raw);
+            if (!raw.equals(oldRaw)) {
+                bumpConfigVersion();
+            }
             if (cb != null) cb.onDone(true);
             return true;
         } catch (Throwable t) {
@@ -1144,6 +1153,18 @@ public class RemoteConfig {
         }
     }
 
+    /** 配置内容发生变化时递增，酒店界面 onResume 据此决定是否需要重绘 */
+    private static void bumpConfigVersion() {
+        sConfigVersion++;
+    }
+
+    /** 配置应用版本号：主接口配置内容变化时 +1（酒店界面用于判断是否需要刷新） */
+    private static volatile int sConfigVersion = 0;
+
+    public static int configVersion() {
+        return sConfigVersion;
+    }
+
     /**
      * 功能设置默认值（JSON "settings" 段 → Hawk）。字段含义见 docs/tvbox-config.example.jsonc 的 settings 段。
      * 应用内已无设置页，调用方统一传 force=true（JSON 每次加载都以配置为准）。
@@ -1226,7 +1247,12 @@ public class RemoteConfig {
         if (!"api".equals(key)) {
             v = resolveInterfaceUrl(v);
         }
+        String oldValue = Hawk.get(hawkKey, "");
         Hawk.put(hawkKey, v);
+        if (!"proxy".equals(key)) {
+            // 接口变更立即清空对应缓存并通知界面重新加载（无需重启 App）
+            EndpointCache.onEndpointChanged(app, key, oldValue, v);
+        }
     }
 
     /** 解析 json "forceOverride"：布尔=全部接口；对象=按 api/live/epg/proxy 逐项；字符串=子集 */
@@ -1377,13 +1403,21 @@ public class RemoteConfig {
             return;
         }
         if (!s.api.isEmpty() && (forceOverrideFor("api") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.API_URL + "_manual", false)))) {
+            String old = Hawk.get(HawkConfig.API_URL, "");
             Hawk.put(HawkConfig.API_URL, s.api);
+            EndpointCache.onEndpointChanged(App.getInstance(), EndpointCache.KEY_API, old, s.api);
         }
         if (!s.live.isEmpty() && (forceOverrideFor("live") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.LIVE_URL + "_manual", false)))) {
-            Hawk.put(HawkConfig.LIVE_URL, resolveInterfaceUrl(s.live));
+            String old = Hawk.get(HawkConfig.LIVE_URL, "");
+            String v = resolveInterfaceUrl(s.live);
+            Hawk.put(HawkConfig.LIVE_URL, v);
+            EndpointCache.onEndpointChanged(App.getInstance(), EndpointCache.KEY_LIVE, old, v);
         }
         if (!s.epg.isEmpty() && (forceOverrideFor("epg") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.EPG_URL + "_manual", false)))) {
-            Hawk.put(HawkConfig.EPG_URL, resolveInterfaceUrl(s.epg));
+            String old = Hawk.get(HawkConfig.EPG_URL, "");
+            String v = resolveInterfaceUrl(s.epg);
+            Hawk.put(HawkConfig.EPG_URL, v);
+            EndpointCache.onEndpointChanged(App.getInstance(), EndpointCache.KEY_EPG, old, v);
         }
     }
 

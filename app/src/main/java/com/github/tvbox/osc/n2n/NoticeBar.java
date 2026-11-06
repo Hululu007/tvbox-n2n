@@ -1,5 +1,8 @@
 package com.github.tvbox.osc.n2n;
 
+import android.animation.Animator;
+import android.animation.AnimatorListenerAdapter;
+import android.animation.ValueAnimator;
 import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
@@ -36,6 +39,8 @@ public class NoticeBar {
     public static final String SCREEN_HOME = "home";
     public static final String SCREEN_LIVE = "live";
     public static final String SCREEN_VOD = "vod";
+    /** 酒店 IPTV 桌面（ticker 由 HotelActivity 传入，不动态叠加） */
+    public static final String SCREEN_HOTEL = "hotel";
 
     private static final String TAG_PREFIX = "tvbox_notice_bar_";
 
@@ -57,6 +62,10 @@ public class NoticeBar {
         String scrollText;
         /** 正在使用的滚动速度（像素/秒），与 scrollText 一起作为「是否需要重启滚动」的判断依据 */
         int speed;
+        /** 正在使用的整条走完后的停顿秒数（notice.pause），参与「是否需要重启滚动」判断 */
+        int pause;
+        /** 整条走完停顿模式下的属性动画（停止时需主动 cancel） */
+        ValueAnimator scrollAnim;
         /** 滚动代次：每次启动/停止滚动自增，用于让上一次遗留的延时任务失效 */
         int scrollToken;
     }
@@ -93,6 +102,48 @@ public class NoticeBar {
             STATES.remove(screen);
         }
         TextView tv = SCREEN_HOME.equals(screen) ? act.findViewById(R.id.tvNotice) : findOverlay(act, screen);
+        if (tv != null) {
+            tv.setVisibility(View.GONE);
+        }
+    }
+
+    /**
+     * 在指定 TextView 上渲染公告（用于酒店桌面等自带 ticker 的界面）。
+     *
+     * @param fallbackText 界面自带滚动文案（如 screens[].ticker）；非空时优先显示它，
+     *                     不使用全局公告样式；为空时回退到主接口 notice 全局公告
+     */
+    public static void showOn(Activity act, TextView tv, String screen, String fallbackText) {
+        if (act == null || tv == null) {
+            return;
+        }
+        String fb = fallbackText == null ? "" : fallbackText.trim();
+        if (!fb.isEmpty()) {
+            ScreenState ss = getOrCreate(screen);
+            ss.view = tv;
+            ss.content = null;
+            ss.scrollText = null;
+            ss.speed = 0;
+            ss.pause = 0;
+            ss.deadline = 0;
+            ss.expired = false;
+            cancelAutoHide(ss);
+            stopSpeedScroll(ss);
+            tv.setTranslationX(0f);
+            tv.setText(fb);
+            tv.setVisibility(View.VISIBLE);
+            tv.setSelected(true);
+            return;
+        }
+        render(act, tv, screen);
+    }
+
+    /** 隐藏指定界面自带的公告 TextView */
+    public static void hideOn(TextView tv, String screen) {
+        ScreenState ss = STATES.remove(screen);
+        if (ss != null) {
+            hideScreen(ss);
+        }
         if (tv != null) {
             tv.setVisibility(View.GONE);
         }
@@ -205,8 +256,11 @@ public class NoticeBar {
         }
 
         // ⑤ 应用样式（三处界面共用同一套尺寸/颜色逻辑）
-        // 位置：首页为 ConstraintLayout，直播/点播叠加层为 FrameLayout
-        applyPosition(tv, st.optString("position", "bottom").trim());
+        // 位置：首页为 ConstraintLayout，直播/点播叠加层为 FrameLayout；
+        // 酒店桌面的 ticker 位于布局自身（LinearLayout）中，不能修改位置属性
+        if (!SCREEN_HOTEL.equals(screen)) {
+            applyPosition(tv, st.optString("position", "bottom").trim());
+        }
         int bg = HomeEntry.parseColor(st.optString("bgColor", ""));
         if (bg != 0) {
             tv.setBackgroundColor(bg);
@@ -224,20 +278,29 @@ public class NoticeBar {
         }
 
         // ⑥ 滚动：speed>0 用自定义平滑滚动（由右向左）；否则回退系统 marquee。
-        // 周期 render 时若文本与速度均未变化则保持当前滚动，避免位置被重置。
+        // pause>0 时改为「整条公告完整走完一遍 → 停顿 N 秒 → 再走下一遍」。
+        // 周期 render 时若文本/速度/停顿均未变化则保持当前滚动，避免位置被重置。
         int speed = st.optInt("speed", 0);
+        int pause = st.optInt("pause", 0);
+        if (pause > 0 && speed <= 0) {
+            // 只配置了停顿时间时给一个平缓的默认速度
+            speed = 100;
+        }
         if (speed > 0) {
             tv.setSelected(false);
             tv.setEllipsize(null);
-            boolean sameScrolling = ss.speedRun != null && ss.speed == speed && text.equals(ss.scrollText);
+            boolean sameScrolling = ss.speedRun != null && ss.speed == speed
+                    && ss.pause == pause && text.equals(ss.scrollText);
             if (!sameScrolling) {
                 ss.scrollText = text;
                 ss.speed = speed;
-                startSpeedScroll(act, tv, text, speed, ss);
+                ss.pause = pause;
+                startSpeedScroll(act, tv, text, speed, pause, ss);
             }
         } else {
             ss.scrollText = null;
             ss.speed = 0;
+            ss.pause = 0;
             stopSpeedScroll(ss);
             tv.setScroller(null);
             tv.scrollTo(0, 0);
@@ -411,12 +474,17 @@ public class NoticeBar {
      * <p>防串扰：每次启动/停止都会让 scrollToken 自增，旧的 60ms 延时任务与旧的 300ms 循环
      * 任务（通过 speedRun 身份比对）都会失效，避免快速换内容时出现多条滚动循环叠加。</p>
      */
-    private static void startSpeedScroll(final Activity act, final TextView tv, final String text, final int speedPxPerSec, final ScreenState ss) {
+    private static void startSpeedScroll(final Activity act, final TextView tv, final String text,
+                                         final int speedPxPerSec, final int pauseSec, final ScreenState ss) {
         stopSpeedScroll(ss);
         tv.setScroller(null);
         tv.scrollTo(0, 0);
         tv.setTranslationX(0f);
         tv.setText(text);
+        if (pauseSec > 0) {
+            startPauseScroll(act, tv, text, speedPxPerSec, pauseSec, ss);
+            return;
+        }
         final int token = ++ss.scrollToken;
         tv.postDelayed(new Runnable() {
             @Override
@@ -477,11 +545,90 @@ public class NoticeBar {
         }, 60);
     }
 
+    /**
+     * 「整条走完 + 停顿」模式：公告文本从右侧完全进入，向左完整走出一遍后，
+     * 停顿 notice.pause 秒，再重复。用属性动画平移 translationX 实现，
+     * 不与 TextView 的 marquee/Scroller 状态耦合。
+     */
+    private static void startPauseScroll(final Activity act, final TextView tv, final String text,
+                                         final int speedPxPerSec, final int pauseSec, final ScreenState ss) {
+        final int token = ++ss.scrollToken;
+        tv.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (ss.scrollToken != token) {
+                    return;
+                }
+                if (act.isFinishing() || act.isDestroyed()) {
+                    return;
+                }
+                final int viewWidth = tv.getWidth();
+                if (viewWidth <= 0) {
+                    tv.postDelayed(this, 200);
+                    return;
+                }
+                final float textWidth = tv.getPaint().measureText(text);
+                if (textWidth <= 0) {
+                    return;
+                }
+                // 起点：文本左边缘在屏幕右侧外；终点：文本右边缘移出屏幕左侧
+                final float fromX = viewWidth;
+                final float toX = -textWidth;
+                final int duration = (int) ((fromX - toX) / (float) Math.max(1, speedPxPerSec) * 1000f);
+                final Runnable loop = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (ss.speedRun != this) {
+                            return;
+                        }
+                        if (act.isFinishing() || act.isDestroyed()) {
+                            return;
+                        }
+                        tv.setTranslationX(fromX);
+                        ValueAnimator va = ValueAnimator.ofFloat(fromX, toX);
+                        va.setDuration(Math.max(1, duration));
+                        va.setInterpolator(new LinearInterpolator());
+                        va.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+                            @Override
+                            public void onAnimationUpdate(ValueAnimator animation) {
+                                tv.setTranslationX((Float) animation.getAnimatedValue());
+                            }
+                        });
+                        va.addListener(new AnimatorListenerAdapter() {
+                            @Override
+                            public void onAnimationEnd(Animator animation) {
+                                if (ss.scrollAnim == animation) {
+                                    ss.scrollAnim = null;
+                                }
+                                if (ss.speedRun != loop) {
+                                    return;
+                                }
+                                // 整条公告走完：停顿 N 秒后再走下一遍
+                                H.postDelayed(loop, Math.max(0, pauseSec) * 1000L);
+                            }
+                        });
+                        ss.scrollAnim = va;
+                        va.start();
+                    }
+                };
+                ss.speedRun = loop;
+                loop.run();
+            }
+        }, 60);
+    }
+
     private static void stopSpeedScroll(ScreenState ss) {
         ss.scrollToken++;   // 让尚未执行的延时任务作废
+        if (ss.scrollAnim != null) {
+            ss.scrollAnim.cancel();
+            ss.scrollAnim = null;
+        }
         if (ss.speedRun != null) {
             H.removeCallbacks(ss.speedRun);
             ss.speedRun = null;
+        }
+        if (ss.view != null) {
+            ss.view.setTranslationX(0f);
         }
     }
 

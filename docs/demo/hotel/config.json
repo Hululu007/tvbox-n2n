@@ -1,0 +1,77 @@
+{
+  "_comment": "酒店 IPTV 桌面完整 demo 主配置。部署到 php-demo 同目录后，把 App 的 CONFIG_URL 指向本文件或 index.php?r=config。",
+  "api": "index.php?r=api",
+  "live": "index.php?r=live",
+  "epg": "index.php?r=epg",
+  "forceOverride": false,
+  "defaultScreen": "hotel_demo",
+  "bootStart": true,
+  "checkInterval": 30,
+  "notice": {
+    "text": "欢迎入住 · 前台电话 8888 · 如需帮助请按 0 联系服务台",
+    "speed": 80,
+    "pause": 10,
+    "duration": 0,
+    "fontSize": 24,
+    "fontColor": "#FFD54F",
+    "bgColor": "#66000000",
+    "alpha": 100,
+    "position": "bottom",
+    "show": {
+      "home": true,
+      "live": true,
+      "vod": true,
+      "hotel": true
+    }
+  },
+  "screens": [
+    {
+      "id": "hotel_demo",
+      "name": "酒店桌面",
+      "layout": "hotel_grid",
+      "title": "欢迎入住",
+      "logo": "",
+      "background": "",
+      "ticker": "",
+      "columns": 3,
+      "rows": 2,
+      "showClock": true,
+      "api": "",
+      "live": "",
+      "epg": "",
+      "layoutUrl": "layout-grid.json",
+      "entries": [
+        { "name": "点播", "type": "page", "target": "vod", "icon": "hm_vod", "desc": "海量影视" },
+        { "name": "直播", "type": "page", "target": "live", "icon": "hm_live", "desc": "电视直播" },
+        { "name": "搜索", "type": "page", "target": "search", "icon": "hm_search", "desc": "找片更快" },
+        { "name": "收藏", "type": "page", "target": "collect", "icon": "hm_fav", "desc": "我的收藏" },
+        { "name": "历史", "type": "page", "target": "history", "icon": "hm_history", "desc": "继续观看" },
+        { "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings", "desc": "桌面切换" }
+      ]
+    },
+    {
+      "id": "hotel_list_demo",
+      "name": "酒店竖排桌面",
+      "layout": "hotel_list",
+      "title": "XX 酒店",
+      "layoutUrl": "layout-list.json",
+      "entries": [
+        { "name": "点播", "type": "page", "target": "vod", "icon": "hm_vod" },
+        { "name": "直播", "type": "page", "target": "live", "icon": "hm_live" },
+        { "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings" }
+      ]
+    },
+    {
+      "id": "hotel_showcase_demo",
+      "name": "酒店品牌桌面",
+      "layout": "hotel_showcase",
+      "title": "欢迎光临",
+      "layoutUrl": "layout-showcase.json",
+      "entries": [
+        { "name": "点播", "type": "page", "target": "vod", "icon": "hm_vod" },
+        { "name": "直播", "type": "page", "target": "live", "icon": "hm_live" },
+        { "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings" }
+      ]
+    }
+  ]
+}

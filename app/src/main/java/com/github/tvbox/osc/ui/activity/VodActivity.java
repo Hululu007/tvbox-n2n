@@ -27,6 +27,7 @@ import com.github.tvbox.osc.api.ApiConfig;
 import com.github.tvbox.osc.base.BaseActivity;
 import com.github.tvbox.osc.base.BaseLazyFragment;
 import com.github.tvbox.osc.bean.AbsSortXml;
+import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.bean.Movie;
 import com.github.tvbox.osc.bean.MovieSort;
 import com.github.tvbox.osc.bean.SourceBean;
@@ -49,6 +50,9 @@ import com.owen.tvrecyclerview.widget.V7GridLayoutManager;
 import com.owen.tvrecyclerview.widget.V7LinearLayoutManager;
 import com.orhanobut.hawk.Hawk;
 
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 import org.jetbrains.annotations.NotNull;
 
 import java.lang.reflect.Field;
@@ -99,6 +103,8 @@ public class VodActivity extends BaseActivity {
 
     /** 防止重复触发接口加载 */
     private boolean configLoading = false;
+    /** 接口变更后只重启一次（接口配置保存与事件通知可能同时触发） */
+    private boolean restartPending = false;
     private final Runnable mRunnable = new Runnable() {
         @SuppressLint({"DefaultLocale", "SetTextI18n"})
         @Override
@@ -124,6 +130,16 @@ public class VodActivity extends BaseActivity {
         // 热播推荐与主界面使用同一套规则：主接口推荐 / 豆瓣热播 / 观看历史
         loadRecommendData();
         startEntry();
+        EventBus.getDefault().register(this);
+    }
+
+    /** 点播接口地址变更：缓存已被清空，立即重载新接口 */
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onEndpointChanged(RefreshEvent event) {
+        if (event != null && event.type == RefreshEvent.TYPE_ENDPOINT_CHANGE
+                && String.valueOf(event.obj).contains("api")) {
+            restartVod();
+        }
     }
 
     private void initView() {
@@ -746,6 +762,10 @@ public class VodActivity extends BaseActivity {
     @Override
     protected void onDestroy() {
         mHandler.removeCallbacksAndMessages(null);
+        try {
+            EventBus.getDefault().unregister(this);
+        } catch (Throwable ignored) {
+        }
         super.onDestroy();
         com.github.tvbox.osc.n2n.NoticeBar.hide(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
     }
@@ -762,6 +782,10 @@ public class VodActivity extends BaseActivity {
 
     /** 重启点播界面（选源/修改点播接口后使用），保留主界面返回栈 */
     private void restartVod() {
+        if (restartPending) {
+            return;
+        }
+        restartPending = true;
         mHandler.postDelayed(new Runnable() {
             @Override
             public void run() {

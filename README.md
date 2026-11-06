@@ -22,7 +22,10 @@ This repo relies on the following third-party projects:
 - **点播直接显示分类 + 切源重启**：进入点播界面即显示「热播推荐 + 点播分类」；选源后与 TVboxOSC 一致，重启点播界面并按新源重新加载分类与推荐
 - **点播首分类「热播推荐」与主界面一致**：主配置 `home.recMovies` 优先；未配置回退豆瓣热播；`settings.homeRec=2` 时使用观看历史
 - **图片加载优化**：主接口 `placeholderImage` 作为预设占位图，图片下载完成前先显示、完成后自动替换（与 TVboxOSC 一致）
-- **酒店 IPTV 桌面 / 多界面**：主接口 `screens` + `defaultScreen` 控制启动加载哪个界面，内置 `hotel_grid` / `hotel_list` / `hotel_showcase` 三种布局；每个界面可独立配置点播/直播/EPG 接口；`layoutUrl` 布局插件按需下载并缓存本地
+- **酒店 IPTV 桌面 / 多界面**：主接口 `screens` + `defaultScreen` 控制启动加载哪个界面，内置 `hotel_grid` / `hotel_list` / `hotel_showcase` 三种布局；每个界面可独立配置点播/直播/EPG 接口；`layoutUrl` 布局插件按需下载并缓存本地；切换界面弹窗自动勾选当前界面，未配置 ticker 时自动显示全局滚动通知
+- **接口配置立即生效**：点播/直播/EPG 接口地址变更后立即删除点播缓存、清空 EPG 缓存并通知界面重载，不再需要重启 App
+- **点播网页源**：点播播放地址支持 `webview://` / `video://` / `tkp2p://`，播放页自动切换到 WebView 播放层
+- **滚动通知可停顿**：主接口 `notice.pause` 控制整条公告走完一遍后停顿的秒数，`notice.speed` 控制像素速度，可按首页/直播/点播/酒店分别开关
 - **主接口失败全屏报错**：主配置无法加载/访问且无缓存时直接显示报错页（重试/退出），不再加载其它界面；点播接口提示只在点播界面出现
 - **首页推荐默认多行**：`settings.homeRecStyle` 默认 `true`（网格），可配置为单行
 - **应用市场 TV 搜索**：搜索弹窗内置 A-Z/0-9 屏幕键盘，遥控器方向键 + OK 输入，支持按首字母搜索
@@ -38,6 +41,8 @@ This repo relies on the following third-party projects:
 
 ## 文档
 - [用户使用说明（安装/使用/桌面/切源/搜索等）](docs/usage.md)
+- [酒店界面与布局插件从零开发完整指南（含可运行 demo）](docs/hotel-dev-guide.md)
+- [系统从零开发制作完整指南（环境/配置/播放/调试/发布）](docs/system-dev-guide.md)
 - [接口、配置与 PHP 对接说明（含点播启动画面 vodSplash）](docs/api-and-config.md)
 - [PHP 接口 demo（含加密/设备参数/应用市场/升级）](docs/php-demo/README.md)
 - [hin2n 使用说明（独立 App 入口）](docs/hin2n.md)

@@ -158,6 +158,8 @@ public class LiveWebViewPlayer {
     private View customView;      // H5 全屏回调视图
     private WebChromeClient.CustomViewCallback customCb;
     private Activity owner;
+    /** WebView 挂载容器：直播为 R.id.live_root，点播播放页为 activity_play 根布局 */
+    private ViewGroup container;
     /** 网页自带的页面 UI 是否处于显示状态（由 __tvboxToggleUI 的返回值同步） */
     private boolean pageUiMode = false;
     /** 触摸手势回调：轻点按屏幕横向位置分发（左=频道列表，中=信息栏，右=设置） */
@@ -177,10 +179,22 @@ public class LiveWebViewPlayer {
         return url != null && (url.startsWith("webview://") || url.startsWith("video://") || url.startsWith("tkp2p://"));
     }
 
-    /** 显示并加载；每次切台重建，避免页面状态残留 */
+    /** 显示并加载（直播）；每次切台重建，避免页面状态残留 */
     public void show(Activity act, String rawUrl) {
+        show(act, rawUrl, act != null ? act.findViewById(R.id.live_root) : null);
+    }
+
+    /**
+     * 显示并加载到指定容器（点播播放器复用）：容器需为 FrameLayout，
+     * WebView 会插在第一个子 View（视频画面）之上。
+     */
+    public void show(Activity act, String rawUrl, ViewGroup root) {
         destroy();
+        if (act == null || root == null) {
+            return;
+        }
         owner = act;
+        container = root;
         String target = resolveUrl(rawUrl);
         if (target == null || target.isEmpty()) {
             return;
@@ -189,11 +203,7 @@ public class LiveWebViewPlayer {
         initWebView(webView);
         installTouchGestures(webView);
         pageUiMode = false;
-        ViewGroup root = act.findViewById(R.id.live_root);
-        if (root == null) {
-            return;
-        }
-        // 插在 mVideoView 之上、频道列表/设置浮层之下
+        // 插在 mVideoView 之上、其它 UI 浮层之下
         int index = 1;
         if (root.getChildCount() < index) {
             index = root.getChildCount();
@@ -235,6 +245,7 @@ public class LiveWebViewPlayer {
             webView = null;
         }
         owner = null;
+        container = null;
         pageUiMode = false;
     }
 
@@ -433,7 +444,7 @@ public class LiveWebViewPlayer {
                 }
                 customView = view;
                 customCb = callback;
-                ViewGroup root = owner != null ? owner.findViewById(R.id.live_root) : null;
+                ViewGroup root = container;
                 if (root != null) {
                     if (webView != null) webView.setVisibility(View.GONE);
                     // 插在 WebView 之上、频道列表/设置浮层之下：H5 全屏时原生列表仍能叠在最上层
@@ -502,7 +513,7 @@ public class LiveWebViewPlayer {
 
     private void exitCustomView() {
         if (customView != null) {
-            ViewGroup root = owner != null ? owner.findViewById(R.id.live_root) : null;
+            ViewGroup root = container;
             if (root != null && customView.getParent() == root) {
                 root.removeView(customView);
             }

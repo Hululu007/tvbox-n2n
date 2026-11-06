@@ -81,7 +81,12 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 | `appMarket` | 应用市场列表/详情接口或直接下发 apps 数组 |
 | `upgrade` | 升级检查接口 |
 | `notice` / `home` / `themes` / `donate` | 公告、首页外观、主题、捐助页 |
+| `screens` / `defaultScreen` | 酒店 IPTV 桌面（每屏独立接口 + 布局插件，见 §4.1） |
 | `remoteConfigUrl` | 可选的二次远程配置覆盖 |
+
+> 滚动公告对象还支持 `pause`（整条公告完整走完一遍后停顿的秒数）、`speed`（像素/秒）、
+> `duration`（自动隐藏秒数）、`show`（按首页/直播/点播/酒店分别开关）。
+> 修改后立即重启滚动，无需重启 App。
 
 > **相对地址规则**：`live`、`epg`、`proxy`、`upgrade.checkUrl`、`appMarket.url/detailUrl`、自定义点播入口等，未写 `http://` 或 `https://` 时，**优先拼接主配置来源地址**（`CONFIG_URL` / `remoteConfigUrl`）的协议 + 域名/IP + 所在目录；配置来自本地文件/assets 时回退拼接主接口 `api` 的域名/IP。例如主配置地址为 `http://1.2.3.4:8080/php-demo/index.php?r=config`，`live = index.php?r=live` → `http://1.2.3.4:8080/php-demo/index.php?r=live`。
 
@@ -111,6 +116,22 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 - 首页推荐默认**多行**；可用 JSON `settings.homeRecStyle = false` 改为单行；
 - 未配置点播接口时也可把本机当作纯直播盒子使用。
 
+### 4.1 酒店 IPTV 桌面（可选）
+
+主配置配置了 `screens` 且 `defaultScreen` 指向其中一个 `id` 时，启动直接进入酒店桌面：
+
+- 三种内置布局：`hotel_grid`（宫格）、`hotel_list`（左菜单+右大图）、`hotel_showcase`（顶部大图）；
+- 每个界面可用独立的 `api` / `live` / `epg`，切换界面后立即生效；
+- 外观与入口可拆到 `screens[].layoutUrl` 布局插件 JSON，改 JSON 即换肤，无需发版；
+- 入口支持 `page` / `feature`（含 `screenSwitch` 切换界面）/ `app`（拉起或下载安装第三方 APK）/ `vod`；
+- 底部滚动通知优先用 `screens[].ticker`，为空时回退全局 `notice`；
+- 切换界面弹窗会自动勾选当前所在界面。
+
+从零教程与可直接运行的 demo：
+
+- [酒店界面与布局插件完整开发指南](file:///f:/tvbox-n2n/docs/hotel-dev-guide.md)
+- [酒店 demo 配置](file:///f:/tvbox-n2n/docs/demo/hotel/config.json)
+
 ---
 
 ## 5. 点播
@@ -139,6 +160,8 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 | 返回 | 退出全屏控制，再按返回列表 |
 
 7. 收藏与播放历史自动记录。
+8. **网页源播放**：若播放地址为 `webview://`、`video://` 或 `tkp2p://`，播放页会自动切换到 WebView 播放层；
+   遥控器返回键优先退出网页全屏，再退出播放页。
 
 > 点播接口的所有提示（加载成功/失败、免责声明、切源提示）只在点播界面出现，首页不再提示；主接口无法访问且无缓存时会直接显示全屏报错页，可重试或退出。
 > JSON 可配置专用点播入口（`type=vod`），使用独立影视源与独立主题，不影响首页主源。
@@ -277,4 +300,12 @@ A：在搜索弹窗用遥控器方向键选择屏幕上的 A-Z/0-9 键，OK 输�
 A：首次按主页键时系统会弹出桌面选择，选择「桌面」并点「始终」；若未弹出，到系统设置 → 主页/默认应用 中切换。
 
 **Q：JSON 配置改了不生效？**
-A：确认 `CONFIG_URL` 指向正确；远程配置需设备联网；接口加密内容需使用与客户端一致的 `secretKey`；改动后重启应用。
+A：确认 `CONFIG_URL` 指向正确、远程配置需设备联网、接口加密内容需与客户端 `secretKey` 一致。
+点播 / 直播 / EPG 接口地址改动后会立即清缓存并通知界面重载，不需要重启 App；
+其它外观/设置类字段按配置检查间隔生效，回到首页或重启 App 可立即拉到最新配置。
+
+**Q：改了接口还要重启 App 吗？**
+A：不需要。接口地址变化会立即删除点播接口缓存、清空 EPG 缓存并通知界面重新加载。
+
+**Q：点播地址是网页/网页视频/P2P 怎么办？**
+A：让源返回 `webview://`、`video://` 或 `tkp2p://` 地址即可，播放页会自动使用 WebView 播放层。

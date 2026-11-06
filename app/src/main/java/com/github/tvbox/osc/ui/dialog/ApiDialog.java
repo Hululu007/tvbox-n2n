@@ -106,6 +106,9 @@ public class ApiDialog extends BaseDialog {
                 String newLive = inputLive.getText().toString().trim();
                 String newEPG = inputEPG.getText().toString().trim();
                 String newProxyServer = inputProxy.getText().toString().trim();
+                String oldApi = Hawk.get(HawkConfig.API_URL, "");
+                String oldLive = Hawk.get(HawkConfig.LIVE_URL, "");
+                String oldEPG = Hawk.get(HawkConfig.EPG_URL, "");
                 // takagen99: Convert all to clan://localhost format
                 if (newApi.startsWith("file://")) {
                     newApi = newApi.replace("file://", "clan://localhost/");
@@ -126,6 +129,9 @@ public class ApiDialog extends BaseDialog {
                             history.remove(20);
                         Hawk.put(HawkConfig.API_HISTORY, history);
                     }
+                    // 点播接口变更：立即清空旧接口缓存（MD5 文件 + 进程内已加载标记）
+                    com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(
+                            getContext(), com.github.tvbox.osc.n2n.EndpointCache.KEY_API, oldApi, newApi);
                     if (listener != null) {
                         listener.onchange(newApi);
                     }
@@ -154,6 +160,11 @@ public class ApiDialog extends BaseDialog {
                             EPGHistory.remove(20);
                         Hawk.put(HawkConfig.EPG_HISTORY, EPGHistory);
                     }
+                    // 直播源 / EPG 变更：清空 EPG 节目单缓存，直播界面立即重载
+                    com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(
+                            getContext(), com.github.tvbox.osc.n2n.EndpointCache.KEY_LIVE, oldLive, newLive);
+                    com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(
+                            getContext(), com.github.tvbox.osc.n2n.EndpointCache.KEY_EPG, oldEPG, newEPG);
                 }
                 if (mode == MODE_ALL) {
                     markManual(HawkConfig.PROXY_SERVER);
@@ -178,7 +189,11 @@ public class ApiDialog extends BaseDialog {
                     @Override
                     public void click(String value) {
                         inputApi.setText(value);
+                        String old = Hawk.get(HawkConfig.API_URL, "");
                         markManual(HawkConfig.API_URL);
+                        Hawk.put(HawkConfig.API_URL, value);
+                        com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(
+                                getContext(), com.github.tvbox.osc.n2n.EndpointCache.KEY_API, old, value);
                         listener.onchange(value);
                         dialog.dismiss();
                     }
@@ -207,8 +222,11 @@ public class ApiDialog extends BaseDialog {
                     @Override
                     public void click(String liveURL) {
                         inputLive.setText(liveURL);
+                        String old = Hawk.get(HawkConfig.LIVE_URL, "");
                         markManual(HawkConfig.LIVE_URL);
                         Hawk.put(HawkConfig.LIVE_URL, liveURL);
+                        com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(
+                                getContext(), com.github.tvbox.osc.n2n.EndpointCache.KEY_LIVE, old, liveURL);
                         dialog.dismiss();
                     }
 
@@ -236,8 +254,11 @@ public class ApiDialog extends BaseDialog {
                     @Override
                     public void click(String epgURL) {
                         inputEPG.setText(epgURL);
+                        String old = Hawk.get(HawkConfig.EPG_URL, "");
                         markManual(HawkConfig.EPG_URL);
                         Hawk.put(HawkConfig.EPG_URL, epgURL);
+                        com.github.tvbox.osc.n2n.EndpointCache.onEndpointChanged(
+                                getContext(), com.github.tvbox.osc.n2n.EndpointCache.KEY_EPG, old, epgURL);
                         dialog.dismiss();
                     }
 

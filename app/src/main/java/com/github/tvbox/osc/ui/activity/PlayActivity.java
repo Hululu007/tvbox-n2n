@@ -155,6 +155,8 @@ public class PlayActivity extends BaseActivity {
     private Handler mHandler;
 
     private String videoURL;
+    /** 点播网页源（webview:// / video:// / tkp2p://）播放器 */
+    private com.github.tvbox.osc.util.live.LiveWebViewPlayer mVodWebPlayer;
     private long videoDuration = -1;
     private List<String> videoSegmentationURL = new ArrayList<>();
 
@@ -820,6 +822,20 @@ public class PlayActivity extends BaseActivity {
             @Override
             public void run() {
                 stopParse();
+                // 点播网页源：webview://H5 页面、video://网页视频、tkp2p://P2P 播放器页面
+                if (finalUrl != null && com.github.tvbox.osc.util.live.LiveWebViewPlayer.isWebUrl(finalUrl)) {
+                    if (mVideoView != null) {
+                        mVideoView.release();
+                    }
+                    videoURL = finalUrl;
+                    hideTip();
+                    showVodWebSource(finalUrl);
+                    return;
+                }
+                if (mVodWebPlayer != null) {
+                    mVodWebPlayer.destroy();
+                    mVodWebPlayer = null;
+                }
                 if (mVideoView != null) {
                     mVideoView.release();
                     if (finalUrl != null) {
@@ -879,6 +895,18 @@ public class PlayActivity extends BaseActivity {
                 }
             }
         });
+    }
+
+    /** 在点播播放页叠加 WebView 播放网页源（复用直播的 tkp2p/webview 页面容器） */
+    private void showVodWebSource(String url) {
+        if (mVodWebPlayer == null) {
+            mVodWebPlayer = new com.github.tvbox.osc.util.live.LiveWebViewPlayer();
+        }
+        View video = findViewById(R.id.mVideoView);
+        ViewGroup root = video != null && video.getParent() instanceof ViewGroup
+                ? (ViewGroup) video.getParent()
+                : findViewById(android.R.id.content);
+        mVodWebPlayer.show(this, url, root);
     }
 
     private void initSubtitleView() {
@@ -1198,6 +1226,10 @@ public class PlayActivity extends BaseActivity {
 
     @Override
     public void onBackPressed() {
+        // 网页源播放时先处理 H5 全屏返回
+        if (mVodWebPlayer != null && mVodWebPlayer.handleBack()) {
+            return;
+        }
         if (mController.onBackPressed()) {
             return;
         }
@@ -1297,6 +1329,10 @@ public class PlayActivity extends BaseActivity {
         }
         //手动注销
         sourceViewModel.playResult.removeObserver(mObserverPlayResult);
+        if (mVodWebPlayer != null) {
+            mVodWebPlayer.destroy();
+            mVodWebPlayer = null;
+        }
         if (mVideoView != null) {
             mVideoView.release();
             mVideoView = null;

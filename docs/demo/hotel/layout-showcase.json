@@ -1,0 +1,18 @@
+{
+  "_comment": "布局插件 demo：顶部大图 + 底部一排入口，适合酒店品牌宣传。",
+  "id": "hotel_showcase_demo",
+  "name": "酒店品牌桌面",
+  "layout": "hotel_showcase",
+  "title": "欢迎光临",
+  "logo": "",
+  "background": "",
+  "ticker": "欢迎光临，祝您入住愉快",
+  "columns": 4,
+  "rows": 1,
+  "showClock": true,
+  "entries": [
+    { "name": "点播", "type": "page", "target": "vod", "icon": "hm_vod", "desc": "海量影视" },
+    { "name": "直播", "type": "page", "target": "live", "icon": "hm_live", "desc": "电视直播" },
+    { "name": "切换界面", "type": "feature", "target": "screenSwitch", "icon": "hm_settings", "desc": "桌面切换" }
+  ]
+}

@@ -1159,6 +1159,15 @@ public class ApiConfig {
     }
 
     /**
+     * 接口地址变更后把当前配置标记为未加载。
+     * 下次进入点播界面会重新拉取并解析新接口，无需重启 App。
+     * 不直接清空 sourceBeanList 等集合，避免正在使用旧列表的界面出现并发修改异常。
+     */
+    public void invalidateConfig() {
+        loaded = false;
+    }
+
+    /**
      * 切源/进入点播前预加载该源对应的插件（jar / js / py），并丢弃该源旧的 Spider 实例。
      *
      * <p>背景：点播接口里的站点可以来自不同的 jar/js/py 插件，主界面已不再统一加载点播配置，

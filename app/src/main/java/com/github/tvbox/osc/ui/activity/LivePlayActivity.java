@@ -416,6 +416,8 @@ public class LivePlayActivity extends BaseActivity {
     }
 
     private long mExitTime = 0;
+    /** 接口变更后只重启一次（配置保存与事件通知可能同时触发） */
+    private boolean restartPending = false;
 
     private void exit() {
         if (System.currentTimeMillis() - mExitTime < 2000) {
@@ -2450,6 +2452,14 @@ public class LivePlayActivity extends BaseActivity {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void refresh(RefreshEvent event) {
+        if (event.type == RefreshEvent.TYPE_ENDPOINT_CHANGE) {
+            // 直播源 / EPG 接口变更：缓存已清空，立即重载
+            String key = String.valueOf(event.obj);
+            if (key.contains("live") || key.contains("epg")) {
+                restartLive();
+            }
+            return;
+        }
         if (event.type == RefreshEvent.TYPE_LIVEPLAY_UPDATE) {
             Bundle bundle = (Bundle) event.obj;
             int channelGroupIndex = bundle.getInt("groupIndex", 0);
@@ -2501,9 +2511,10 @@ public class LivePlayActivity extends BaseActivity {
             public void onDismiss(android.content.DialogInterface d) {
                 String newLive = Hawk.get(HawkConfig.LIVE_URL, "");
                 String newEpg = Hawk.get(HawkConfig.EPG_URL, "");
-                boolean changed = (oldLive == null ? "" : oldLive).equals(newLive == null ? "" : newLive)
+                // 地址有任意一项变化即重载（原逻辑判断写反，导致修改后必须重启 App）
+                boolean unchanged = (oldLive == null ? "" : oldLive).equals(newLive == null ? "" : newLive)
                         && (oldEpg == null ? "" : oldEpg).equals(newEpg == null ? "" : newEpg);
-                if (!changed) {
+                if (!unchanged) {
                     restartLive();
                 }
             }
@@ -2513,6 +2524,10 @@ public class LivePlayActivity extends BaseActivity {
 
     /** 重启直播界面：重新拉取最新直播源与 EPG */
     private void restartLive() {
+        if (restartPending) {
+            return;
+        }
+        restartPending = true;
         mHandler.postDelayed(new Runnable() {
             @Override
             public void run() {

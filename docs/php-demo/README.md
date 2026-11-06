@@ -37,6 +37,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | `index.php?r=live` | `live` | 直播源 JSON（可选 `format=txt`；客户端兼容 txt/m3u） |
 | `index.php?r=live&format=txt` | `live` | 直播源传统 txt 文本（`分组,#genre#` / `频道,url#url2`） |
 | `index.php?r=epg&ch={频道名}&date={yyyy-MM-dd}&days={天数}` | `epg` | 节目单 JSON（支持一次返回多天） |
+| `index.php?r=hotel_layout&id=grid\|list\|showcase` | `screens[].layoutUrl` | 酒店桌面布局插件 demo（纯 JSON，不需要加密） |
 | `index.php?r=market&category={category}&sort={sort}&page={page}&pageSize={pageSize}&keyword={keyword}` | `appMarket.url` | 应用市场列表 |
 | `index.php?r=detail&pkg={packageName}` | `appMarket.detailUrl` | 应用详情 |
 | `index.php?r=upgrade` | `upgrade.checkUrl` | 升级检查 |
@@ -63,15 +64,21 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "notice": {
     "text": "欢迎使用 TKLauncher · 前台电话 xxx-xxxxxxx",
     "speed": 50,
+    "pause": 8,
+    "duration": 0,
     "textColor": "#FFFFFFFF",
-    "bgColor": "#FF000000"
+    "bgColor": "#FF000000",
+    "show": { "home": true, "live": true, "vod": true, "hotel": true }
   }
 }
 ```
 
 - `text`（必填）：公告内容；
-- `speed`（必填，>0）：滚动速度，单位像素/秒；设为 0 或缺失时回退系统 marquee；
-- `textColor` / `bgColor`（可选）：颜色 `#RRGGBB` 或 `#AARRGGBB`。
+- `speed`（可选，>0）：滚动速度，单位像素/秒；为 0 或缺失时回退系统 marquee；
+- `pause`（可选，>0）：**整条公告完整走完一遍后停顿的秒数**；只配 `pause` 时默认速度 100；
+- `duration`（可选）：自动隐藏秒数，0=常驻；
+- `textColor` / `bgColor` / `alpha` / `fontSize` / `position`（可选）：颜色、透明度、字号、上/下位置；
+- `show`（可选）：按 `home` / `live` / `vod` / `hotel` 分别开关；酒店界面会优先显示 `screens[].ticker`。
 
 ### 3.1 直播 JSON 格式
 
@@ -102,6 +109,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   - 也兼容 `playerType`（-1/0/1/2/3）与平行数组 `decodes`；
   - 客户端仅在用户未手动设置该线路解码时采用，用户播放中调整后以用户设置为准；
 - **支持的节目类型（播放地址协议）**：`http(s)` 直链（m3u8/flv/mp4 等）、`rtmp://`、`rtsp://`、`webview://`（WebView 直接播网页）、`video://`（WebView 嗅探网页视频）、`tkp2p://`（内置 P2P，引擎见主配置 `tkp2p` 段）；
+- **点播同样支持**：点播源返回的播放地址若是 `webview://` / `video://` / `tkp2p://`，播放页会自动切换到 WebView 播放层；
 - 请求 `index.php?r=live&format=txt` 返回传统 txt（`分组,#genre#` / `频道,url#url2`），客户端同样兼容；txt 不携带 `decode`；
 - 客户端同时兼容传统 txt（`分组,#genre#` / `频道,url#url2`）与 m3u（`#EXTM3U`/`#EXTINF`）文本源，按内容自动识别。
 
@@ -208,6 +216,8 @@ A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 J
 | `forceOverride` | 接口强制覆盖：`false`=用户手动配置优先；`true`=全部覆盖；也可对象逐项控制 |
 | `defaultScreen` | 启动加载的界面 id：`standard` 或 `screens` 中的 id |
 | `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |
+| `screens[].layoutUrl` | 布局插件 JSON 地址，demo 为 `index.php?r=hotel_layout&id=grid`；只覆盖外观/入口，接口请写在本屏 `api/live/epg` |
+| `notice.pause` | 整条滚动公告走完后的停顿秒数 |
 
 按 MAC 返回不同酒店桌面的示例：
 
@@ -223,6 +233,7 @@ $config['screens'] = [[
     'api'      => 'http://hotel-a.example.com/vod.json',
     'live'     => 'http://hotel-a.example.com/live.json',
     'epg'      => 'http://hotel-a.example.com/epg.json',
+    'layoutUrl' => 'index.php?r=hotel_layout&id=grid',   // 纯 JSON，不要带 enc 加密参数
     'columns'  => 3,
     'rows'     => 2,
     'entries'  => [
@@ -233,4 +244,7 @@ $config['screens'] = [[
 ]];
 ```
 
-完整教程（含布局插件与小白步骤）见 [../tvbox-dev.md](../tvbox-dev.md) 第 11 章。
+- 接口地址变更后客户端会立即清空点播/EPG 缓存并重载界面，**无需重启 App**。
+- 从零教程：[酒店界面与布局插件完整开发指南](../hotel-dev-guide.md)、[系统从零开发制作完整指南](../system-dev-guide.md)。
+- 完整可运行 demo：[docs/demo/hotel](../demo/hotel/)。
+- 更多小白步骤：[tvbox-dev.md](../tvbox-dev.md) 第 11 章。

@@ -27,6 +27,8 @@ public class RefreshEvent {
     public static final int TYPE_FILTER_CHANGE = 16;
     public static final int TYPE_REFRESH_NOTIFY = 17;
     public static final int TYPE_SET_DANMU_SETTINGS = 18;
+    /** 点播/直播/EPG 接口地址变更：已清空本地缓存，界面需立即重新加载 */
+    public static final int TYPE_ENDPOINT_CHANGE = 19;
     public int type;
     public Object obj;
 
