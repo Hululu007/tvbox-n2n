@@ -575,6 +575,7 @@ public class NoticeBar {
                 final float fromX = viewWidth;
                 final float toX = -textWidth;
                 final int duration = (int) ((fromX - toX) / (float) Math.max(1, speedPxPerSec) * 1000f);
+                final Runnable[] loopRef = new Runnable[1];
                 final Runnable loop = new Runnable() {
                     @Override
                     public void run() {
@@ -600,17 +601,18 @@ public class NoticeBar {
                                 if (ss.scrollAnim == animation) {
                                     ss.scrollAnim = null;
                                 }
-                                if (ss.speedRun != loop) {
+                                if (ss.speedRun != loopRef[0]) {
                                     return;
                                 }
                                 // 整条公告走完：停顿 N 秒后再走下一遍
-                                H.postDelayed(loop, Math.max(0, pauseSec) * 1000L);
+                                H.postDelayed(loopRef[0], Math.max(0, pauseSec) * 1000L);
                             }
                         });
                         ss.scrollAnim = va;
                         va.start();
                     }
                 };
+                loopRef[0] = loop;
                 ss.speedRun = loop;
                 loop.run();
             }
