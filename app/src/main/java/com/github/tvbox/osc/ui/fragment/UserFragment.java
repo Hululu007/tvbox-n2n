@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.ViewTreeObserver;
 import android.view.animation.BounceInterpolator;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Toast;
@@ -356,6 +357,98 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
         } else {
             tvHotListForGrid.setVisibility(View.GONE);
             tvHotListForLine.setVisibility(View.VISIBLE);
+        }
+        // 推荐下方快捷入口行：可打开其他模块/App，支持自定义图片，图片上方显示文字
+        buildQuickEntries();
+    }
+
+    /**
+     * 推荐下方快捷入口行（JSON "quickEntries"）：横向滚动卡片，支持自定义图片（pic 字段），
+     * 文字显示在图片上方；点击走 EntryDispatcher（page/feature/app/vod 均可）。
+     * 未配置时隐藏整行。
+     */
+    private void buildQuickEntries() {
+        final LinearLayout bar = findViewById(R.id.quickEntryBar);
+        final View scroll = findViewById(R.id.quickEntryScroll);
+        if (bar == null || scroll == null) {
+            return;
+        }
+        java.util.List<RemoteConfig.Entry> entries = RemoteConfig.quickEntries();
+        if (entries == null || entries.isEmpty()) {
+            scroll.setVisibility(View.GONE);
+            return;
+        }
+        scroll.setVisibility(View.VISIBLE);
+        bar.removeAllViews();
+        android.content.res.Resources res = getResources();
+        int cardW = res.getDimensionPixelSize(R.dimen.vs_240);
+        int cardH = res.getDimensionPixelSize(R.dimen.vs_150);
+        int margin = res.getDimensionPixelSize(R.dimen.vs_10);
+        for (final RemoteConfig.Entry e : entries) {
+            // 卡片：图片 + 顶部文字
+            FrameLayout card = new FrameLayout(mContext);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(cardW, cardH);
+            clp.setMargins(margin, 0, margin, 0);
+            card.setLayoutParams(clp);
+            card.setBackgroundResource(R.drawable.shape_user_home);
+            card.setClickable(true);
+            card.setFocusable(true);
+            card.setContentDescription(e.name);
+
+            // 背景图片（pic 字段，支持 http(s) URL 或 drawable 名）
+            android.widget.ImageView iv = new android.widget.ImageView(mContext);
+            FrameLayout.LayoutParams ilp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT);
+            iv.setLayoutParams(ilp);
+            iv.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+            String pic = e.pic != null ? e.pic.trim() : "";
+            if (!pic.isEmpty()) {
+                if (pic.startsWith("http://") || pic.startsWith("https://")) {
+                    try {
+                        com.bumptech.glide.Glide.with(mContext).load(pic).into(iv);
+                    } catch (Throwable ignored) {
+                    }
+                } else {
+                    int resId = res.getIdentifier(pic, "drawable", mContext.getPackageName());
+                    if (resId != 0) {
+                        iv.setImageResource(resId);
+                    } else {
+                        com.github.tvbox.osc.n2n.EntryDispatcher.loadIcon(mContext, iv, e);
+                    }
+                }
+            } else {
+                com.github.tvbox.osc.n2n.EntryDispatcher.loadIcon(mContext, iv, e);
+            }
+            card.addView(iv);
+
+            // 文字显示在图片上方（顶部半透明条）
+            android.widget.TextView tv = new android.widget.TextView(mContext);
+            FrameLayout.LayoutParams tlp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT);
+            tlp.gravity = android.view.Gravity.TOP;
+            tv.setLayoutParams(tlp);
+            tv.setBackgroundColor(0x99000000);
+            tv.setGravity(android.view.Gravity.CENTER);
+            tv.setPadding(0, res.getDimensionPixelSize(R.dimen.vs_6),
+                    0, res.getDimensionPixelSize(R.dimen.vs_6));
+            tv.setText(e.name);
+            tv.setTextColor(0xFFFFFFFF);
+            tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
+                    res.getDimensionPixelSize(R.dimen.ts_20));
+            tv.setFocusable(false);
+            tv.setClickable(false);
+            card.addView(tv);
+
+            card.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    FastClickCheckUtil.check(v);
+                    com.github.tvbox.osc.n2n.EntryDispatcher.open(mActivity, e);
+                }
+            });
+            bar.addView(card);
         }
     }
 

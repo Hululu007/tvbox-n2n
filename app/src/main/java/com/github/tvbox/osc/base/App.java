@@ -130,7 +130,12 @@ public class App extends MultiDexApplication {
                 .setStorage(new com.github.tvbox.osc.n2n.LocalJsonStorage(this))
                 .setEncryption(new com.orhanobut.hawk.PlainEncryption())
                 .build();
-        Hawk.put(HawkConfig.DEBUG_OPEN, false);
+        // 不要每次启动都强制把 DEBUG_OPEN 置 false：否则「调试模式已开但无日志」。
+        // 仅在 Hawk 中不存在该键时写默认值 false；后续 RemoteConfig.bootstrap 的 settings
+        // 段会按 json 里的 debugOpen 覆盖（true/false），用户设置得以保留。
+        if (!Hawk.contains(HawkConfig.DEBUG_OPEN)) {
+            Hawk.put(HawkConfig.DEBUG_OPEN, false);
+        }
         // 上次启动若在点播配置加载中途异常退出，这里自动清理坏配置，避免「一开就崩」的死循环
         com.github.tvbox.osc.n2n.ConfigGuard.recoverIfNeeded(this);
         // 加载主配置：地址由 RemoteConfig.CONFIG_URL 在代码中手动指定，支持远程 URL

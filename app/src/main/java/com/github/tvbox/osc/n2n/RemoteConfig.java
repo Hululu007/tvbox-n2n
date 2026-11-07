@@ -131,6 +131,8 @@ public class RemoteConfig {
     public static final String K_ENTRIES = "rc_entries";
     public static final String K_TOP_ENTRIES = "rc_top_entries";
     public static final String K_HOME_ENTRIES = "rc_home_entries";
+    /** 推荐下方快捷入口行（"quickEntries"）：可打开模块/App，支持自定义图片 */
+    public static final String K_QUICK_ENTRIES = "rc_quick_entries";
     /** 点播接口加载成功通知的自动关闭秒数（json "loadSuccessDuration"，0=不显示） */
     public static final String K_LOAD_SUCCESS_DURATION = "rc_load_success_duration";
     /** 点播接口免责声明（warningText）弹窗的自动关闭秒数（json "warningAutoClose"，0=不自动关闭） */
@@ -224,6 +226,14 @@ public class RemoteConfig {
     private static void notifyPrimary(int state) {
         List<PrimaryListener> copy;
         synchronized (sPrimaryListeners) {
+            // 幂等保护：若已经成功（PRIMARY_OK），不允许后续迟到的失败回调把状态改回 FAIL。
+            // 典型场景：首次拉取超时/失败后用户点「重试」，重试线程已成功返回 PRIMARY_OK，
+            // 此时旧线程若才姗姗来迟地抛出异常，不能再弹一次「主接口加载失败」窗口。
+            if (sPrimaryState == PRIMARY_OK && state != PRIMARY_OK) {
+                android.util.Log.w("RemoteConfig", "notifyPrimary: ignore late state=" + state
+                        + " because primary already OK");
+                return;
+            }
             sPrimaryState = state;
             copy = new ArrayList<>(sPrimaryListeners);
             sPrimaryListeners.clear();
@@ -511,6 +521,12 @@ public class RemoteConfig {
         return raw == null ? null : parseEntries(raw);
     }
 
+    /** 推荐下方快捷入口行（"quickEntries"）：可打开模块/App，支持自定义图片；未配置返回空列表 */
+    public static List<Entry> quickEntries() {
+        String raw = Hawk.get(K_QUICK_ENTRIES, null);
+        return raw == null ? new ArrayList<>() : parseEntries(raw);
+    }
+
     /** 远程升级配置（"upgrade" 段）：未配置返回 null */
     public static JSONObject upgrade() {
         String raw = Hawk.get(K_UPGRADE, "");
@@ -685,19 +701,46 @@ public class RemoteConfig {
 
     /** 后台线程拉取主远程配置 */
     private static void fetchPrimary(Context app, String url) {
-        try {
-            String raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
-            if (raw == null || raw.isEmpty()) {
-                boolean restored = restoreCachedRemote(app, false);
-                notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
-                return;
+        String raw = null;
+        Throwable lastErr = null;
+        // 首次失败再试一次，规避瞬时网络抖动/服务端偶发 5xx 导致「二次打开必失败」
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
+                if (raw != null && !raw.isEmpty()) {
+                    break;
+                }
+                android.util.Log.w("RemoteConfig", "fetchPrimary attempt=" + attempt
+                        + " empty response, url=" + url);
+            } catch (Throwable t) {
+                lastErr = t;
+                android.util.Log.w("RemoteConfig", "fetchPrimary attempt=" + attempt
+                        + " error: " + t.getMessage() + ", url=" + url);
             }
+            if (attempt < 2) {
+                try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+            }
+        }
+        if (raw == null || raw.isEmpty()) {
+            android.util.Log.w("RemoteConfig", "fetchPrimary network failed, fallback to cache. lastErr="
+                    + (lastErr != null ? lastErr.getMessage() : "empty"));
+            boolean restored = restoreCachedRemote(app, false);
+            notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
+            return;
+        }
+        try {
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject cfg = parseLoose(raw);
             sConfig = cfg;
             sConfigBase = url; // 相对接口地址以主配置所在目录为基准拼接
             String oldRaw = Hawk.get(K_REMOTE_RAW, "");
-            apply(app, cfg, false);
+            // apply 内部已对各段做 try-catch，但再兜一层，避免任何异常导致主接口被误判失败
+            try {
+                apply(app, cfg, false);
+            } catch (Throwable applyErr) {
+                android.util.Log.e("RemoteConfig", "fetchPrimary apply error (non-fatal): "
+                        + applyErr.getMessage(), applyErr);
+            }
             Hawk.put(K_REMOTE_RAW, raw);
             if (!raw.equals(oldRaw)) {
                 bumpConfigVersion();
@@ -708,6 +751,8 @@ public class RemoteConfig {
                 fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
             }
         } catch (Throwable t) {
+            android.util.Log.e("RemoteConfig", "fetchPrimary parse error, fallback to cache: "
+                    + t.getMessage(), t);
             boolean restored = restoreCachedRemote(app, false);
             notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
         }
@@ -721,11 +766,24 @@ public class RemoteConfig {
                 JSONObject cfg = parseLoose(cached);
                 if (remoteOnly == false) {
                     sConfig = cfg;
+                    // 缓存恢复时也要设置基准地址，否则相对接口（live/epg 等）无法正确拼接
+                    if (sConfigBase == null || sConfigBase.isEmpty()) {
+                        sConfigBase = CONFIG_URL != null ? CONFIG_URL.trim() : "";
+                    }
                 }
-                apply(app, cfg, remoteOnly);
+                // apply 内部各段已有 try-catch，此处再兜一层，确保「能解析就视为恢复成功」
+                try {
+                    apply(app, cfg, remoteOnly);
+                } catch (Throwable applyErr) {
+                    android.util.Log.e("RemoteConfig", "restoreCachedRemote apply error (non-fatal): "
+                            + applyErr.getMessage(), applyErr);
+                }
                 return true;
+            } else {
+                android.util.Log.w("RemoteConfig", "restoreCachedRemote: no cached remote config");
             }
-        } catch (Throwable ignored) {
+        } catch (Throwable t) {
+            android.util.Log.e("RemoteConfig", "restoreCachedRemote error: " + t.getMessage(), t);
         }
         return false;
     }
@@ -792,15 +850,24 @@ public class RemoteConfig {
             conn.setRequestProperty("Accept", "application/json,*/*");
             int code = conn.getResponseCode();
             in = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
-            if (in == null) return null;
+            if (in == null) {
+                android.util.Log.w("RemoteConfig", "httpGet null stream, code=" + code + ", url=" + urlStr);
+                return null;
+            }
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             byte[] buf = new byte[4096];
             int n;
             while ((n = in.read(buf)) > 0) {
                 bos.write(buf, 0, n);
             }
-            return new String(bos.toByteArray(), "UTF-8");
+            String body = new String(bos.toByteArray(), "UTF-8");
+            if (code < 200 || code >= 300) {
+                android.util.Log.w("RemoteConfig", "httpGet non-2xx code=" + code
+                        + ", bodyLen=" + body.length() + ", url=" + urlStr);
+            }
+            return body;
         } catch (Throwable t) {
+            android.util.Log.w("RemoteConfig", "httpGet error: " + t.getMessage() + ", url=" + urlStr);
             return null;
         } finally {
             if (in != null) { try { in.close(); } catch (Throwable ignored) {} }
@@ -1011,6 +1078,12 @@ public class RemoteConfig {
             Hawk.put(K_HOME_ENTRIES, homeArr.toString());
         } else {
             Hawk.delete(K_HOME_ENTRIES);
+        }
+        JSONArray quickArr = j.optJSONArray("quickEntries");
+        if (quickArr != null && quickArr.length() > 0) {
+            Hawk.put(K_QUICK_ENTRIES, quickArr.toString());
+        } else {
+            Hawk.delete(K_QUICK_ENTRIES);
         }
         if (j.has("upgrade") && j.optJSONObject("upgrade") != null) {
             try {

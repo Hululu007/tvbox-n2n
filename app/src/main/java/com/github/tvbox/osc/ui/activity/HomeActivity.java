@@ -377,7 +377,11 @@ public class HomeActivity extends BaseActivity {
         if (liveModeJumped) {
             return;
         }
-        if (!Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false)) {
+        // 直播开机启动：用户在直播设置里开启后，打开 App 直接进入直播模块；
+        // 同时兼容旧配置 homeDefaultShow（JSON 下发）。
+        boolean liveBoot = Hawk.get(HawkConfig.LIVE_BOOT_START, false)
+                || Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false);
+        if (!liveBoot) {
             return;
         }
         liveModeJumped = true;

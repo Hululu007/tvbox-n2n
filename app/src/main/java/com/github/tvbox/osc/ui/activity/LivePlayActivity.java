@@ -2101,6 +2101,11 @@ public class LivePlayActivity extends BaseActivity {
                     case 5:
                         toggleCurrentChannelFavorite();
                         break;
+                    case 6:
+                        select = !Hawk.get(HawkConfig.LIVE_BOOT_START, false);
+                        Hawk.put(HawkConfig.LIVE_BOOT_START, select);
+                        Toast.makeText(App.getInstance(), select ? "已开启：下次打开 App 直接进入直播" : "已关闭直播开机启动", Toast.LENGTH_SHORT).show();
+                        break;
                 }
                 liveSettingItemAdapter.selectItem(position, select, false);
                 break;
@@ -2554,7 +2559,7 @@ public class LivePlayActivity extends BaseActivity {
         ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo"));
         ArrayList<String> renderItems = new ArrayList<>(Arrays.asList("TextureView", "SurfaceView"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
-        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道"));
+        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道", "开机进入直播"));
         ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("配置直播源(含EPG)", "直播源历史"));
         ArrayList<String> exitConfirm = new ArrayList<>(Arrays.asList("确定"));
         itemsArrayList.add(sourceItems);
@@ -2587,6 +2592,7 @@ public class LivePlayActivity extends BaseActivity {
         liveSettingGroupList.get(5).getLiveSettingItems().get(2).setItemSelected(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false));
         liveSettingGroupList.get(5).getLiveSettingItems().get(3).setItemSelected(Hawk.get(HawkConfig.LIVE_CROSS_GROUP, false));
         liveSettingGroupList.get(5).getLiveSettingItems().get(4).setItemSelected(Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false));
+        liveSettingGroupList.get(5).getLiveSettingItems().get(6).setItemSelected(Hawk.get(HawkConfig.LIVE_BOOT_START, false));
         // 渲染方式默认选中：0=TextureView, 2=SurfaceView
         int renderIdx = Hawk.get(HawkConfig.PLAY_RENDER, 0) == 2 ? 1 : 0;
         liveSettingGroupList.get(3).getLiveSettingItems().get(renderIdx).setItemSelected(true);

@@ -120,6 +120,8 @@ public class SearchActivity extends BaseActivity {
     private static ArrayList<String> hots = new ArrayList<>();
     private HashMap<String, String> mCheckSources = null;
     private SearchCheckboxDialog mSearchCheckboxDialog = null;
+    /** 搜索范围：default=仅默认源（非 cv_ 前缀）；custom=仅自定义点播注入的 cv_ 源；空=全部 */
+    private String searchScope = "";
 
     @Override
     protected int getLayoutResID() {
@@ -511,8 +513,13 @@ public class SearchActivity extends BaseActivity {
                     List<SourceBean> allSourceBean = ApiConfig.get().getSourceBeanList();
                     List<SourceBean> searchAbleSource = new ArrayList<>();
                     for (SourceBean sourceBean : allSourceBean) {
-                        if (sourceBean.isSearchable()) {
-                            searchAbleSource.add(sourceBean);
+                        if (!sourceBean.isSearchable()) continue;
+                        // 搜索范围过滤：仅展示对应范围的源
+                        boolean isCustom = sourceBean.getKey() != null && sourceBean.getKey().startsWith("cv_");
+                        if ("custom".equals(searchScope)) {
+                            if (isCustom) searchAbleSource.add(sourceBean);
+                        } else {
+                            if (!isCustom) searchAbleSource.add(sourceBean);
                         }
                     }
                     mSearchCheckboxDialog = new SearchCheckboxDialog(SearchActivity.this, searchAbleSource, mCheckSources);
@@ -615,6 +622,10 @@ public class SearchActivity extends BaseActivity {
         initCheckedSourcesForSearch();
         initSearchHistory();
         Intent intent = getIntent();
+        if (intent != null) {
+            searchScope = intent.getStringExtra("searchScope");
+            if (searchScope == null) searchScope = "";
+        }
         if (intent != null && intent.hasExtra("title")) {
             String title = intent.getStringExtra("title");
             showLoading();
@@ -729,22 +740,41 @@ public class SearchActivity extends BaseActivity {
 
         List<SourceBean> searchRequestList = new ArrayList<>();
 
+        // 自定义点播的源 key 均以 cv_ 前缀注入；按搜索范围过滤，实现「默认/自定义点播各自搜各自接口」
+        boolean scopeCustom = "custom".equals(searchScope);
+        java.util.function.Predicate<SourceBean> scopeMatch = new java.util.function.Predicate<SourceBean>() {
+            @Override
+            public boolean test(SourceBean b) {
+                boolean isCustom = b.getKey() != null && b.getKey().startsWith("cv_");
+                return scopeCustom ? isCustom : !isCustom;
+            }
+        };
+
         boolean equals = this.sKey.equals("filter__home");
         if (equals) {
             SourceBean home = ApiConfig.get().getHomeSourceBean();
-            if (home.isSearchable()) {
+            if (home != null && home.isSearchable() && scopeMatch.test(home)) {
                 searchRequestList.add(home);
             } else {
                 Toast.makeText(mContext, "当前源不支持搜索,自动切换到全局搜索", Toast.LENGTH_SHORT).show();
-                searchRequestList.addAll(ApiConfig.get().getSourceBeanList());
+                for (SourceBean sb : ApiConfig.get().getSourceBeanList()) {
+                    if (scopeMatch.test(sb)) searchRequestList.add(sb);
+                }
             }
         } else if (TextUtils.isEmpty(sKey) || ApiConfig.get().getSource(sKey) == null) {
-            searchRequestList.addAll(ApiConfig.get().getSourceBeanList());
+            for (SourceBean sb : ApiConfig.get().getSourceBeanList()) {
+                if (scopeMatch.test(sb)) searchRequestList.add(sb);
+            }
             SourceBean home = ApiConfig.get().getHomeSourceBean();
-            searchRequestList.remove(home);
-            searchRequestList.add(0, home);
+            if (home != null && scopeMatch.test(home)) {
+                searchRequestList.remove(home);
+                searchRequestList.add(0, home);
+            }
         } else {
-            searchRequestList.add(ApiConfig.get().getSource(sKey));
+            SourceBean target = ApiConfig.get().getSource(sKey);
+            if (target != null && scopeMatch.test(target)) {
+                searchRequestList.add(target);
+            }
         }
 
         ArrayList<String> siteKey = new ArrayList<>();

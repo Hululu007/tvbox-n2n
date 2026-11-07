@@ -3,6 +3,7 @@ package com.github.tvbox.osc.ui.activity;
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.graphics.Color;
+import android.os.Bundle;
 import android.os.Handler;
 import android.view.KeyEvent;
 import android.view.View;
@@ -87,10 +88,13 @@ public class CustomVodActivity extends BaseActivity {
     private View currentView = null;
     private final Handler mHandler = new Handler();
     private long mExitTime = 0;
+    private boolean restartPending = false;
 
     /** 入口传入：显示名称 / 数据接口地址 */
     private String entryName = "";
     private String entryUrl = "";
+    /** 进入本界面前的当前源 key（退出时恢复；切源重启界面时通过 intent 传递以保持一致） */
+    private String prevHomeKey = null;
     /** 本界面注入的 cv_ 源（切源对话框候选） */
     private final List<SourceBean> customSources = new ArrayList<>();
     /** 进入本界面前的当前源（退出时恢复） */
@@ -123,6 +127,8 @@ public class CustomVodActivity extends BaseActivity {
         if (it != null) {
             entryName = it.getStringExtra("name") == null ? "" : it.getStringExtra("name");
             entryUrl = it.getStringExtra("url") == null ? "" : it.getStringExtra("url");
+            // 切源重启界面时透传「进入本界面前的当前源 key」，保证退出时能恢复到正确的源
+            prevHomeKey = it.getStringExtra("prevHomeKey");
         }
         initView();
         initViewModel();
@@ -241,12 +247,14 @@ public class CustomVodActivity extends BaseActivity {
                 return true;
             }
         });
-        // 搜索
+        // 搜索：自定义点播仅搜索本界面注入的 cv_ 源（与默认点播各自独立）
         ImageView tvFind = findViewById(R.id.tvFind);
         tvFind.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-                jumpActivity(SearchActivity.class);
+                Bundle bundle = new Bundle();
+                bundle.putString("searchScope", "custom");
+                jumpActivity(SearchActivity.class, bundle);
             }
         });
         setLoadSir(this.contentLayout);
@@ -407,8 +415,16 @@ public class CustomVodActivity extends BaseActivity {
             showEmpty();
             return;
         }
-        // 保存原当前源，仅内存切换（不写 Hawk，退出本界面即恢复）
-        prevHome = ApiConfig.get().getHomeSourceBean();
+        // 保存原当前源，仅内存切换（不写 Hawk，退出本界面即恢复）。
+        // 切源重启界面时通过 prevHomeKey 透传原始源 key，避免把 cv_ 临时源误存为「原当前源」。
+        if (prevHomeKey != null && !prevHomeKey.isEmpty()) {
+            prevHome = ApiConfig.get().getSource(prevHomeKey);
+        } else {
+            prevHome = ApiConfig.get().getHomeSourceBean();
+            if (prevHome != null) {
+                prevHomeKey = prevHome.getKey();
+            }
+        }
         ApiConfig.get().setHomeSourceTemp(first);
         pendingSortKey = first.getKey();
         // 首次加载也预加载站点对应的 jar/js/py 插件，避免首次请求时同步下载/初始化导致空列表
@@ -564,6 +580,7 @@ public class CustomVodActivity extends BaseActivity {
                 clp.width = AutoSizeUtils.mm2px(dialog.getContext(), 400 + 260 * (spanCount - 1));
             }
             dialog.setTip(getString(R.string.dia_source));
+            final SelectDialog<SourceBean> fDialog = dialog;
             dialog.setAdapter(tvRecyclerView, new SelectDialogAdapter.SelectDialogInterface<SourceBean>() {
                 @Override
                 public void click(SourceBean value, int pos) {
@@ -574,11 +591,14 @@ public class CustomVodActivity extends BaseActivity {
                     if (key != null && key.equals(pendingSortKey)) {
                         // 重复选择同一源：仍然强制刷新（长按名称也可刷新）
                         reloadHome();
+                        fDialog.dismiss();
                         return;
                     }
+                    // 与默认点播模块一致：切源后重启本界面，重新加载所选源的分类与推荐
                     ApiConfig.get().setHomeSourceTemp(value);
-                    Toast.makeText(mContext, getString(R.string.dia_source) + "：" + value.getName(), Toast.LENGTH_SHORT).show();
-                    reloadHome();
+                    fDialog.dismiss();
+                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」，正在重启点播界面", Toast.LENGTH_SHORT).show();
+                    restartCustomVod();
                 }
 
                 @Override
@@ -611,6 +631,35 @@ public class CustomVodActivity extends BaseActivity {
         }
         String api = sb.getApi();
         return api != null && !api.trim().isEmpty();
+    }
+
+    /**
+     * 切源后重启本界面（与默认点播 VodActivity.restartVod 行为一致）。
+     * ApiConfig 单例仍持有注入的 cv_ 源与已切换的当前源，重启后 loadCustomConfig 会
+     * 重新解析注入并加载所选源分类；prevHomeKey 透传保证退出时恢复到进入本界面前的源。
+     */
+    private void restartCustomVod() {
+        if (restartPending) {
+            return;
+        }
+        restartPending = true;
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                Intent intent = new Intent(CustomVodActivity.this, CustomVodActivity.class);
+                intent.putExtra("name", entryName);
+                intent.putExtra("url", entryUrl);
+                if (prevHomeKey != null && !prevHomeKey.isEmpty()) {
+                    intent.putExtra("prevHomeKey", prevHomeKey);
+                }
+                finish();
+                startActivity(intent);
+                overridePendingTransition(0, 0);
+            }
+        }, 200);
     }
 
     /** 重新加载当前 cv_ 源分类（强制绕过 homeContent 缓存） */
