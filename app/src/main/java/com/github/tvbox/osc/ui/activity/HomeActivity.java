@@ -605,6 +605,16 @@ public class HomeActivity extends BaseActivity {
         if (isFinishing() || isDestroyed()) {
             return;
         }
+        // 最后一道防线：只要磁盘上有缓存或内存中曾成功应用过配置，就绝不弹报错。
+        // 防止 RemoteConfig 状态机任何边界遗漏导致二次启动误报「主接口加载失败」。
+        if (com.github.tvbox.osc.n2n.RemoteConfig.hasUsableConfig()) {
+            com.github.tvbox.osc.n2n.RcLog.w("HomeActivity: showPrimaryConfigError suppressed, usable config exists");
+            if (!dataInitOk) {
+                dataInitOk = true;
+                jarInitOk = true;
+            }
+            return;
+        }
         // 保留进程给报错界面（否则 HomeActivity.onDestroy 会直接退出 App，报错页无法展示）
         sSkipAppExit = true;
         Intent intent = new Intent(this, ConfigErrorActivity.class);
