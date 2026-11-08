@@ -466,6 +466,13 @@
         app:tv_selectedItemIsCentered="true"
         app:tv_verticalSpacingWithMargins="@dimen/vs_20" />
 
+    <!-- 底部留白：避免最后一行内容被屏幕底部/滚动公告遮挡，保证滚到底部时完整可见 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="@dimen/vs_100"
+        android:focusable="false"
+        android:importantForAccessibility="no" />
+
     </LinearLayout>
 
 </ScrollView>

@@ -1246,6 +1246,12 @@ public class PlayActivity extends BaseActivity {
         return super.dispatchKeyEvent(event);
     }
 
+    /** 播放器自行分发方向键/OK 键，不做焦点兜底，避免同时触发播放控制与焦点移动 */
+    @Override
+    protected boolean autoDpadFocusEnabled() {
+        return false;
+    }
+
     // takagen99 : Use onStopCalled to track close activity
     private boolean onStopCalled;
 

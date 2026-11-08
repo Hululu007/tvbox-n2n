@@ -1316,7 +1316,17 @@ public class ApiConfig {
      * 各类源（type=0 Xml / 1 Json / 3 Spider / 4 Json 扩展）都能在独立点播界面正常切换。
      */
     public synchronized List<SourceBean> injectCustomSources(String jsonStr, String configUrl) {
-        removeCustomSources();
+        return injectCustomSources(jsonStr, configUrl, "");
+    }
+
+    /**
+     * 按实例作用域注入自定义点播源：多个自定义点播界面可同时存在，互不清理对方的源。
+     * scope 为空时退化为全局 cv_ 前缀（兼容旧调用）；非空时 key 形如
+     * {@code cv_<scope>_<idx>_<siteKey>}，退出某个界面只移除它自己的源。
+     */
+    public synchronized List<SourceBean> injectCustomSources(String jsonStr, String configUrl, String scope) {
+        removeCustomSources(scope);
+        final String prefix = customPrefix(scope);
         List<SourceBean> out = new ArrayList<>();
         String base = configBase(configUrl);
         try {
@@ -1332,7 +1342,7 @@ public class ApiConfig {
                     JsonObject obj = (JsonObject) opt;
                     SourceBean sb = new SourceBean();
                     String siteKey = obj.has("key") ? obj.get("key").getAsString().trim() : ("site" + idx);
-                    String injectKey = CUSTOM_SRC_PREFIX + (idx++) + "_" + siteKey;
+                    String injectKey = prefix + (idx++) + "_" + siteKey;
                     sb.setKey(injectKey);
                     sb.setName(obj.has("name") ? obj.get("name").getAsString().trim() : siteKey);
                     // 缺 type/api 的站点按 type=0 / 空串兜底，单个站点解析失败不影响其它站点注入
@@ -1438,11 +1448,37 @@ public class ApiConfig {
         return ext.replace("\"./", "\"" + base);
     }
 
-    /** 移除全部自定义点播界面注入的源（退出自定义点播界面时调用） */
+    /** 自定义点播源前缀：scope 为空时 cv_；非空时 cv_<scope>_（每个界面实例独立命名空间） */
+    private static String customPrefix(String scope) {
+        if (scope == null || scope.trim().isEmpty()) {
+            return CUSTOM_SRC_PREFIX;
+        }
+        String s = scope.trim().replaceAll("[^A-Za-z0-9_]", "_");
+        return CUSTOM_SRC_PREFIX + s + "_";
+    }
+
+    /** 该作用域是否仍有注入的源（用于界面恢复时判断是否需要重新注入） */
+    public synchronized boolean hasCustomSources(String scope) {
+        String prefix = customPrefix(scope);
+        for (String k : sourceBeanList.keySet()) {
+            if (k != null && k.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 移除全部自定义点播界面注入的源（退出自定义点播界面时调用，兼容旧行为） */
     public synchronized void removeCustomSources() {
+        removeCustomSources("");
+    }
+
+    /** 只移除指定界面实例注入的源；scope 为空时移除全部 cv_ 源 */
+    public synchronized void removeCustomSources(String scope) {
+        String prefix = customPrefix(scope);
         List<String> keys = new ArrayList<>(sourceBeanList.keySet());
         for (String k : keys) {
-            if (k != null && k.startsWith(CUSTOM_SRC_PREFIX)) {
+            if (k != null && k.startsWith(prefix)) {
                 sourceBeanList.remove(k);
             }
         }

@@ -106,6 +106,54 @@ public class ThemeManager {
     /** 自定义点播界面独立主题覆盖（JSON 入口 "theme" 字段）；null=无覆盖，全部页面用全局主题 */
     private static volatile Integer sOverrideIdx = null;
 
+    /** 记录「因主接口分界面主题配置而开启覆盖」的 Activity，退出时只撤销自己开启的覆盖 */
+    private static final java.util.Map<Activity, Boolean> sScreenThemeOwners =
+            new java.util.WeakHashMap<>();
+
+    /**
+     * 按主接口的分界面主题配置开启覆盖（customVodTheme / appMarketTheme）。
+     * 仅在当前没有更强覆盖（入口单独 theme）时生效；子界面会沿用该覆盖直到返回桌面/首页。
+     */
+    public static boolean applyConfiguredScreenTheme(Activity act) {
+        if (act == null || sOverrideIdx != null) {
+            return false;
+        }
+        String theme = null;
+        try {
+            if (act instanceof com.github.tvbox.osc.ui.activity.CustomVodActivity) {
+                theme = com.github.tvbox.osc.n2n.RemoteConfig.customVodTheme();
+            } else if (act instanceof com.github.tvbox.osc.ui.activity.AppsActivity) {
+                theme = com.github.tvbox.osc.n2n.RemoteConfig.appMarketTheme();
+            }
+        } catch (Throwable ignored) {
+        }
+        int idx = indexFromConfig(theme);
+        if (idx < 0) {
+            return false;
+        }
+        sOverrideIdx = idx;
+        synchronized (sScreenThemeOwners) {
+            sScreenThemeOwners.put(act, Boolean.TRUE);
+        }
+        com.github.tvbox.osc.util.LOG.i("ThemeManager",
+                "screen theme applied: " + act.getClass().getSimpleName() + " -> " + name(idx));
+        return true;
+    }
+
+    /** 撤销指定 Activity 自己开启的分界面主题覆盖（幂等，不影响其它 Activity 的覆盖） */
+    public static void popScreenTheme(Activity act) {
+        if (act == null) {
+            return;
+        }
+        boolean owned;
+        synchronized (sScreenThemeOwners) {
+            owned = Boolean.TRUE.equals(sScreenThemeOwners.remove(act));
+        }
+        if (owned) {
+            sOverrideIdx = null;
+        }
+    }
+
     /**
      * 开启主题覆盖：自定义点播入口打开 CustomVodActivity 前调用，
      * 该界面及其打开的播放页在覆盖期间使用独立主题（不影响全局 THEME_SELECT）。
@@ -115,12 +163,19 @@ public class ThemeManager {
         int idx = indexFromConfig(theme);
         if (idx >= 0) {
             sOverrideIdx = idx;
+            // 新覆盖生效后，旧的「分界面主题」拥有者全部失效，避免其后续 onDestroy 误清新覆盖
+            synchronized (sScreenThemeOwners) {
+                sScreenThemeOwners.clear();
+            }
         }
     }
 
     /** 取消主题覆盖（幂等） */
     public static void popOverride() {
         sOverrideIdx = null;
+        synchronized (sScreenThemeOwners) {
+            sScreenThemeOwners.clear();
+        }
     }
 
     /** 当前生效主题索引：有独立主题覆盖时返回覆盖值，否则返回全局选择 */

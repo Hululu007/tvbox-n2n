@@ -57,6 +57,22 @@
         android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true">
 
+        <!-- 启动画面：桌面/Launcher 入口。等待主接口加载完成后再进首页，
+             首页继续按「开机进入直播 / defaultScreen」分流。 -->
+        <activity
+            android:name=".ui.activity.SplashActivity"
+            android:screenOrientation="sensorLandscape"
+            android:exported="true"
+            android:theme="@style/AppTheme.NoActionBar"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <!-- 桌面：参考 MQLauncher 直接在主 Activity 声明 HOME/DEFAULT，
              安装后即出现在系统桌面选择器，按 HOME 键可直接进入本应用；
              不再提供应用内「选择桌面/设为桌面」开关。 -->
@@ -68,8 +84,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
-                <category android:name="android.intent.category.LAUNCHER" />
-                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>

@@ -92,6 +92,12 @@ public class CustomVodActivity extends BaseActivity {
     /** 入口传入：显示名称 / 数据接口地址 */
     private String entryName = "";
     private String entryUrl = "";
+    /** 入口单独主题（intent "theme"；空=使用主接口 customVodTheme 或全局主题） */
+    private String entryTheme = "";
+    /** 本界面实例的源命名空间：多个自定义点播界面可同时存在，各自只清理自己的 cv_ 源 */
+    private String scope = "";
+    /** 本界面数据接口原始 JSON：从后台返回/其它界面清理后恢复时重新注入 */
+    private String customJson = null;
     /** 进入本界面前的当前源 key（退出时恢复；切源重启界面时通过 intent 传递以保持一致） */
     private String prevHomeKey = null;
     /** 本界面注入的 cv_ 源（切源对话框候选） */
@@ -126,9 +132,13 @@ public class CustomVodActivity extends BaseActivity {
         if (it != null) {
             entryName = it.getStringExtra("name") == null ? "" : it.getStringExtra("name");
             entryUrl = it.getStringExtra("url") == null ? "" : it.getStringExtra("url");
+            entryTheme = it.getStringExtra("theme") == null ? "" : it.getStringExtra("theme").trim();
             // 切源重启界面时透传「进入本界面前的当前源 key」，保证退出时能恢复到正确的源
             prevHomeKey = it.getStringExtra("prevHomeKey");
         }
+        // 每个界面实例独立的作用域：同一进程内可同时打开多个自定义点播，源互不覆盖
+        scope = "v" + Long.toString(System.currentTimeMillis(), 36)
+                + Integer.toHexString(System.identityHashCode(this));
         initView();
         initViewModel();
         loadCustomConfig();
@@ -406,9 +416,10 @@ public class CustomVodActivity extends BaseActivity {
             selectedKey = selectedBefore.getKey();
         }
         customSources.clear();
+        customJson = json;
         // 传入接口地址：配置内的 "./" 相对地址（spider/api/jar/playUrl/ext）按接口所在目录解析，
-        // type=0/1/3/4 各类源都能在独立点播界面正常加载
-        customSources.addAll(ApiConfig.get().injectCustomSources(json, entryUrl));
+        // type=0/1/3/4 各类源都能在独立点播界面正常加载；按本界面实例作用域注入，互不覆盖
+        customSources.addAll(ApiConfig.get().injectCustomSources(json, entryUrl, scope));
         SourceBean first = null;
         SourceBean preferred = null;
         for (SourceBean sb : customSources) {
@@ -519,7 +530,43 @@ public class CustomVodActivity extends BaseActivity {
     protected void onResume() {
         super.onResume();
         mHandler.post(mRunnable);
+        // 多个自定义点播并存时：恢复本界面自己的源（其它界面可能已切换当前源/清理源表）
+        ensureScopedSources();
+        // 从后台栈重新回到本界面时恢复入口独立主题（主接口分界面主题作为兜底）
+        try {
+            if (!entryTheme.isEmpty()) {
+                com.github.tvbox.osc.n2n.ThemeManager.pushOverride(entryTheme);
+            } else {
+                com.github.tvbox.osc.n2n.ThemeManager.applyConfiguredScreenTheme(this);
+            }
+        } catch (Throwable ignored) {
+        }
         com.github.tvbox.osc.n2n.NoticeBar.show(this, com.github.tvbox.osc.n2n.NoticeBar.SCREEN_VOD);
+    }
+
+    /**
+     * 保证本界面注入的 cv_ 源仍在源表中，并把当前源切回本界面自己选中的源。
+     * 多个自定义点播界面同时存在时，各自持有独立作用域，不会互相删除源。
+     */
+    private void ensureScopedSources() {
+        if (customJson == null || scope.isEmpty()) {
+            return;
+        }
+        try {
+            if (!ApiConfig.get().hasCustomSources(scope)) {
+                customSources.clear();
+                customSources.addAll(ApiConfig.get().injectCustomSources(customJson, entryUrl, scope));
+                com.github.tvbox.osc.util.LOG.d("CustomVod",
+                        "re-inject scoped sources scope=" + scope + " count=" + customSources.size());
+            }
+            if (pendingSortKey != null && !pendingSortKey.isEmpty()) {
+                SourceBean current = ApiConfig.get().getSource(pendingSortKey);
+                if (current != null) {
+                    ApiConfig.get().setHomeSourceTemp(current);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
     }
 
     @Override
@@ -532,6 +579,7 @@ public class CustomVodActivity extends BaseActivity {
         if (isFinishing() && !homeRestored) {
             restoreHomeSource();
             com.github.tvbox.osc.n2n.ThemeManager.popOverride();
+            com.github.tvbox.osc.n2n.ThemeManager.popScreenTheme(this);
             BaseActivity.resetWallpaper();
         }
     }
@@ -543,7 +591,7 @@ public class CustomVodActivity extends BaseActivity {
         }
         homeRestored = true;
         try {
-            ApiConfig.get().removeCustomSources();
+            ApiConfig.get().removeCustomSources(scope);
             if (prevHome != null && prevHome.getKey() != null
                     && ApiConfig.get().getSource(prevHome.getKey()) != null) {
                 ApiConfig.get().setHomeSourceTemp(prevHome);
@@ -567,6 +615,7 @@ public class CustomVodActivity extends BaseActivity {
         // 兜底：onPause 未恢复（如系统直接销毁）时在此恢复
         restoreHomeSource();
         com.github.tvbox.osc.n2n.ThemeManager.popOverride();
+        com.github.tvbox.osc.n2n.ThemeManager.popScreenTheme(this);
     }
 
     @Override

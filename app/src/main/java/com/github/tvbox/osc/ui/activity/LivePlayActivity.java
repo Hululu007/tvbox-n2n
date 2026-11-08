@@ -231,6 +231,27 @@ public class LivePlayActivity extends BaseActivity {
         return R.layout.activity_live_play;
     }
 
+    /**
+     * 直播界面固定背景色：主接口 liveBgColor（#RRGGBB/#AARRGGBB），缺省纯黑。
+     * 返回非 0 时 BaseActivity 不再套用主界面主题渐变/壁纸。
+     */
+    @Override
+    protected int backgroundColorOverride() {
+        try {
+            int color = com.github.tvbox.osc.n2n.HomeEntry.parseColor(
+                    com.github.tvbox.osc.n2n.RemoteConfig.liveBgColor());
+            return color != 0 ? color : android.graphics.Color.BLACK;
+        } catch (Throwable ignored) {
+            return android.graphics.Color.BLACK;
+        }
+    }
+
+    /** 直播界面按键由 dispatchKeyEvent 自行处理，不做焦点兜底（避免方向键同时触发换台与焦点移动） */
+    @Override
+    protected boolean autoDpadFocusEnabled() {
+        return false;
+    }
+
     @Override
     protected void init() {
 
@@ -248,6 +269,11 @@ public class LivePlayActivity extends BaseActivity {
 
         EventBus.getDefault().register(this);
         setLoadSir(findViewById(R.id.live_root));
+        // 直播界面固定背景色（主接口 liveBgColor，缺省纯黑），不跟随主界面主题/壁纸
+        try {
+            findViewById(R.id.live_root).setBackgroundColor(backgroundColorOverride());
+        } catch (Throwable ignored) {
+        }
         mVideoView = findViewById(R.id.mVideoView);
 
         tvSelectedChannel = findViewById(R.id.tv_selected_channel);
@@ -2101,15 +2127,10 @@ public class LivePlayActivity extends BaseActivity {
                     case 5:
                         toggleCurrentChannelFavorite();
                         break;
-                    case 6:
-                        select = !Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false);
-                        Hawk.put(HawkConfig.HOME_DEFAULT_SHOW, select);
-                        Toast.makeText(App.getInstance(), select ? "已开启：下次打开 App 直接进入直播" : "已关闭直播开机启动", Toast.LENGTH_SHORT).show();
-                        break;
                 }
                 liveSettingItemAdapter.selectItem(position, select, false);
                 break;
-            case 6:// 直播源配置（原「直播历史」入口）
+            case 6:// 直播源配置（含开机启动开关）
                 switch (position) {
                     case 0:
                         showLiveSourceConfig();
@@ -2144,6 +2165,14 @@ public class LivePlayActivity extends BaseActivity {
                             }
                         }, liveHistory, idx);
                         dialog.show();
+                        break;
+                    case 2:
+                        boolean bootLive = !Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false);
+                        Hawk.put(HawkConfig.HOME_DEFAULT_SHOW, bootLive);
+                        liveSettingItemAdapter.selectItem(position, bootLive, false);
+                        Toast.makeText(App.getInstance(),
+                                bootLive ? "已开启：下次打开 App 直接进入直播" : "已关闭直播开机启动",
+                                Toast.LENGTH_SHORT).show();
                         break;
                 }
                 break;
@@ -2559,8 +2588,8 @@ public class LivePlayActivity extends BaseActivity {
         ArrayList<String> playerDecoderItems = new ArrayList<>(Arrays.asList("系统", "ijk硬解", "ijk软解", "exo"));
         ArrayList<String> renderItems = new ArrayList<>(Arrays.asList("TextureView", "SurfaceView"));
         ArrayList<String> timeoutItems = new ArrayList<>(Arrays.asList("关", "5s", "10s", "15s", "20s", "25s", "30s"));
-        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道", "开机进入直播"));
-        ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("配置直播源(含EPG)", "直播源历史"));
+        ArrayList<String> personalSettingItems = new ArrayList<>(Arrays.asList("显示时间", "显示网速", "换台反转", "跨选分类", "关闭密码", "收藏当前频道"));
+        ArrayList<String> liveAdd = new ArrayList<>(Arrays.asList("配置直播源(含EPG)", "直播源历史", "开机进入直播"));
         ArrayList<String> exitConfirm = new ArrayList<>(Arrays.asList("确定"));
         itemsArrayList.add(sourceItems);
         itemsArrayList.add(scaleItems);
@@ -2592,7 +2621,8 @@ public class LivePlayActivity extends BaseActivity {
         liveSettingGroupList.get(5).getLiveSettingItems().get(2).setItemSelected(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false));
         liveSettingGroupList.get(5).getLiveSettingItems().get(3).setItemSelected(Hawk.get(HawkConfig.LIVE_CROSS_GROUP, false));
         liveSettingGroupList.get(5).getLiveSettingItems().get(4).setItemSelected(Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false));
-        liveSettingGroupList.get(5).getLiveSettingItems().get(6).setItemSelected(Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false));
+        // 开机进入直播开关（直播源配置分组第 3 项）
+        liveSettingGroupList.get(6).getLiveSettingItems().get(2).setItemSelected(Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false));
         // 渲染方式默认选中：0=TextureView, 2=SurfaceView
         int renderIdx = Hawk.get(HawkConfig.PLAY_RENDER, 0) == 2 ? 1 : 0;
         liveSettingGroupList.get(3).getLiveSettingItems().get(renderIdx).setItemSelected(true);

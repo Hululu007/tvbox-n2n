@@ -7,12 +7,15 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.graphics.BitmapFactory;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
 import android.util.DisplayMetrics;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 
 import androidx.annotation.Nullable;
@@ -83,6 +86,8 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
 
         // takagen99 : Set Theme Color（主题索引与配色集中在 ThemeManager，支持 JSON 下发与一键切换）
         try {
+            // 主接口分界面主题（自定义点播 / 应用市场）优先于全局主题，入口单独 theme 优先级最高
+            com.github.tvbox.osc.n2n.ThemeManager.applyConfiguredScreenTheme(this);
             com.github.tvbox.osc.n2n.ThemeManager.apply(this);
         } catch (Throwable th) {
             th.printStackTrace();
@@ -92,19 +97,28 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
         // （旧 Activity finish → 新 Activity setContentView 之前）窗口完全透明，
         // WindowManager 显示默认黑屏的问题。
         // 动态设置的渐变背景会被后续 onResume 的 changeWallpaper（有 /wp 壁纸时）覆盖。
-        try {
-            int[] pair = com.github.tvbox.osc.n2n.ThemeManager.currentBgPair();
-            GradientDrawable gd = new GradientDrawable();
-            gd.setColors(pair);
-            gd.setOrientation(GradientDrawable.Orientation.TL_BR);
-            getWindow().setBackgroundDrawable(gd);
-        } catch (Throwable ignored) {
-            // 兜底：至少设一个深色，确保窗口不是透明的
+        // 直播等界面可通过 backgroundColorOverride() 固定背景色，不跟随主界面主题。
+        int bgOverride = backgroundColorOverride();
+        if (bgOverride != 0) {
             try {
-                getWindow().setBackgroundDrawable(new GradientDrawable(
-                        GradientDrawable.Orientation.TL_BR,
-                        new int[]{0xFF1A1A2E, 0xFF16213E}));
-            } catch (Throwable ignored2) {}
+                getWindow().setBackgroundDrawable(new ColorDrawable(bgOverride));
+            } catch (Throwable ignored) {
+            }
+        } else {
+            try {
+                int[] pair = com.github.tvbox.osc.n2n.ThemeManager.currentBgPair();
+                GradientDrawable gd = new GradientDrawable();
+                gd.setColors(pair);
+                gd.setOrientation(GradientDrawable.Orientation.TL_BR);
+                getWindow().setBackgroundDrawable(gd);
+            } catch (Throwable ignored) {
+                // 兜底：至少设一个深色，确保窗口不是透明的
+                try {
+                    getWindow().setBackgroundDrawable(new GradientDrawable(
+                            GradientDrawable.Orientation.TL_BR,
+                            new int[]{0xFF1A1A2E, 0xFF16213E}));
+                } catch (Throwable ignored2) {}
+            }
         }
         // Android 4.4：把 drawable/ 里硬编码的主题蓝就地替换为当前主题色（API>=21 走 ?attr 无需处理）
         try {
@@ -136,9 +150,12 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
             th.printStackTrace();
         }
         // 远程 JSON 的 home.bgImage 对所有页面统一生效（未配置时本方法内部直接跳过）
-        try {
-            com.github.tvbox.osc.n2n.HomeEntry.applyBackground(this);
-        } catch (Throwable ignored) {
+        // 启动画面使用自己的启动图，不套用首页背景图
+        if (applyHomeBackground()) {
+            try {
+                com.github.tvbox.osc.n2n.HomeEntry.applyBackground(this);
+            } catch (Throwable ignored) {
+            }
         }
         try {
             setScreenOn();
@@ -155,6 +172,106 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
             com.github.tvbox.osc.n2n.RemoteConfig.tryPendingUpdate(this);
         } catch (Throwable ignored) {
         }
+        // TV 遥控器通用兜底：界面没有任何焦点时，自动把焦点交给第一个可聚焦控件，
+        // 保证所有界面都能直接用上下左右/OK 操作（触摸屏不受影响）。
+        if (autoDpadFocusEnabled()) {
+            try {
+                getWindow().getDecorView().postDelayed(new Runnable() {
+                    @Override
+                    public void run() {
+                        requestFirstFocusIfNeeded();
+                    }
+                }, 250);
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
+    // ==================== TV 遥控器焦点兜底 ====================
+
+    /** 子类可返回固定窗口背景色（ARGB，0=跟随主题）。直播界面用它固定纯黑背景。 */
+    protected int backgroundColorOverride() {
+        return 0;
+    }
+
+    /** 子类可关闭方向键焦点兜底（播放器/直播等自行分发按键的界面） */
+    protected boolean autoDpadFocusEnabled() {
+        return true;
+    }
+
+    /** 子类可关闭首页背景图套用（启动画面使用自己的启动图） */
+    protected boolean applyHomeBackground() {
+        return true;
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (autoDpadFocusEnabled() && event != null
+                && event.getAction() == KeyEvent.ACTION_DOWN && isDpadKey(event.getKeyCode())) {
+            if (getCurrentFocus() == null && requestFirstFocusIfNeeded()) {
+                // 首个方向键只用于建立焦点，避免按键落到空窗口上没有任何反馈
+                return true;
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    private static boolean isDpadKey(int keyCode) {
+        return keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN
+                || keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT
+                || keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER;
+    }
+
+    /** 没有焦点时把焦点交给界面中第一个可聚焦且可见的控件；返回是否成功 */
+    protected boolean requestFirstFocusIfNeeded() {
+        try {
+            if (isFinishing() || isDestroyed()) {
+                return false;
+            }
+            View current = getCurrentFocus();
+            if (current != null && current.isShown()) {
+                return true;
+            }
+            View root = getWindow() == null ? null : getWindow().getDecorView();
+            if (root == null) {
+                return false;
+            }
+            View first = findFirstFocusable(root);
+            if (first != null) {
+                boolean ok = first.requestFocus();
+                if (ok) {
+                    com.github.tvbox.osc.util.LOG.i("Focus",
+                            getClass().getSimpleName() + " fallback focus -> "
+                                    + first.getClass().getSimpleName());
+                }
+                return ok;
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /** 深度优先查找第一个可聚焦、可见且宽高有效的控件（不进入 GONE 容器/不可见父级） */
+    private View findFirstFocusable(View v) {
+        if (v == null || !v.isShown() || !v.isEnabled()) {
+            return null;
+        }
+        if (v.isFocusable() && !v.isFocusableInTouchMode() && v.getWidth() > 0 && v.getHeight() > 0) {
+            return v;
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) v;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                View child = findFirstFocusable(group.getChildAt(i));
+                if (child != null) {
+                    return child;
+                }
+            }
+        }
+        if (v.isFocusable() && v.getWidth() > 0 && v.getHeight() > 0) {
+            return v;
+        }
+        return null;
     }
 
     // takagen99 : Check for Gesture or 3-Buttons NavBar
@@ -373,6 +490,15 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
     }
 
     public void changeWallpaper(boolean force) {
+        int bgOverride = backgroundColorOverride();
+        if (bgOverride != 0) {
+            // 直播等需要固定背景的界面：不读取 /wp，也不套用主界面主题渐变
+            try {
+                getWindow().setBackgroundDrawable(new ColorDrawable(bgOverride));
+            } catch (Throwable ignored) {
+            }
+            return;
+        }
         if (!force && globalWp != null) {
             try {
                 getWindow().setBackgroundDrawable(globalWp);

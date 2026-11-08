@@ -166,6 +166,14 @@ public class RemoteConfig {
     public static final String K_DEFAULT_SCREEN = "rc_default_screen";
     /** 接口强制覆盖策略（json "forceOverride"）："*"=全部覆盖，或 "api,live,epg,proxy" 子集 */
     public static final String K_FORCE_OVERRIDE = "rc_force_override";
+    /** App 启动画面配置（json "splash" 段原文；主接口下发时覆盖内置启动图/文案） */
+    public static final String K_SPLASH = "rc_splash";
+    /** 自定义点播界面独立主题（json "customVodTheme"；仅主接口配置，应用内不可修改） */
+    public static final String K_CUSTOM_VOD_THEME = "rc_custom_vod_theme";
+    /** 应用市场界面独立主题（json "appMarketTheme"；仅主接口配置，应用内不可修改） */
+    public static final String K_APP_MARKET_THEME = "rc_app_market_theme";
+    /** 直播界面背景色（json "liveBgColor"；缺省纯黑，不跟随主界面主题） */
+    public static final String K_LIVE_BG = "rc_live_bg";
 
     /** 最近一次加载的主配置 JSON（入口/主题/hin2n 播种等逻辑读取） */
     private static volatile JSONObject sConfig = null;
@@ -227,6 +235,7 @@ public class RemoteConfig {
     }
 
     private static void notifyPrimary(int state) {
+        com.github.tvbox.osc.util.LOG.d("RemoteConfig", "primary state -> " + state);
         List<PrimaryListener> copy;
         synchronized (sPrimaryListeners) {
             sPrimaryState = state;
@@ -333,6 +342,75 @@ public class RemoteConfig {
         if (ms < 0) ms = 0;
         if (ms > 5000) ms = 5000;
         return ms;
+    }
+
+    // ==================== App 启动画面（splash） ====================
+
+    /** 主接口 "splash" 段原文（未配置返回空对象） */
+    public static JSONObject splash() {
+        try {
+            return new JSONObject(Hawk.get(K_SPLASH, "{}"));
+        } catch (Throwable t) {
+            return new JSONObject();
+        }
+    }
+
+    /** 启动画面背景图（"image"/"pic"/"background"；支持相对地址，按主接口地址解析） */
+    public static String splashImage() {
+        JSONObject j = splash();
+        String url = j.optString("image",
+                j.optString("pic", j.optString("background", ""))).trim();
+        return url.isEmpty() ? "" : resolveInterfaceUrl(url);
+    }
+
+    /** 启动画面标题（"title"；空=使用应用名称） */
+    public static String splashTitle() {
+        return splash().optString("title", "").trim();
+    }
+
+    /** 启动画面加载中提示（"loadingText"/"text"；空=「正在加载配置…」） */
+    public static String splashLoadingText() {
+        JSONObject j = splash();
+        return j.optString("loadingText", j.optString("text", "")).trim();
+    }
+
+    /** 启动失败提示（"failText"；空=「配置加载失败，请检查网络后重试」） */
+    public static String splashFailText() {
+        return splash().optString("failText", "").trim();
+    }
+
+    /** 启动画面背景色（"backgroundColor"/"bgColor"，#RRGGBB / #AARRGGBB；空=深色内置背景） */
+    public static String splashColor() {
+        JSONObject j = splash();
+        return j.optString("backgroundColor", j.optString("bgColor", "")).trim();
+    }
+
+    /** 启动画面最短展示时长（"duration" 毫秒，0~8000，默认 1200） */
+    public static int splashDuration() {
+        int ms = splash().optInt("duration", 1200);
+        if (ms < 0) ms = 0;
+        if (ms > 8000) ms = 8000;
+        return ms;
+    }
+
+    // ==================== 分界面独立主题 / 直播背景 ====================
+
+    /** 自定义点播界面独立主题（主题索引/中文名/英文别名；空=跟随全局主题） */
+    public static String customVodTheme() {
+        String t = Hawk.get(K_CUSTOM_VOD_THEME, "");
+        return t == null ? "" : t.trim();
+    }
+
+    /** 应用市场界面独立主题（主题索引/中文名/英文别名；空=跟随全局主题） */
+    public static String appMarketTheme() {
+        String t = Hawk.get(K_APP_MARKET_THEME, "");
+        return t == null ? "" : t.trim();
+    }
+
+    /** 直播界面背景色（默认纯黑 #FF000000；不随主界面主题变化） */
+    public static String liveBgColor() {
+        String c = Hawk.get(K_LIVE_BG, "");
+        return c == null || c.trim().isEmpty() ? "#FF000000" : c.trim();
     }
 
     /**
@@ -1008,6 +1086,8 @@ public class RemoteConfig {
      *                   false=内置配置，全部段应用（设置项按 putIfAbsent 语义写入默认值）。
      */
     private static void apply(Context ctx, JSONObject j, boolean remoteOnly) {
+        com.github.tvbox.osc.util.LOG.d("RemoteConfig",
+                "apply config keys=" + j.length() + " remoteOnly=" + remoteOnly);
         // 远程覆盖模式：内置 JSON 开启 useRemoteConfig 且本次远程拉取成功（走到这里即可访问）
         boolean forceRemote = remoteOnly && useRemoteConfig();
         // 接口秘钥（固定密钥模式）：本地/远程均可下发，每次启动应用；空=用 ConfigCrypto.SECRET_KEY
@@ -1035,6 +1115,42 @@ public class RemoteConfig {
         }
         if (splash != null) {
             Hawk.put(K_VOD_SPLASH, splash.toString());
+        }
+        // App 启动画面：主接口顶层 splash（兼容 appSplash）；未配置时清除，回退内置启动图
+        JSONObject appSplash = j.optJSONObject("splash");
+        if (appSplash == null) {
+            appSplash = j.optJSONObject("appSplash");
+        }
+        if (appSplash != null && appSplash.length() > 0) {
+            try {
+                JSONObject resolved = new JSONObject(appSplash.toString());
+                String img = resolved.optString("image",
+                        resolved.optString("pic", resolved.optString("background", ""))).trim();
+                if (!img.isEmpty()) {
+                    resolved.put("image", resolveInterfaceUrl(img));
+                }
+                Hawk.put(K_SPLASH, resolved.toString());
+            } catch (Throwable ignored) {
+            }
+        } else if (!remoteOnly) {
+            Hawk.delete(K_SPLASH);
+        }
+        // 自定义点播 / 应用市场独立主题：仅主接口配置，应用内无入口可修改
+        if (j.has("customVodTheme")) {
+            Hawk.put(K_CUSTOM_VOD_THEME, j.optString("customVodTheme", "").trim());
+        } else if (!remoteOnly) {
+            Hawk.delete(K_CUSTOM_VOD_THEME);
+        }
+        if (j.has("appMarketTheme")) {
+            Hawk.put(K_APP_MARKET_THEME, j.optString("appMarketTheme", "").trim());
+        } else if (!remoteOnly) {
+            Hawk.delete(K_APP_MARKET_THEME);
+        }
+        // 直播界面背景色：缺省纯黑，不跟随主界面主题
+        if (j.has("liveBgColor")) {
+            Hawk.put(K_LIVE_BG, j.optString("liveBgColor", "#FF000000").trim());
+        } else if (!remoteOnly) {
+            Hawk.delete(K_LIVE_BG);
         }
         // 点播接口加载成功通知：多少秒后自动关闭（0=不显示）。本地/远程均可下发，每次启动应用，
         // 写入前做 0~60 范围保护，避免异常配置导致通知长期遮挡首页。

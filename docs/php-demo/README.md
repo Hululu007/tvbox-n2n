@@ -116,6 +116,52 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 > demo 的 `r=config` 已把 `ua` 设为非空示例值，需要特定 UA 的源可直接修改该字段。
 
+### 3.0.2 启动画面（`splash`）
+
+主配置顶层 `splash` 段（兼容 `appSplash`）可覆盖 App 冷启动时的内置图标与文案：
+
+```json
+{
+  "splash": {
+    "image": "boot.png",
+    "title": "我的电视",
+    "loadingText": "正在加载配置…",
+    "failText": "配置加载失败，请检查网络后重试",
+    "backgroundColor": "#FF0B1024",
+    "duration": 1200
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `image` | 启动背景图（`http(s)` 或相对本配置地址；空=内置应用图标）；兼容 `pic` / `background` |
+| `title` | 标题，空=应用名称 |
+| `loadingText` | 启动中提示，空=「正在加载配置…」；兼容 `text` |
+| `failText` | 主接口加载失败提示 |
+| `backgroundColor` | 背景色 `#RRGGBB` / `#AARRGGBB`，空=内置深蓝黑 |
+| `duration` | 最短展示毫秒数 0~8000（默认 1200） |
+
+启动失败时显示「重试 / 退出」；启动画面不套用首页背景图，使用自己的背景色/启动图。
+
+### 3.0.3 分界面主题与直播背景
+
+```json
+{
+  "customVodTheme": "深蓝",
+  "appMarketTheme": "暗夜",
+  "liveBgColor": "#FF000000"
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `customVodTheme` | 自定义点播界面独立主题（索引/中文名/alias；仅主接口配置，入口 `theme` 优先） |
+| `appMarketTheme` | 应用市场界面独立主题（同上） |
+| `liveBgColor` | 直播界面固定背景色（默认纯黑），不跟随主界面主题/首页背景图 |
+
+直播设置 →「直播源配置」第 3 项为「开机进入直播」开关，与 `settings.homeDefaultShow` 同步。
+
 ### 3.1 直播 JSON 格式
 
 请求：`index.php?r=live`
@@ -257,6 +303,10 @@ A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 J
 | `forceOverride` | 接口强制覆盖：`false`=用户手动配置优先；`true`=全部覆盖；也可对象逐项控制 |
 | `ua` | 全局 UA（demo 已填非空示例值；影响 OkHttp 请求与 webview/tkp2p 直播页） |
 | `home.appRecommends` | 首页「应用推荐」卡片数组（名称/图标/包名/下载地址/副标题），自动换行 |
+| `splash` | App 启动画面（图片/标题/加载中/失败提示/背景色/最短时长，0~8000ms）；兼容 `appSplash` |
+| `customVodTheme` / `appMarketTheme` | 自定义点播 / 应用市场界面独立主题（索引/中文名/alias；仅主接口配置，入口 `theme` 优先） |
+| `liveBgColor` | 直播界面固定背景色（默认纯黑），不跟随主界面主题/首页背景图 |
+| `settings.homeDefaultShow` | 开机/启动直接进直播（直播设置 →「直播源配置」第 3 项同名开关同步） |
 | `defaultScreen` | 启动加载的界面 id：`standard` 或 `screens` 中的 id |
 | `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |
 

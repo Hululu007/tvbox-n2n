@@ -66,6 +66,17 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "forceOverride": false,                 // false=用户手动配置优先；true=主接口强制覆盖；
                                           // 也可对象逐项控制：{"api":true,"live":true,"epg":false,"proxy":false}
   "defaultScreen": "standard",            // standard=标准首页；其它值必须与下方 screens[].id 精确一致，不存在会自动回退
+  "liveBgColor": "#FF000000",             // 直播界面固定背景色（不跟随主界面主题；缺省纯黑）
+  "customVodTheme": "",                   // 自定义点播界面独立主题（索引/中文名/alias；仅主接口配置，应用内不可改）
+  "appMarketTheme": "",                   // 应用市场界面独立主题（同上）
+  "splash": {                             // App 启动画面（缺省用内置图标 + 加载/失败提示）
+    "image": "",                          // 可选：启动背景图，相对地址按主配置地址解析
+    "title": "",                          // 可选：标题，缺省=应用名称
+    "loadingText": "正在加载配置…",        // 可选：启动中提示
+    "failText": "配置加载失败，请检查网络后重试", // 可选：启动失败提示
+    "backgroundColor": "#FF0B1024",       // 可选：背景色
+    "duration": 1200                      // 可选：最短展示毫秒数 0~8000
+  },
   "screens": [],                          // 酒店 IPTV 等桌面布局（见 2.1.1）
   "bootStart": true,
   "notice": {                             // 滚动公告：纯字符串=系统 marquee（短文本不滚）；对象=自定义滚动（推荐）
@@ -304,7 +315,8 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 - 点播接口（主配置 `api` 指向的 TVBox 标准 JSON / 自定义 `target`）只在**点播界面**加载；首页不再加载点播接口字段。所有点播相关提示（加载成功 `loadSuccessDuration`、免责声明、切源提示、加载失败等）仅在点播界面出现。
 - 进入点播界面时先显示启动等待画面（主配置可下发 `vodSplash`，见 §2.9），接口配置与当前源的 jar/js/py 插件就绪后自动加载分类数据并关闭等待画面。
 - 点播界面切换源时，会丢弃该源旧的 Spider 实例并**重新加载新源对应的 jar / js / py 插件**（`type=3` 的 `.jar`、`.js`、`.py`、纯类名站点分别处理），再强制刷新分类列表；不再依赖首页预加载全局 jar。
-- 自定义点播界面（`type=vod`）与默认点播行为一致：切源后重启本界面并按新源重新加载；退出时恢复到进入该界面前的源；界面内搜索只查本界面注入的 `cv_` 源，与默认点播搜索互不影响。
+- 自定义点播界面（`type=vod`）支持**同一进程内同时打开多个**：每个界面实例使用独立的源命名空间（`cv_<实例>_<序号>_<站点key>`），退出某个界面只清理它自己的源，不影响其它自定义点播；切源在本界面内原地完成（不返回主界面、不重启 Activity），从后台恢复时会重新注入自己的源并切回上次选中的站点。
+- 自定义点播界面可整体使用独立主题：主接口 `customVodTheme` 统一指定，入口自身的 `theme` 字段优先级更高；退出界面后恢复全局主题（不影响 `settings.themeSelect`）。
 - 点播界面的第一个分类固定为「热播推荐」：数据与主界面一致——主配置 `home.recMovies` 优先，未配置时回退豆瓣热播（按天缓存），`settings.homeRec=2` 时使用观看历史；不再回退点播接口 `homeContent`；默认选中并自动加载。
 - 点播 / 直播 / EPG 接口地址变更后，客户端会立即删除点播接口磁盘缓存、清空 EPG 缓存并把 `ApiConfig` 标记为未加载，同时广播 `TYPE_ENDPOINT_CHANGE`，正在显示的界面立即重载，**无需重启 App**。
 - 若主接口（主配置）无法加载/访问且本地无缓存，客户端直接显示全屏报错页（重试/退出），不再进入首页等其它界面。
@@ -323,6 +335,50 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   }
 }
 ```
+
+### 2.10 App 启动画面（`splash`）
+
+App 冷启动时先显示启动画面，等待主接口配置加载完成后再进入首页（首页继续按
+`settings.homeDefaultShow` / `defaultScreen` 分流）。默认内置应用图标、「正在加载配置…」和
+失败重试/退出按钮；主配置下发 `splash` 段后覆盖内置图片/文案/背景色/最短展示时长：
+
+```jsonc
+{
+  "splash": {
+    "image": "./boot.png",              // 背景图（http(s) 或相对主配置地址；空=内置图标）
+    "title": "我的电视",                 // 标题（空=应用名称）
+    "loadingText": "正在加载配置…",
+    "failText": "配置加载失败，请检查网络后重试",
+    "backgroundColor": "#FF0B1024",     // #RRGGBB / #AARRGGBB
+    "duration": 1200                    // 最短展示 0~8000ms（配置先到也会等满）
+  }
+}
+```
+
+- 兼容字段 `appSplash`；`image` 也可写成 `pic` / `background`，`loadingText` 可写成 `text`。
+- 远程配置加载失败时显示失败提示与「重试 / 退出」；点击重试会重新拉取主接口，成功后再进入首页。
+- 启动画面不套用首页 `home.bgImage` / 主题背景图，使用自己的背景色或启动图。
+- 本应用同时声明为系统桌面（HOME/DEFAULT）：系统冷启动若直接拉起首页，会先转到启动画面，保证开机也有启动提示；HOME 键在 App 内仍直接回首页。
+
+### 2.11 分界面独立主题与直播背景
+
+```jsonc
+{
+  "customVodTheme": "深蓝",      // 自定义点播界面主题（索引/中文名/alias；空=跟随全局）
+  "appMarketTheme": "暗夜",      // 应用市场界面主题（空=跟随全局）
+  "liveBgColor": "#FF000000"     // 直播界面固定背景色（默认纯黑，不跟随主界面主题）
+}
+```
+
+- 这两个主题字段**只从主接口读取**，应用内不提供修改入口；入口自身的 `theme` 字段仍优先于 `customVodTheme`。
+- 直播界面背景固定使用 `liveBgColor`，不会套用主界面主题渐变或首页背景图；直播设置中的「开机进入直播」开关位于
+  「直播源配置」分组（第 3 项）。
+
+### 2.12 调试日志
+
+主接口 `settings.debugOpen = true`（或本地配置）开启调试模式后，`RemoteConfig`、启动画面、
+自定义点播、主题、焦点兜底等模块会通过 `LOG.d/LOG.w` 输出日志到 Logcat 与 App 内日志面板；
+启动 App 时不再强制关闭调试开关。发布版本建议保持 `false`。
 
 ---
 

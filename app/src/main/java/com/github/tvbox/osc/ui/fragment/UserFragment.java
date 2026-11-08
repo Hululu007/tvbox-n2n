@@ -599,7 +599,8 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             return;
         }
         final ScrollView sv = (ScrollView) root;
-        final int margin = (int) (24 * getResources().getDisplayMetrics().density);
+        // 上下留白用资源尺寸：应用推荐多行时，返回上排不会把入口行挤出可视区
+        final int margin = getResources().getDimensionPixelSize(R.dimen.vs_60);
         sv.getViewTreeObserver().addOnGlobalFocusChangeListener(new ViewTreeObserver.OnGlobalFocusChangeListener() {
             @Override
             public void onGlobalFocusChanged(View oldFocus, View newFocus) {

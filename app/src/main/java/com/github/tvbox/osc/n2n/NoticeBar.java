@@ -7,6 +7,8 @@ import android.app.Activity;
 import android.content.Context;
 import android.graphics.PixelFormat;
 import android.os.Build;
+import android.util.DisplayMetrics;
+import android.view.Display;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -336,7 +338,7 @@ public class NoticeBar {
         } catch (Throwable ignored) {
         }
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, height,
+                screenWidth(ctx), height,
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                         ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                         : WindowManager.LayoutParams.TYPE_PHONE,
@@ -467,6 +469,18 @@ public class NoticeBar {
             } catch (Throwable ignored) {
             }
         } else {
+            // 明确按屏幕宽度布局，避免个别 ROM/父容器把公告条测量成文字宽度
+            try {
+                ViewGroup.LayoutParams lp = tv.getLayoutParams();
+                if (lp != null) {
+                    int width = screenWidth(act != null ? act : tv.getContext());
+                    if (lp.width != width) {
+                        lp.width = width;
+                        tv.setLayoutParams(lp);
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
             applyPosition(act, tv, st.optString("position", "bottom").trim());
         }
         int bg = HomeEntry.parseColor(st.optString("bgColor", ""));
@@ -707,11 +721,35 @@ public class NoticeBar {
     private static FrameLayout.LayoutParams createParams(Context ctx) {
         // 公告条占满屏幕整宽（无左右边距）
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+                screenWidth(ctx),
                 ctx.getResources().getDimensionPixelSize(R.dimen.vs_40));
         lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
         lp.bottomMargin = ctx.getResources().getDimensionPixelSize(R.dimen.vs_10);
         return lp;
+    }
+
+    /** 读取真实屏幕宽度（像素）：不依赖 AutoSize 适配后的资源宽度，保证公告条铺满整屏 */
+    private static int screenWidth(Context ctx) {
+        int width = 0;
+        if (ctx != null) {
+            try {
+                WindowManager wm = (WindowManager) ctx.getSystemService(Context.WINDOW_SERVICE);
+                if (wm != null) {
+                    Display display = wm.getDefaultDisplay();
+                    DisplayMetrics dm = new DisplayMetrics();
+                    display.getRealMetrics(dm);
+                    width = dm.widthPixels;
+                }
+            } catch (Throwable ignored) {
+            }
+            if (width <= 0) {
+                try {
+                    width = ctx.getResources().getDisplayMetrics().widthPixels;
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        return width > 0 ? width : ViewGroup.LayoutParams.MATCH_PARENT;
     }
 
     // ==================== 自定义速度滚动（由右向左） ====================

@@ -54,7 +54,7 @@ tvbox-n2n/
 - 本地配置：绝对路径（如 `/sdcard/TKLauncher.app/config.json`）或 `file:///...`，同步读取；文件不存在时再到应用私有目录查找。
 - APK 资源：`assets/xxx.json` 仅用于确需随包携带配置的场景，不是默认方式。
 - 文件支持 JSONC：`//` 行注释、`/* */` 块注释、尾逗号、UTF-8 BOM（解析器 `RemoteConfig.parseLoose`，注释不会穿透字符串，URL 安全）。
-- App 启动顺序：`Hawk.init()` → `RemoteConfig.bootstrap(this)` 加载主配置 → `initParams()` 代码默认值兜底。远程主配置异步应用；本地/资源主配置同步应用。
+- App 启动顺序：`Hawk.init()` → `RemoteConfig.bootstrap(this)` 加载主配置 → `initParams()` 代码默认值兜底。远程主配置异步应用；本地/资源主配置同步应用。启动画面 `SplashActivity` 等待主配置结果后再进 `HomeActivity`（详见 §3.2.1）。
 
 ### 3.2 字段与覆盖规则
 
@@ -65,6 +65,9 @@ tvbox-n2n/
 | `home.appRecommends`（应用推荐） | `home` 段内的数组，显示在首页推荐影片列表**上方**：独立标题「应用推荐」、自动换行、卡片尺寸与推荐海报一致（同一 `ImgUtil.Style` / spanCount）；字段 `name`/`icon`/`pkg`/`url`/`desc`/`type`/`target`，点击复用 `EntryDispatcher`（默认按 app 启动或后台下载安装）；数组为空/不配置时整块隐藏，不影响 `homeEntries` |
 | `loadSuccessDuration` / `warningAutoClose` | 前者=**点播界面**接口加载成功后顶部提示的自动关闭秒数（0=不显示，默认 3，0~60；首页不再提示）；后者=免责声明 `warningText` 弹窗的自动关闭秒数（0=不自动关闭，默认 0，0~120，按钮带倒计时） |
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
+| `splash`（App 启动画面） | 每次启动覆盖 Hawk `rc_splash`（兼容 `appSplash`）；字段 `image`/`pic`/`background`、`title`、`loadingText`/`text`、`failText`、`backgroundColor`/`bgColor`、`duration`（0~8000ms）；`image` 为相对地址时写入前按主配置地址补全；缺省使用内置启动图与文案 |
+| `customVodTheme` / `appMarketTheme` | 仅主接口配置：分别写 Hawk `rc_custom_vod_theme` / `rc_app_market_theme`；`BaseActivity` 创建对应界面时通过 `ThemeManager.applyConfiguredScreenTheme()` 临时覆盖主题，退出界面撤销，不改变全局 `THEME_SELECT` |
+| `liveBgColor` | 每次启动写 Hawk `rc_live_bg`；直播界面 `backgroundColorOverride()` 用它固定窗口/`live_root` 背景（缺省 `#FF000000`），不套用主题渐变与首页背景图 |
 | `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
 | `topEntries` / `homeEntries` | 每次加载覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 = 保持代码默认 UI（默认不含设置入口） |
 | `api` / `live` / `epg` / `proxy` | **每次加载都以 JSON 为准**（应用内无设置页）；`live`/`epg`/`proxy` 未带协议时优先拼接主配置来源地址的域名/IP + 目录（本地配置时回退拼主接口 api 域名） |
@@ -88,6 +91,32 @@ tvbox-n2n/
 
 **useRemoteConfig 强制覆盖（仅二次远程）**：`remoteConfigUrl` 返回的配置在 `useRemoteConfig:true` 时进入 `forceRemote` 分支，强制覆盖 `settings`/`bootStart` 与接口地址；为 `false` 时二次远程不覆盖这些项。
 
+### 3.2.1 启动画面、分界面主题与遥控器适配（2026-11）
+
+**启动画面（`SplashActivity` + 主接口 `splash`）**
+
+- 清单：`SplashActivity` 持有 `MAIN/LAUNCHER/LEANBACK_LAUNCHER`；`HomeActivity` 保留 `MAIN/HOME/DEFAULT`（HOME 键直接回首页）。
+- 冷启动：启动图（内置 `app_icon` 或 `splash.image`）+「正在加载配置…」；`RemoteConfig.addPrimaryListener` 等待主配置结果。
+- 成功：按 `splash.duration`（0~8000ms）补足最短展示时间后启动 `HomeActivity`（`CLEAR_TOP|SINGLE_TOP` 复用已有首页），首页继续按「开机进入直播」/`defaultScreen` 分流。
+- 失败/20s 超时：显示 `splash.failText` 与「重试 / 退出」；重试重新 `retryPrimary` + 重新注册监听，成功后再进首页。
+- 配置缓存：主配置（远程/本地）未写 `splash` 时会清除上次缓存、回退内置启动图；二次远程配置（`remoteOnly`）缺省时保留已有缓存，首帧即可显示自定义启动图。
+- 背景：启动画面 `backgroundColorOverride()` 固定使用 `splash.backgroundColor`（默认 `#FF0B1024`），`applyHomeBackground()=false` 不套用 `home.bgImage`/主题背景图。
+- 系统桌面：`HomeActivity.onCreate` 在 `savedInstanceState==null` 且本进程尚未经过启动画面时转到 `SplashActivity`，避免系统 HOME/开机直接拉起首页而跳过启动提示；`SplashActivity.hasEnteredHome()` 静态标记防止死循环。
+
+**分界面主题与直播背景**
+
+- `ThemeManager.applyConfiguredScreenTheme(Activity)`：`CustomVodActivity` 读 `customVodTheme`、`AppsActivity` 读 `appMarketTheme`，仅在当前没有入口级覆盖（`sOverrideIdx == null`）时生效；`WeakHashMap` 记录开启者，`popScreenTheme` 幂等撤销。
+- `BaseActivity.onCreate` 先 `applyConfiguredScreenTheme` 再 `ThemeManager.apply`；入口 `theme`（`pushOverride`）优先级最高。
+- `BaseActivity.backgroundColorOverride()`：返回非 0 时窗口背景与 `changeWallpaper()` 都用固定色，不读取 `/wp`、不套主题渐变。`LivePlayActivity` 返回 `RemoteConfig.liveBgColor()`（默认 `#FF000000`），并同步设置 `live_root` 背景。
+- 「开机进入直播」开关：`LivePlayActivity` 直播设置第 6 组「直播源配置」第 3 项，读写 `HawkConfig.HOME_DEFAULT_SHOW`；`HomeActivity.jumpToLiveIfNeeded()` 与直播退出逻辑沿用该值。
+
+**遥控器与日志**
+
+- `BaseActivity.dispatchKeyEvent` + `requestFirstFocusIfNeeded()`：界面无焦点时，第一个方向键/OK 用于把焦点交给第一个可见可聚焦控件（`isShown()` 过滤 GONE 父级）；`autoDpadFocusEnabled()` 可被播放器/直播界面关闭（`PlayActivity`/`LivePlayActivity` 返回 false），避免方向键同时触发焦点移动与换台/播放控制。
+- `LOG.d/w(tag,msg)`：仅在 `HawkConfig.DEBUG_OPEN` 为 true 时输出 Logcat + 应用内日志面板；`App.onCreate` 不再强制关闭调试开关，主接口 `settings.debugOpen` 可真正生效。
+- 首页最后一行：`fragment_user.xml` 底部增加 `vs_100` 留白，`UserFragment.installScrollFollow()` 的跟随边距改为 `vs_60`，多行推荐滚到底部时最后一行完整可见。
+- 公告条宽度：`NoticeBar.screenWidth()` 用 `Display.getRealMetrics()` 的真实像素设置 `WindowManager.LayoutParams.width` 与窗口内 `FrameLayout.LayoutParams.width`，随屏幕宽度铺满。
+
 ### 3.3 关键类（`com.github.tvbox.osc.n2n` 包）
 
 | 类 | 职责 |
@@ -99,12 +128,13 @@ tvbox-n2n/
 | [Hin2nEntryState.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/Hin2nEntryState.java) | 常驻 EventBus 订阅 hin2n 5 个运行事件，折叠为 IDLE/CONNECTING/CONNECTED/ERROR 四态，供入口图标染色（拨号中=黄/已连接=绿/失败=红/未拨号=原色）；变化时 post `ChangedEvent` |
 | [HomeEntry.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/HomeEntry.java) | 首页：hin2n 固定入口（内置模块直进，`applyStateTint` 染色）、`entries` 第三方 App 入口栏、`topEntries` 顶栏整体替换（隐藏 tvWifi/tvFind/tvStyle/tvTheme/tvDrawer/tvN2n/tvHin2n 七个固定图标后动态建项）、公告条、外观/主题应用、输入框/按钮统一样式（`styleInput/styleButton`）；定时 tick 只做界面刷新 |
 | [EntryDispatcher.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/EntryDispatcher.java) | 自定义入口统一分发：`page`（vod/live/search/fastsearch/history/collect/push/drive/apps/hin2n/**system**（系统设置）/**donate**（捐助界面））、`feature`（siteSwitch/themeSwitch/styleSwitch/clearCache/reloadHome/wifi/date）、`vod`（开 CustomVodActivity，`url` 经 `RemoteConfig.resolveInterfaceUrl` 补全相对地址）、`app`（已安装直开，未装且配 url 走 ApkDownloader）；图标解析（http 图片或内置 drawable 名）也在此；`page target=setting` 已移除（设置页与全部设置入口均已删除） |
-| [NoticeBar.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeBar.java) | **全局唯一公告条**：进程内只创建一个 TextView，有悬浮窗权限时由 `NoticeOverlayService` 挂到系统 `WindowManager`（`TYPE_APPLICATION_OVERLAY`，显示在所有 App 最顶层，切界面/切 App 不重建、不重置滚动）；无权限时挂在当前 Activity 的 decorView 最顶层，切换界面只搬移同一个 View；`App` 生命周期回调负责 resume 时接管、后台时暂停界面内滚动、destroy 时解除引用。滚动样式（速度/`pause`/时段/过期/`home`/`live`/`vod` 显隐）与单份文本滚动（前导空格、完整走出屏幕）保持不变；`ScreenState.expired` 防 duration 到期后被周期 render 重新点亮；`scrollToken` + `speedRun` 身份比对 + `ValueAnimator` cancel 防多条滚动叠加 |
+| [NoticeBar.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeBar.java) | **全局唯一公告条**：进程内只创建一个 TextView，有悬浮窗权限时由 `NoticeOverlayService` 挂到系统 `WindowManager`（`TYPE_APPLICATION_OVERLAY`，显示在所有 App 最顶层，切界面/切 App 不重建、不重置滚动）；无权限时挂在当前 Activity 的 decorView 最顶层，切换界面只搬移同一个 View；`App` 生命周期回调负责 resume 时接管、后台时暂停界面内滚动、destroy 时解除引用。滚动样式（速度/`pause`/时段/过期/`home`/`live`/`vod` 显隐）与单份文本滚动（前导空格、完整走出屏幕）保持不变；`ScreenState.expired` 防 duration 到期后被周期 render 重新点亮；`scrollToken` + `speedRun` 身份比对 + `ValueAnimator` cancel 防多条滚动叠加；**宽度按 `Display.getRealMetrics()` 的真实屏幕像素显式设置**（悬浮窗与窗口内两种挂载方式一致），避免部分 ROM/AutoSize 把公告测量成文字宽度 |
+| [SplashActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/SplashActivity.java) | **启动画面（LAUNCHER）**：使用 `activity_splash` 内置图标 + 加载中/失败提示；等待 `RemoteConfig.primaryState()`（`addPrimaryListener`），成功后按 `splash.duration` 最短展示再进 `HomeActivity`，失败/20s 超时显示重试/退出；主接口 `splash` 段覆盖图片/标题/文案/背景色/时长，缓存配置可在首帧生效；不套用首页背景图；`HomeActivity` 冷启动若尚未经过启动画面会自动转到本界面（保证系统桌面/开机启动也有启动提示） |
 | [NoticeOverlayService.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/NoticeOverlayService.java) | **公告系统悬浮窗前台服务**：`sync(ctx)` 在有公告且具备 `Settings.canDrawOverlays` 时启动，公告为空/无权限时停止或退化；`onStartCommand` 调 `NoticeBar.attachSystemOverlay`，`onDestroy` 解除悬浮窗；通知渠道 `IMPORTANCE_MIN`，Android 14+ 使用 `specialUse` 前台服务类型与对应清单属性 |
 | [BootReceiver.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/BootReceiver.java) | BOOT_COMPLETED：hin2n 自连 + 按开关拉起首页 |
 | [UpgradeChecker.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/UpgradeChecker.java) | 进首页后自检升级（公开入口 `check(activity)`）：内联字段或 `checkUrl` 拉取版本信息（拼本机参数 + 支持密文响应）→ 版本号比较（每版本每进程只提示一次）→ TipDialog（`force` 时 `setCancelable(false)` 且不显示取消按钮）→ 确认后交 ApkDownloader |
 | [ApkDownloader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/ApkDownloader.java) | 统一下载管线：OkHttp 流式下载到 `getExternalFilesDir`，首页顶部进度条；完成后 FileProvider+`ACTION_INSTALL_PACKAGE`/`ACTION_VIEW` 安装；Android 8+ 缺未知来源权限时先存 `sPendingInstall` 跳设置，`HomeActivity.onResume` 调 `resumePendingInstall(activity)` 自动重装；Activity 已销毁时用 application context 兜底 |
-| [CustomVodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/CustomVodActivity.java) | 自定义点播界面（`ui.activity` 包），复用 `R.layout.activity_vod`；打开时把接口 JSON 的 `sites` 以 `cv_` 前缀**仅内存注入** `ApiConfig`（不覆盖用户首页源），退出时 `removeCustomSources` 并恢复原 home 源；支持 `http(s)://`（拼本机参数 + 密文自动解密）、`assets/`、`file:///绝对路径`（本地内容同样先过 `ConfigCrypto.maybeDecrypt`，**注意：之后用标准 Gson 解析，不剥 JSONC 注释**）；切源改为**本界面内原地切换**（`switchToSource`：取消旧 `cv_` 源在途请求、`setHomeSourceTemp`、重新拉取分类），不再 `finish()` 重启 Activity，避免旧界面 `restoreHomeSource()` 与新界面“总是选第一个源”竞态；`applyCustomJson()` 已选中 `cv_` 源时优先沿用，且重复解析不覆盖首次进入前保存的原当前源 |
+| [CustomVodActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/CustomVodActivity.java) | 自定义点播界面（`ui.activity` 包），复用 `R.layout.activity_vod`；每个界面实例生成独立 scope，把接口 JSON 的 `sites` 以 `cv_<scope>_` 前缀**仅内存注入** `ApiConfig`（不覆盖用户首页源），多个自定义点播可同时存在、退出时只清理自己的源（`removeCustomSources(scope)`）并恢复原 home 源；`onResume` 调 `ensureScopedSources()` 重新注入本界面源并切回 `pendingSortKey`；支持 `http(s)://`（拼本机参数 + 密文自动解密）、`assets/`、`file:///绝对路径`（本地内容同样先过 `ConfigCrypto.maybeDecrypt`，**注意：之后用标准 Gson 解析，不剥 JSONC 注释**）；切源为**本界面内原地切换**（`switchToSource`：取消旧 `cv_` 源在途请求、`setHomeSourceTemp`、重新拉取分类），不 `finish()` 重启 Activity；入口 `theme` 优先于主接口 `customVodTheme`，退出时 `popOverride/popScreenTheme` |
 | [DonateActivity.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/activity/DonateActivity.java) | 捐助界面（`ui.activity` 包，`type=page target=donate` 入口打开）：读 `RemoteConfig.donate()` 渲染标题（`title`，空=「支持我们」）、项目详细介绍（`desc`，空=内置介绍文案，支持 `\n` 换行）、自定义图片/收款二维码（`image`：http(s) 走 Glide、`assets/` 路径读包内文件、其余按 drawable 资源名解析；缺失或加载失败时图片区隐藏）、二维码下方说明文字（`tip`，空=隐藏）；布局 [activity_donate.xml](file:///f:/tvbox-n2n/app/src/main/res/layout/activity_donate.xml) 复用主题顶栏样式 |
 | [AppMarketLoader.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/n2n/AppMarketLoader.java) | **应用市场数据层**（§3.17）：读 `RemoteConfig.appMarket()`，`url` 非空走 OkGo（`url`/`detailUrl` 相对地址经 `resolveInterfaceUrl` 补全、模板占位 + `headers` + `DeviceParams.append` + `ConfigCrypto.maybeDecrypt`），为空直接用 `appMarket.apps` 数组（APK 内无 `assets/app_market.json` 兜底）；`load` 分页、`loadDetail` 详情合并、`installedVersionCode`/下载中状态 |
 | [AppMarketItem.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/bean/AppMarketItem.java) | 应用市场条目（`bean` 包）：`fromJson` 容错解析（size 兼容字节数/字符串、screenshots 兼容字符串与对象）、`mergeFrom` 详情非空字段覆盖、`displayName`/`formatDownloads`/`formatSize` |
@@ -131,12 +161,14 @@ tvbox-n2n/
 1. 入口 target 为接口地址（http(s)/assets/file），`EntryDispatcher` 把地址放入 intent extra 启动 `CustomVodActivity`；
    - 入口 `theme` 字段非空时：先 `ThemeManager.pushOverride(theme)`（解析为主题索引，无法识别则不生效）+ `BaseActivity.resetWallpaper()`，随后创建的 `CustomVodActivity` 及其播放页（Detail/Play）在覆盖期间使用独立主题（`ThemeManager.apply()/currentBgPair()/currentBgImage()` 均走 `activeIndex()`），全局 `THEME_SELECT` 不受影响；
    - 覆盖撤销时机：`CustomVodActivity.onPause(isFinishing)` 与 `onDestroy` 兜底（见下），另 `ThemeManager.apply()` 检测到 `HomeActivity` 创建时自动 `popOverride()`（视为回到 app 全局状态），三重防泄漏；
-2. `onCreate` 读取并解析接口内容（http 请求拼本机参数；任何来源的内容都先过 `ConfigCrypto.maybeDecrypt` 支持密文，之后用标准 Gson 解析，与点播 api 同结构），对每个 `SourceBean` 的 key 加 `CUSTOM_SRC_PREFIX = "cv_"`（防与用户源重名冲突），调 `ApiConfig.injectCustomSources(json, entryUrl)` 内存注入（`entryUrl` 作为相对地址基准，解析 `spider`/`api`/`jar`/`playUrl`/`ext` 中的 `./`、`/`），并用 `setHomeSourceTemp(cv源key)` 临时切首页位；
-3. 界面本体就是 VodActivity 逻辑复用，仅源集合不同；切源弹窗只列可用源（`hide==0`、type∈{0,1,3,4}、api 非空），选择后 `setHomeSourceTemp` + Toast「切换源：xxx」+ `reloadHome()`：
+2. `onCreate` 读取并解析接口内容（http 请求拼本机参数；任何来源的内容都先过 `ConfigCrypto.maybeDecrypt` 支持密文，之后用标准 Gson 解析，与点播 api 同结构），为每个界面实例生成 scope，对每个 `SourceBean` 的 key 加 `cv_<scope>_` 前缀（防与用户源/其它自定义点播重名冲突），调 `ApiConfig.injectCustomSources(json, entryUrl, scope)` 内存注入（`entryUrl` 作为相对地址基准，解析 `spider`/`api`/`jar`/`playUrl`/`ext` 中的 `./`、`/`），并用 `setHomeSourceTemp(cv源key)` 临时切首页位；
+3. 界面本体就是 VodActivity 逻辑复用，仅源集合不同；切源弹窗只列可用源（`hide==0`、type∈{0,1,3,4}、api 非空），选择后在本界面内原地切换（`switchToSource`）；`onResume` 调 `ensureScopedSources()`，若自己的源被主配置重载等操作清掉则重新注入，并切回上次选中的站点；
    - `reloadHome()` 先调用 `ApiConfig.prepareSource(target)` 在后台**重新加载该 cv_ 源的 jar/js/py 插件**（丢弃旧 Spider 实例），就绪后再 `getSort(force=true)` 绕过缓存刷新；
    - 首次进入同样先 `prepareSource` 再请求分类，避免插件同步下载/初始化造成空列表；
    - 切源后用 `AbsSortXml.sourceKey` + `pendingSortKey` 丢弃上一源迟到的响应（type=3 Spider 无法中断）；
-4. **恢复时序（关键）**：Activity finish 时系统顺序是 `CustomVod.onPause → HomeActivity.onResume → CustomVod.onStop → onDestroy`。若等 `onDestroy` 才恢复 home 源，主界面 `onResume` 已先读到 cv_ 临时源并把源名写到左上角（用户报障「影院切源后主屏左上文字变了」）。因此 `restoreHomeSource()`（`removeCustomSources` + `setHomeSourceTemp(prevHome)`，幂等，`homeRestored` 标记）在 `onPause(isFinishing=true)` 内立即执行，`onDestroy` 仅兜底；同时 `popOverride()` + `resetWallpaper()` 让主界面恢复全局主题背景——**不落盘、不污染用户配置**；进程被杀重启后自然恢复。
+4. **恢复时序（关键）**：Activity finish 时系统顺序是 `CustomVod.onPause → HomeActivity.onResume → CustomVod.onStop → onDestroy`。若等 `onDestroy` 才恢复 home 源，主界面 `onResume` 已先读到 cv_ 临时源并把源名写到左上角。因此 `restoreHomeSource()`（`removeCustomSources(scope)` + `setHomeSourceTemp(prevHome)`，幂等，`homeRestored` 标记）在 `onPause(isFinishing=true)` 内立即执行，`onDestroy` 仅兜底；同时 `popOverride()` + `popScreenTheme(this)` + `resetWallpaper()` 让主界面恢复全局主题背景——**不落盘、不污染用户配置**；进程被杀重启后自然恢复。
+5. **多实例共存**：scope 由启动时间 + 对象 hash 生成（如 `cv_vabc123_0_site`），每个界面只删除自己的源；从后台恢复时重新注入并恢复选中站点，因此可以同时开多个自定义点播界面来回切换，而不会出现「切源后回到第一个源/主界面」的问题。
+6. **独立主题**：入口 `theme` 优先；未配置时 `BaseActivity` 创建界面会按主接口 `customVodTheme` 临时覆盖主题，`ThemeManager` 用 `WeakHashMap` 记录是哪个 Activity 开启的覆盖，退出只撤销自己开启的那次。
 
 ### 3.5.1 主点播界面（VodActivity）加载流程
 
@@ -144,7 +176,7 @@ tvbox-n2n/
 - `VodActivity.startEntry()`：显示启动等待画面（`vodSplash` 配置来自主接口，见 [api-and-config.md §2.9](file:///f:/tvbox-n2n/docs/api-and-config.md)）→ 若 `ApiConfig.isConfigLoaded()` 为 false 则 `loadConfig(true)` → 选择可用源 → `prepareSource(源)` 预加载插件 → `getSort(key, true)` → 分类结果返回后 `hideSplash()` 自动展示数据。
 - `VodActivity.reloadHome()`（切源）：显示等待画面 → `ApiConfig.loadConfig(true)` **复用本地缓存重新解析接口配置**（同步 sites/parses/lives）→ `prepareSource(当前源)` 重建 jar/js/py 插件 → `getSort(force=true)` 绕过分类缓存；等待画面在结果返回/超时 30s 后关闭；加载失败的提示与重试按钮只出现在点播界面。
 - 首分类「热播推荐」为伪分类 `GridFragment.RECOMMEND_SORT_ID`：固定为第一个分类，不发分类请求，数据统一走 `RecommendLoader`（`home.recMovies` → 豆瓣热播 → 观看历史），**不再回退点播接口 `homeContent.videoList`**，默认选中并加载。
-- `HomeActivity` 依赖 `RemoteConfig` 的主接口状态（`PRIMARY_LOADING/OK/FAIL`）：主接口失败且无缓存时启动 `ConfigErrorActivity` 全屏报错（重试/退出），不再加载其它界面。
+- `HomeActivity` 依赖 `RemoteConfig` 的主接口状态（`PRIMARY_LOADING/OK/FAIL`）：正常启动由 `SplashActivity` 等待结果后再进入；主接口失败且无缓存时显示失败重试/退出，不加载其它界面。
 
 ### 3.6 升级检查与 APK 下载安装管线
 

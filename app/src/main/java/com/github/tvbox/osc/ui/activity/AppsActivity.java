@@ -632,6 +632,8 @@ public class AppsActivity extends BaseActivity {
     protected void onDestroy() {
         super.onDestroy();
         EventBus.getDefault().unregister(this);
+        // 撤销本界面通过主接口 appMarketTheme 开启的主题覆盖（不影响首页/其它界面）
+        com.github.tvbox.osc.n2n.ThemeManager.popScreenTheme(this);
     }
 
     @Override
@@ -646,6 +648,8 @@ public class AppsActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // 从首页/后台重新进入应用市场时恢复分界面主题覆盖（供本界面后续打开的子界面使用）
+        com.github.tvbox.osc.n2n.ThemeManager.applyConfiguredScreenTheme(this);
         ApkDownloader.resumePendingInstall(this);
         if (isUnInstallClicked && !appInstalledOrNot(packageName)) {
             if (appPosition >= 0 && appPosition < appsAdapter.getData().size()) {

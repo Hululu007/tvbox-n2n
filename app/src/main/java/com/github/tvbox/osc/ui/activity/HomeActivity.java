@@ -93,6 +93,19 @@ public class HomeActivity extends BaseActivity {
     };
 
     @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        // 本应用同时声明为系统桌面（HOME/DEFAULT），冷启动时系统可能直接拉起首页而绕过启动图；
+        // 这里在首次进入（尚未经过启动画面）时先转到 SplashActivity，保证开机/首次启动有启动提示。
+        if (savedInstanceState == null && !SplashActivity.hasEnteredHome()) {
+            startActivity(new Intent(this, SplashActivity.class));
+            finish();
+            overridePendingTransition(0, 0);
+            return;
+        }
+        super.onCreate(savedInstanceState);
+    }
+
+    @Override
     protected int getLayoutResID() {
         return R.layout.activity_home;
     }
@@ -686,6 +699,9 @@ public class HomeActivity extends BaseActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        // 回到首页即离开分界面：撤销入口/分界面独立主题，避免影响之后从首页打开的其它界面
+        // （分界面 Activity 重新回到前台时会在各自 onResume 重新应用）
+        com.github.tvbox.osc.n2n.ThemeManager.popOverride();
         com.github.tvbox.osc.n2n.HomeEntry.refresh(this);
         // APK 下载完成但缺「未知来源」权限、从系统设置返回后自动继续安装
         com.github.tvbox.osc.n2n.ApkDownloader.resumePendingInstall(this);

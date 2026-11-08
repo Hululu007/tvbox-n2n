@@ -13,6 +13,8 @@
 //   · notice/home/tkp2p/theme/themes/entries/topEntries/homeEntries/upgrade/
 //     hin2nEntry/checkInterval/ua/secretKey/donate：每次加载按 JSON 应用；
 //   · api/live/epg/proxy：应用内无设置页，每次加载都以 JSON 为准；
+//   · splash/customVodTheme/appMarketTheme/liveBgColor：每次加载按 JSON 生效
+//     （仅主接口可配，应用内不可修改）；
 //   · bootStart（TVBox 开机自启）：只作默认值写入一次（默认开）；
 //   · settings（全部功能设置）：每次加载强制生效（设置页已移除，不存在用户手动值）；
 //   · remoteConfigUrl + useRemoteConfig：可选的二次远程覆盖，详见字段注释；
@@ -194,6 +196,13 @@
     //    "bgImages": ["https://example.com/bg1.jpg", "https://example.com/bg2.jpg"] }
   ],
 
+  // ==================== 分界面主题 / 直播背景 ====================
+  // 仅主接口配置，应用内不提供修改入口；空=跟随全局主题（入口自身 theme 仍优先）。
+  "customVodTheme": "",                // 自定义点播界面独立主题（索引/中文名/alias）
+  "appMarketTheme": "",                // 应用市场界面独立主题（同上）
+  // 直播界面固定背景色：不套用主界面主题渐变/首页背景图；缺省纯黑。
+  "liveBgColor": "#FF000000",
+
   // ==================== 接口地址（JSON 是唯一配置来源） ====================
   // 接口默认以主接口下发为准；若用户通过「点播/直播设置」或手机扫码手动配置过接口，
   // 则保留用户配置（不强制覆盖）。需要主接口无条件覆盖时把 forceOverride 设为 true
@@ -242,6 +251,20 @@
     "text": "",                        // 文案（空=内置「正在加载点播接口…」）
     "backgroundColor": "",             // 背景色 #RRGGBB / #AARRGGBB（空=默认深色）
     "duration": 0                      // 最短展示毫秒数 0~5000（0=加载完成立即关闭）
+  },
+
+  // ==================== App 启动画面（splash） ====================
+  // 每次冷启动先显示内置图标 +「正在加载配置…」；主接口下发本段后覆盖内置
+  // 图片/文案/背景色/最短展示时长。主接口加载失败或 20s 超时会显示失败提示
+  // 与「重试 / 退出」按钮。启动画面不套用首页背景图。
+  // 兼容别名：appSplash；image 相对地址按主配置地址解析。
+  "splash": {
+    "image": "",                       // 启动背景图（http(s)/assets/相对地址；空=内置应用图标）
+    "title": "",                       // 标题，空=应用名称
+    "loadingText": "正在加载配置…",     // 启动中提示（兼容 text）
+    "failText": "配置加载失败，请检查网络后重试", // 启动失败提示
+    "backgroundColor": "#FF0B1024",    // 背景色，空=内置深蓝黑
+    "duration": 1200                   // 最短展示毫秒数 0~8000
   },
 
   // ==================== 全局 ====================
