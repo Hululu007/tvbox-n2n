@@ -223,21 +223,27 @@ public class RemoteConfig {
         bootstrap(ctx);
     }
 
+    /** 本进程内是否已成功应用过任意主配置（网络或缓存）。置 true 后失败通知一律忽略 */
+    private static volatile boolean sHasUsableConfig = false;
+
     private static void notifyPrimary(int state) {
         List<PrimaryListener> copy;
         synchronized (sPrimaryListeners) {
-            // 幂等保护：若已经成功（PRIMARY_OK），不允许后续迟到的失败回调把状态改回 FAIL。
-            // 典型场景：首次拉取超时/失败后用户点「重试」，重试线程已成功返回 PRIMARY_OK，
-            // 此时旧线程若才姗姗来迟地抛出异常，不能再弹一次「主接口加载失败」窗口。
-            if (sPrimaryState == PRIMARY_OK && state != PRIMARY_OK) {
-                android.util.Log.w("RemoteConfig", "notifyPrimary: ignore late state=" + state
-                        + " because primary already OK");
-                return;
+            if (state == PRIMARY_OK) {
+                sHasUsableConfig = true;
+            } else if (state != PRIMARY_LOADING) {
+                // 强不变量：本进程只要成功应用过一次配置（网络或缓存），
+                // 任何迟到/并发失败都不得再触发「主接口加载失败」。
+                if (sHasUsableConfig || sPrimaryState == PRIMARY_OK) {
+                    RcLog.w("notifyPrimary: ignore FAIL, usable config exists");
+                    return;
+                }
             }
             sPrimaryState = state;
             copy = new ArrayList<>(sPrimaryListeners);
             sPrimaryListeners.clear();
         }
+        RcLog.i("notifyPrimary: state=" + state + ", listeners=" + copy.size());
         for (PrimaryListener l : copy) {
             try {
                 l.onPrimaryResult(state);
@@ -619,10 +625,28 @@ public class RemoteConfig {
             return;
         }
         if (src.startsWith("http://") || src.startsWith("https://")) {
+            final Context app = ctx.getApplicationContext();
+            // 缓存优先：先同步应用上次成功的主配置，主接口状态立即置 OK，
+            // 首页直接用缓存渲染；网络拉取只在后台做「刷新」，即使失败也绝不
+            // 再弹「主接口加载失败」。只有「从未有过缓存 + 网络失败」才报错。
+            boolean hasCache = false;
+            try {
+                hasCache = restoreCachedRemote(app, false);
+                if (hasCache) {
+                    sConfigBase = src; // 相对接口以主配置地址为基准
+                    RcLog.i("bootstrap: cache applied, primary OK immediately (url=" + src + ")");
+                    notifyPrimary(PRIMARY_OK);
+                } else {
+                    RcLog.i("bootstrap: no cache, waiting for network (url=" + src + ")");
+                }
+            } catch (Throwable t) {
+                RcLog.e("bootstrap: cache apply error", t);
+            }
+            final boolean fHasCache = hasCache;
             new Thread(new Runnable() {
                 @Override
                 public void run() {
-                    fetchPrimary(appSingleton(), src);
+                    fetchPrimary(app, src, fHasCache);
                 }
             }, "rc-primary-fetch").start();
             return;
@@ -699,8 +723,14 @@ public class RemoteConfig {
         }
     }
 
-    /** 后台线程拉取主远程配置 */
-    private static void fetchPrimary(Context app, String url) {
+    /**
+     * 后台线程拉取主远程配置。
+     *
+     * @param hasCache 启动时是否已成功应用了本地缓存。为 true 时，本次拉取只是
+     *                 「后台刷新」：失败只记日志，绝不把主接口状态改成 FAIL，
+     *                 更不会再弹「主接口加载失败」。
+     */
+    private static void fetchPrimary(Context app, String url, boolean hasCache) {
         String raw = null;
         Throwable lastErr = null;
         // 首次失败再试一次，规避瞬时网络抖动/服务端偶发 5xx 导致「二次打开必失败」
@@ -710,21 +740,26 @@ public class RemoteConfig {
                 if (raw != null && !raw.isEmpty()) {
                     break;
                 }
-                android.util.Log.w("RemoteConfig", "fetchPrimary attempt=" + attempt
-                        + " empty response, url=" + url);
+                RcLog.w("fetchPrimary attempt=" + attempt + " empty response, url=" + url);
             } catch (Throwable t) {
                 lastErr = t;
-                android.util.Log.w("RemoteConfig", "fetchPrimary attempt=" + attempt
-                        + " error: " + t.getMessage() + ", url=" + url);
+                RcLog.w("fetchPrimary attempt=" + attempt + " error: " + t.getMessage() + ", url=" + url);
             }
             if (attempt < 2) {
                 try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
             }
         }
         if (raw == null || raw.isEmpty()) {
-            android.util.Log.w("RemoteConfig", "fetchPrimary network failed, fallback to cache. lastErr="
-                    + (lastErr != null ? lastErr.getMessage() : "empty"));
+            RcLog.w("fetchPrimary network failed. hasCache=" + hasCache
+                    + ", lastErr=" + (lastErr != null ? String.valueOf(lastErr) : "empty"));
+            if (hasCache) {
+                // 缓存已在 bootstrap 应用：仅刷新失败，保持 OK，不通知、不弹窗
+                return;
+            }
             boolean restored = restoreCachedRemote(app, false);
+            if (!restored) {
+                RcLog.w("fetchPrimary: no cache to restore, primary FAIL");
+            }
             notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
             return;
         }
@@ -738,21 +773,23 @@ public class RemoteConfig {
             try {
                 apply(app, cfg, false);
             } catch (Throwable applyErr) {
-                android.util.Log.e("RemoteConfig", "fetchPrimary apply error (non-fatal): "
-                        + applyErr.getMessage(), applyErr);
+                RcLog.e("fetchPrimary apply error (non-fatal): " + applyErr.getMessage(), applyErr);
             }
             Hawk.put(K_REMOTE_RAW, raw);
             if (!raw.equals(oldRaw)) {
                 bumpConfigVersion();
             }
+            RcLog.i("fetchPrimary success, config applied & cached (len=" + raw.length() + ")");
             notifyPrimary(PRIMARY_OK);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
             if (!secondary.isEmpty()) {
                 fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
             }
         } catch (Throwable t) {
-            android.util.Log.e("RemoteConfig", "fetchPrimary parse error, fallback to cache: "
-                    + t.getMessage(), t);
+            RcLog.e("fetchPrimary parse error. hasCache=" + hasCache, t);
+            if (hasCache) {
+                return;
+            }
             boolean restored = restoreCachedRemote(app, false);
             notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
         }
@@ -775,15 +812,15 @@ public class RemoteConfig {
                 try {
                     apply(app, cfg, remoteOnly);
                 } catch (Throwable applyErr) {
-                    android.util.Log.e("RemoteConfig", "restoreCachedRemote apply error (non-fatal): "
-                            + applyErr.getMessage(), applyErr);
+                    RcLog.e("restoreCachedRemote apply error (non-fatal): " + applyErr.getMessage(), applyErr);
                 }
+                RcLog.i("restoreCachedRemote: cache restored (len=" + cached.length() + ")");
                 return true;
             } else {
-                android.util.Log.w("RemoteConfig", "restoreCachedRemote: no cached remote config");
+                RcLog.w("restoreCachedRemote: no cached remote config");
             }
         } catch (Throwable t) {
-            android.util.Log.e("RemoteConfig", "restoreCachedRemote error: " + t.getMessage(), t);
+            RcLog.e("restoreCachedRemote error: " + t.getMessage(), t);
         }
         return false;
     }
@@ -851,7 +888,7 @@ public class RemoteConfig {
             int code = conn.getResponseCode();
             in = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
             if (in == null) {
-                android.util.Log.w("RemoteConfig", "httpGet null stream, code=" + code + ", url=" + urlStr);
+                RcLog.w("httpGet null stream, code=" + code + ", url=" + urlStr);
                 return null;
             }
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -862,12 +899,13 @@ public class RemoteConfig {
             }
             String body = new String(bos.toByteArray(), "UTF-8");
             if (code < 200 || code >= 300) {
-                android.util.Log.w("RemoteConfig", "httpGet non-2xx code=" + code
-                        + ", bodyLen=" + body.length() + ", url=" + urlStr);
+                RcLog.w("httpGet non-2xx code=" + code + ", bodyLen=" + body.length() + ", url=" + urlStr);
+            } else {
+                RcLog.i("httpGet 200, bodyLen=" + body.length() + ", url=" + urlStr);
             }
             return body;
         } catch (Throwable t) {
-            android.util.Log.w("RemoteConfig", "httpGet error: " + t.getMessage() + ", url=" + urlStr);
+            RcLog.w("httpGet error: " + t.getClass().getSimpleName() + ": " + t.getMessage() + ", url=" + urlStr);
             return null;
         } finally {
             if (in != null) { try { in.close(); } catch (Throwable ignored) {} }

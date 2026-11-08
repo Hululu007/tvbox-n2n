@@ -46,7 +46,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 主配置里的接口地址使用**相对地址**（如 `index.php?r=api&enc=ke`），客户端会自动以**主配置 URL 的域名/IP + 所在目录**拼接（配置来自本地文件时回退拼接主接口 api 域名），无需写死域名。
 
-`r=config` 返回完整系统配置：接口地址、`epgDays`、`settings` 全量设置项、首页 `home`、`themes`、`tkp2p`、`topEntries`/`homeEntries`、应用市场、升级与捐助等，字段含义与 [配置示例](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 一致。
+`r=config` 返回完整系统配置：接口地址、`epgDays`、`settings` 全量设置项、首页 `home`、`themes`、`tkp2p`、`topEntries`/`homeEntries`/`quickEntries`（推荐下方图片入口行）、应用市场、升级与捐助等，字段含义与 [配置示例](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 一致。
 
 ### 3.0 滚动公告（`notice`）
 
@@ -79,6 +79,10 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 - `duration`（可选）：自动隐藏秒数，0=常驻；
 - `textColor` / `bgColor` / `alpha` / `fontSize` / `position`（可选）：颜色、透明度、字号、上/下位置；
 - `show`（可选）：按 `home` / `live` / `vod` / `hotel` 分别开关；酒店界面会优先显示 `screens[].ticker`。
+
+> **系统悬浮窗公告（2026-11-07 起）**：客户端持有「显示在其他应用上层」权限时，公告以系统悬浮窗
+> 显示在**所有 App 最顶层**，切换界面甚至切出本 App 滚动都不中断；首次启动有公告且无权限时
+> 客户端会一次性弹窗引导开启，无权限则自动退化为界面内置顶公告，无需服务端改动。
 
 ### 3.1 直播 JSON 格式
 

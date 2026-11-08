@@ -448,6 +448,47 @@ public class HomeActivity extends BaseActivity {
         jumpToScreenIfNeeded();
         jumpToLiveIfNeeded();
         upgradeCheckOnce();
+        promptOverlayPermissionOnce();
+    }
+
+    /**
+     * 滚动公告系统悬浮窗：有公告且无权限时，一次性引导用户去系统设置开启
+     * 「显示在其他应用上层」。开启后公告悬浮于所有 App 最顶层、切换不中断；
+     * 拒绝/无设置页时退化为界面内公告，不影响使用。
+     */
+    private void promptOverlayPermissionOnce() {
+        try {
+            if (com.github.tvbox.osc.n2n.NoticeOverlayService.canDrawOverlays(this)) {
+                return;
+            }
+            String notice = com.github.tvbox.osc.n2n.RemoteConfig.notice();
+            if (notice == null || notice.trim().isEmpty()) {
+                return;
+            }
+            if (Hawk.get("rc_overlay_prompted", false)) {
+                return;
+            }
+            Hawk.put("rc_overlay_prompted", true);
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("开启悬浮公告")
+                    .setMessage("滚动公告可悬浮显示在所有应用最上层（切换界面/App 不中断）。请授予「显示在其他应用上层」权限。")
+                    .setPositiveButton("去开启", (d, w) -> {
+                        try {
+                            startActivity(new android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:" + getPackageName())));
+                        } catch (Throwable t) {
+                            try {
+                                startActivity(new android.content.Intent(
+                                        android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    })
+                    .setNegativeButton("暂不", null)
+                    .show();
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 非 standard 默认界面只跳转一次，避免主接口回调重复进入 */
@@ -560,6 +601,7 @@ public class HomeActivity extends BaseActivity {
 
     /** 主接口无法加载/访问且无本地缓存：全屏报错，阻止进入其它界面 */
     private void showPrimaryConfigError() {
+        com.github.tvbox.osc.n2n.RcLog.w("HomeActivity: showPrimaryConfigError triggered");
         if (isFinishing() || isDestroyed()) {
             return;
         }

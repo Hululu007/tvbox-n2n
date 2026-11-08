@@ -257,8 +257,9 @@ switch ($route) {
             //                'pause'     = 整条公告完整走完一遍后停顿的秒数（>0 生效；只配 pause 时默认速度 100）
             //                'textColor' / 'bgColor' / 'alpha' / 'fontSize' / 'position' / 'duration'
             //                'show'      = 按界面开关：['home'=>true,'live'=>true,'vod'=>true,'hotel'=>true]
-            //   客户端表现：公告条固定在窗口最顶层（悬浮于所有界面内容之上），
-            //   滚动时背景固定、仅文字移动；切换界面时沿用上一界面的滚动位置继续，不会重新加载。
+            //   客户端表现：公告条以「系统悬浮窗」显示在所有 App 最顶层（需授予
+            //   「显示在其他应用上层」权限，首次启动会引导开启；无权限时退化为界面内置顶），
+            //   滚动时背景固定、仅文字移动；切换界面甚至切出本 App 滚动都不中断、不重新加载。
             'notice' => [
                 'text' => '欢迎使用 TKLauncher · 如有问题请联系前台 xxx-xxxxxxx',
                 'speed' => 50,
@@ -389,6 +390,19 @@ switch ($route) {
                 ['name' => '组网', 'type' => 'page', 'target' => 'hin2n',   'icon' => 'ic_hin2n'],
                 //['name' => '系统', 'type' => 'page', 'target' => 'system',  'icon' => 'hm_settings'],
                 ['name' => '捐助', 'type' => 'page', 'target' => 'donate',  'icon' => 'hm_fav'],
+            ],
+            // ==================================================================
+
+            // ==================================================================
+            // 【推荐下方快捷入口行】（空数组/删除=隐藏整行）
+            //   与历史一行一样可混合多种类型（page/feature/app/vod），但卡片支持自定义图片：
+            //   pic=图片地址（http(s) URL 或内置 drawable 名，留空则按 icon/类型回退），
+            //   文字显示在图片上方的半透明条内。点击行为与 homeEntries 完全一致。
+            'quickEntries' => [
+                ['name' => '我的影院', 'type' => 'vod',  'target' => 'http://tianku.net/tvzy/tv/1.json', 'pic' => ''],
+                ['name' => '直播',     'type' => 'page', 'target' => 'live',    'pic' => ''],
+                ['name' => '应用',     'type' => 'page', 'target' => 'apps',    'pic' => ''],
+                ['name' => '设置',     'type' => 'page', 'target' => 'setting', 'pic' => ''],
             ],
             // ==================================================================
 

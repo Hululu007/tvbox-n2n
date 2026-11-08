@@ -401,6 +401,18 @@
     // ,{ "name": "影院", "type": "vod",  "target": "https://example.com/vod.json", "icon": "hm_vod", "theme": "1" }
   ],
 
+  // ==================== 推荐下方快捷入口行（quickEntries） ====================
+  // 首页推荐列表下方的一行横滑卡片入口：与 homeEntries 一样可混合 page/feature/app/vod
+  // 多种类型，点击行为完全一致；区别在于卡片支持自定义图片，且文字显示在图片上方。
+  // pic = 图片地址（http(s) URL 或内置 drawable 名；留空则按 icon/类型回退）。
+  // 本字段整个删除或空数组 [] = 隐藏整行。
+  "quickEntries": [
+    { "name": "我的影院", "type": "vod",  "target": "https://example.com/vod.json", "pic": "" },
+    { "name": "直播",     "type": "page", "target": "live",    "pic": "" },
+    { "name": "应用",     "type": "page", "target": "apps",    "pic": "" },
+    { "name": "设置",     "type": "page", "target": "setting", "pic": "" }
+  ],
+
   // ==================== 界面（屏幕）/ 酒店 IPTV 桌面 ====================
   // 主界面可根据主接口配置加载不同的桌面布局；每个界面可以有自己的点播/直播/EPG 接口。
   // defaultScreen = "standard" 时使用当前标准首页；填 screens 中某个 id 时启动直接进入该界面。

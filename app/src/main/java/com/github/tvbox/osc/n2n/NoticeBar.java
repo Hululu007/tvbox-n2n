@@ -58,6 +58,137 @@ public class NoticeBar {
     /** 酒店界面自带 ticker 的独立状态（不参与全局公告） */
     private static final HashMap<String, ScreenState> STATES = new HashMap<>();
 
+    /** 系统悬浮窗模式：公告挂在系统 WindowManager（覆盖所有 App），不跟随 Activity 搬家 */
+    private static volatile boolean sOverlayActive = false;
+    private static android.view.WindowManager sOverlayWm = null;
+    /** 最近的前台 Activity：悬浮窗渲染时优先用它的（AutoSize 适配后）资源 */
+    private static java.lang.ref.WeakReference<Activity> sTopAct = null;
+
+    /** 系统悬浮窗公告是否已生效 */
+    public static boolean isOverlayActive() {
+        return sOverlayActive && sView != null;
+    }
+
+    /** 记录最近前台 Activity（App 生命周期回调中调用） */
+    public static void trackActivity(Activity act) {
+        if (act != null) {
+            sTopAct = new java.lang.ref.WeakReference<>(act);
+        }
+    }
+
+    private static Activity bestActivity() {
+        Activity a = sTopAct == null ? null : sTopAct.get();
+        if (a != null && !a.isFinishing() && !a.isDestroyed()) {
+            return a;
+        }
+        return null;
+    }
+
+    /**
+     * 把全局公告 View 挂到系统 WindowManager（TYPE_APPLICATION_OVERLAY）：
+     * 显示在所有 App 最顶层，切换界面甚至切出本 App 滚动都不中断。
+     * 由 NoticeOverlayService 调用；幂等。
+     */
+    public static synchronized void attachSystemOverlay(android.content.Context ctx,
+                                                        android.view.WindowManager wm) {
+        if (ctx == null || wm == null) {
+            return;
+        }
+        try {
+            if (sView == null) {
+                Activity act = bestActivity();
+                sView = createOverlay(act != null ? act : ctx);
+            }
+            // 从 Activity 窗口摘除（如果之前挂在 decorView）
+            ViewParent p = sView.getParent();
+            if (p instanceof ViewGroup) {
+                ((ViewGroup) p).removeView(sView);
+            }
+            if (!sOverlayActive) {
+                sOverlayWm = wm;
+                wm.addView(sView, createOverlayWmParams(ctx));
+                sOverlayActive = true;
+                RcLog.i("NoticeBar: system overlay attached");
+            }
+            renderSystemOverlay();
+        } catch (Throwable t) {
+            RcLog.e("NoticeBar: attachSystemOverlay failed", t);
+        }
+    }
+
+    /** 移除系统悬浮窗公告 */
+    public static synchronized void detachSystemOverlay() {
+        if (sOverlayActive && sOverlayWm != null && sView != null) {
+            try {
+                sOverlayWm.removeView(sView);
+            } catch (Throwable ignored) {
+            }
+        }
+        sOverlayActive = false;
+        sOverlayWm = null;
+    }
+
+    /** 按最新 notice 配置重渲染系统悬浮窗（文本/样式/显隐/位置）；无主配置时隐藏 */
+    public static void renderSystemOverlay() {
+        if (!sOverlayActive || sView == null) {
+            return;
+        }
+        Runnable r = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Activity act = bestActivity();
+                    if (act == null) {
+                        // 无前台界面（App 在后台）：保持当前滚动，不重渲染
+                        return;
+                    }
+                    // 位置是窗口级属性：按最新配置更新 gravity
+                    if (sOverlayWm != null && sView.getParent() != null) {
+                        sOverlayWm.updateViewLayout(sView, createOverlayWmParams(act));
+                    }
+                    render(act, sView, sLastScreen, GLOBAL);
+                } catch (Throwable t) {
+                    RcLog.e("NoticeBar: renderSystemOverlay error", t);
+                }
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            r.run();
+        } else {
+            H.post(r);
+        }
+    }
+
+    /** 系统悬浮窗的 WindowManager 参数：整宽、位置随 notice.position、不可触摸不可聚焦 */
+    private static android.view.WindowManager.LayoutParams createOverlayWmParams(android.content.Context ctx) {
+        int height;
+        int margin;
+        try {
+            height = ctx.getResources().getDimensionPixelSize(R.dimen.vs_40);
+            margin = ctx.getResources().getDimensionPixelSize(R.dimen.vs_10);
+        } catch (Throwable t) {
+            height = 40;
+            margin = 10;
+        }
+        boolean top = false;
+        try {
+            top = "top".equals(RemoteConfig.noticeStyle().optString("position", "bottom").trim());
+        } catch (Throwable ignored) {
+        }
+        android.view.WindowManager.LayoutParams lp = new android.view.WindowManager.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, height,
+                android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O
+                        ? android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        : android.view.WindowManager.LayoutParams.TYPE_PHONE,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                android.graphics.PixelFormat.TRANSLUCENT);
+        lp.gravity = (top ? Gravity.TOP : Gravity.BOTTOM) | Gravity.CENTER_HORIZONTAL;
+        lp.y = margin;
+        return lp;
+    }
+
     private static final class ScreenState {
         TextView view;
         Runnable speedRun;
@@ -100,12 +231,22 @@ public class NoticeBar {
             return;
         }
         sLastScreen = screen;
+        trackActivity(act);
+        // 有悬浮窗权限且有公告 → 拉起前台服务把公告挂到系统最顶层（覆盖所有 App）
+        NoticeOverlayService.sync(act);
         // 首页布局自带的 tvNotice 仅隐藏不再使用，避免同一条公告显示两份
         if (SCREEN_HOME.equals(screen)) {
             View builtin = act.findViewById(R.id.tvNotice);
             if (builtin != null) {
                 builtin.setVisibility(View.GONE);
             }
+        }
+        // 系统悬浮窗模式：公告在系统窗口，仅按最新配置重渲染，不往界面窗口挂
+        // （sView 为 null 说明服务刚启动尚未 attach，走原 decorView 路径兜底，
+        //   服务 attach 时会自动从界面窗口摘除并迁移到系统窗口）
+        if (sOverlayActive && sView != null) {
+            render(act, sView, screen, GLOBAL);
+            return;
         }
         TextView tv = obtainOverlay(act);
         if (tv == null) {
@@ -124,6 +265,7 @@ public class NoticeBar {
         if (act == null || act.isFinishing() || act.isDestroyed()) {
             return;
         }
+        trackActivity(act);
         try {
             // 酒店界面自带 ticker 时由 showOn() 决定用哪一个，避免覆盖
             if (act instanceof com.github.tvbox.osc.ui.activity.HotelActivity) {
@@ -131,6 +273,10 @@ public class NoticeBar {
             }
             String notice = RemoteConfig.notice();
             if (notice == null || notice.trim().isEmpty()) {
+                return;
+            }
+            // 系统悬浮窗模式：公告常驻系统窗口，切换界面无需任何搬动/重渲染
+            if (sOverlayActive) {
                 return;
             }
             TextView tv = obtainOverlay(act);
@@ -218,6 +364,10 @@ public class NoticeBar {
      * 记录当前滚动位置，回到前台后从该位置继续。
      */
     public static void onAppHidden() {
+        // 系统悬浮窗模式：切出 App 后公告仍悬浮于屏幕，滚动必须继续，不暂停
+        if (sOverlayActive) {
+            return;
+        }
         if (sView != null) {
             GLOBAL.savedScroll = Math.max(0, sView.getScrollX());
         }
@@ -534,11 +684,11 @@ public class NoticeBar {
         return sView;
     }
 
-    private static TextView createOverlay(Activity act) {
+    private static TextView createOverlay(android.content.Context ctx) {
         // 用 Application Context：全局静态 View 不持有任何 Activity
-        TextView tv = new TextView(act.getApplicationContext());
+        TextView tv = new TextView(ctx.getApplicationContext());
         tv.setTag(TAG_OVERLAY);
-        tv.setLayoutParams(createParams(act));
+        tv.setLayoutParams(createParams(ctx));
         tv.setSingleLine(true);
         tv.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
         tv.setMarqueeRepeatLimit(-1);
@@ -546,7 +696,7 @@ public class NoticeBar {
         tv.setTextColor(0xFFFFD54F);
         tv.setBackgroundColor(0x66000000);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                act.getResources().getDimensionPixelSize(R.dimen.ts_24));
+                ctx.getResources().getDimensionPixelSize(R.dimen.ts_24));
         tv.setFocusable(false);
         tv.setClickable(false);
         tv.setVisibility(View.GONE);
@@ -558,13 +708,13 @@ public class NoticeBar {
         return tv;
     }
 
-    private static FrameLayout.LayoutParams createParams(Activity act) {
+    private static FrameLayout.LayoutParams createParams(android.content.Context ctx) {
         // 公告条占满屏幕整宽（无左右边距）
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                act.getResources().getDimensionPixelSize(R.dimen.vs_40));
+                ctx.getResources().getDimensionPixelSize(R.dimen.vs_40));
         lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        lp.bottomMargin = act.getResources().getDimensionPixelSize(R.dimen.vs_10);
+        lp.bottomMargin = ctx.getResources().getDimensionPixelSize(R.dimen.vs_10);
         return lp;
     }
 

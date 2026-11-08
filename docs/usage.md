@@ -78,6 +78,7 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 | `proxy` | 播放代理（可选） |
 | `settings` | 全部功能设置（详见开发文档） |
 | `topEntries` / `homeEntries` | 顶栏 / 历史行入口（可配置，也可整体替换） |
+| `quickEntries` | 推荐下方快捷入口行：类型同历史行（page/feature/app/vod 可混合），卡片支持 `pic` 自定义图片，文字显示在图片上方；空数组/缺省 = 隐藏 |
 | `appMarket` | 应用市场列表/详情接口或直接下发 apps 数组 |
 | `upgrade` | 升级检查接口 |
 | `notice` / `home` / `themes` / `donate` | 公告、首页外观、主题、捐助页 |

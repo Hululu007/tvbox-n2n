@@ -60,12 +60,13 @@ tvbox-n2n/
 
 | 字段 | 落盘规则 |
 |------|----------|
-| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次加载配置时覆盖缓存值；`notice.speed`=像素/秒，`notice.pause`=整条公告走完一遍后的停顿秒数（>0 启用单遍滚动+停顿），`notice.show.hotel` 控制酒店界面是否显示全局公告 |
+| `notice`（字符串或样式对象）/`home`/`tkp2p`/`entries`/`hin2nEntry`/`checkInterval`/`loadSuccessDuration`/`warningAutoClose`/`ua` | 每次加载配置时覆盖缓存值；`notice.speed`=像素/秒，`notice.pause`=整条公告走完一遍后的停顿秒数（>0 启用单遍滚动+停顿），`notice.show.hotel` 控制酒店界面是否显示全局公告。有「显示在其他应用上层」权限时公告以**系统悬浮窗**（`NoticeOverlayService` 前台服务 + `TYPE_APPLICATION_OVERLAY`）显示在所有 App 最顶层，切换界面/App 滚动不中断；无权限退化为界面内置顶 |
 | `home.recMovies`（首页推荐） | `home` 段内的数组，每次启动随 `home` 一起覆盖：**数组非空时**首页推荐列表直接显示配置的影片（`name`/`pic`/`note`/`id`/`sourceKey`），**不再请求豆瓣、也不再请求点播接口 homeContent**，标题显示「推荐」；配 `id`+`sourceKey` 点击进详情，只配 `name` 点击按片名搜索；空数组/全注释 = 回退豆瓣热播（2026-11-05 起首页推荐统一由主接口提供，主页面不再引用点播接口数据） |
 | `loadSuccessDuration` / `warningAutoClose` | 前者=点播接口加载成功顶部提示的自动关闭秒数（0=不显示，默认 3，0~60）；后者=免责声明 `warningText` 弹窗的自动关闭秒数（0=不自动关闭，默认 0，0~120，按钮带倒计时） |
 | `theme` / `themes` | 每次启动应用（`ThemeManager.updateThemes`）；`theme` 支持序号/中文名/英文 alias；`themes` 每项可带 `bgImage`（单张）或 `bgImages`（多张，随机选一张并在该主题下按索引缓存保持稳定），配图则所有页面用图，否则用 `bgStart→bgEnd` 渐变 |
 | `upgrade` | 每次启动覆盖缓存；`HomeActivity` 进入后由 `UpgradeChecker` 按 `versionCode`/`checkUrl` 决定是否弹窗，每版本每次启动最多提示一次；`force=true` 时弹窗不可取消 |
 | `topEntries` / `homeEntries` | 每次加载覆盖缓存；**数组含 ≥1 项才整体替换**顶栏/首页历史行，缺省或空数组 = 保持代码默认 UI（默认不含设置入口） |
+| `quickEntries`（推荐下方快捷入口行） | 每次加载覆盖缓存；类型同 homeEntries（page/feature/app/vod 可混合），卡片支持 `pic` 自定义图片（http(s) URL 或 drawable 名，空则按 icon/类型回退），文字显示在图片上方；空数组/缺省 = 隐藏整行 |
 | `api` / `live` / `epg` / `proxy` | **每次加载都以 JSON 为准**（应用内无设置页）；`live`/`epg`/`proxy` 未带协议时优先拼接主配置来源地址的域名/IP + 目录（本地配置时回退拼主接口 api 域名） |
 | `bootStart`（TVBox 开机自启） | 只作默认值写入**一次**（Hawk `n2n_boot_default_set` 标记）；出厂默认开 |
 | `secretKey`（固定密钥模式秘钥） | 每次启动覆盖 Hawk `rc_secret_key`；非空时**优先于** `ConfigCrypto.SECRET_KEY` Java 常量（见 §3.11） |
@@ -109,12 +110,13 @@ tvbox-n2n/
 
 设置页：界面与全部入口已移除（首页 `tvN2n`、历史行 `tvSetting`、直播菜单「应用设置」、`EntryDispatcher` 的 `page=setting` 均已删除）。[ModelSettingFragment.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/ui/fragment/ModelSettingFragment.java) 代码保留但不可达，其中 `initRemoteConfig()` 仅保留 `llRcBoot`（开机启动，Hawk `n2n_boot_start`），`llRcLauncher` 行固定 `GONE`。全部设置项改由 JSON `settings` 下发（`RemoteConfig.applySettingsDefaults` 每次强制写入）。
 
-### 3.4 自定义入口机制（topEntries / homeEntries / entries）
+### 3.4 自定义入口机制（topEntries / homeEntries / quickEntries / entries）
 
 - 数据模型：`RemoteConfig.Entry`（name/type/target/pkg/icon/url/theme，`theme` 仅 vod 类型），`RemoteConfig.parseEntries()` 兼容字符串数组等异常输入。
 - **配置 JSON 即显式列出全部内置入口**（topEntries 7 项 / homeEntries 11 项，默认全显）；想关闭某入口 = 从数组删除该条；把字段整个删除或改成空数组 `[]` = 回退代码内置默认 UI。每次启动按 JSON 覆盖 Hawk 缓存。
 - 顶栏：`HomeEntry.populate()` 读 `RemoteConfig.topEntries()`——返回 `null` 走内置默认；返回非空（≥1 项）则隐藏 7 个固定图标并按数组顺序动态生成 ImageView 加入顶栏容器，点击统一调 `EntryDispatcher.handle(activity, entry)`。
 - 首页历史行：`UserFragment.rebuildHomeEntriesIfConfigured()` 读 `RemoteConfig.homeEntries()`；非空时移除 `tvUserHome` 行内全部默认卡片并按数组重建（含 `vod` 类型）。该行与推荐列表同处一个 ScrollView，焦点跟随滚动逻辑对动态卡片同样生效；重建行内「历史」卡片保留长按（切推荐模式并重载首页）。
+- 推荐下方快捷入口行：`UserFragment.buildQuickEntries()` 读 `RemoteConfig.quickEntries()`；在推荐列表下方渲染横向滚动卡片行——卡片为背景图（`pic`：http(s) URL 走 Glide，否则按 drawable 名/`icon`/类型回退）+ 图片上方半透明条内显示名称；类型/点击与 homeEntries 完全一致（统一走 `EntryDispatcher`）。空数组/缺省时整行隐藏。
 - `page` 类型 target 全集：`vod`/`live`/`search`/`fastsearch`/`history`/`collect`/`push`/`drive`/`apps`/`hin2n`/`system`/`donate`（`setting` 已随设置页移除，配置了也不会跳转）。其中：
   - **`system`**：直接打开安卓系统设置（`Settings.ACTION_SETTINGS`），设备固件裁掉该入口时 Toast 提示「本机无系统设置入口」；用于酒店/门店场景把系统配置入口放进首页。
   - **`donate`**：打开 `DonateActivity` 捐助界面（§3.3），内容来自 json `donate` 段。
@@ -167,6 +169,9 @@ tvbox-n2n/
 - **主屏左上源名显示规则**（`HomeActivity.applySourceName()`，2026-10-22 调整）：**固定显示**内置 JSON `home.sourceName` 文字（未配置回退 app 名称），**不再随点播接口切换/换源变化**；`onResume` 统一走该方法。**2026-10-23：左上角名称取消切源入口与焦点**——`tvName` 在布局与代码中均置 `clickable=false / focusable=false`，移除点击/长按监听（切源仍可用 MENU 键或设置页）；首页容器不再用 LoadSir 遮罩初始加载，顶栏、入口行、公告在首帧一起渲染，历史一行不再等点播接口加载完成才出现。**2026-11-05：`initViewModel`/`sortResult` 观察者已随「主页面去除点播接口引用」一并移除**。
 - **全局未捕获异常防护**（2026-10-22）：[App.java](file:///f:/tvbox-n2n/app/src/main/java/com/github/tvbox/osc/base/App.java) `initCrashHandler()` 在 onCreate 最前面安装 `Thread.setDefaultUncaughtExceptionHandler`——任何线程未捕获异常（含配置接口后主页刷新链路）把堆栈追加写 `filesDir/crash.log`（>512KB 自动重写），后台线程异常尽力 Toast「程序出现异常，即将自动重启」，随后 `killProcess` 自行结束进程，**不交给系统默认 handler，避免弹「tvbox结束运行」**。配套加固：`SourceViewModel.getSort()` type 0/1 的 `onSuccess` 解析（sortXml/sortJson）与 type 3 的 finally 解析块都包了 `try/catch(Throwable)`（解析失败回落 `postValue(null)`）；`HomeActivity` sortResult observer 与 loadConfig error 弹窗加 `isFinishing()/isDestroyed()` 守卫。
 - **点播接口通知 / 公告条（2026-10-23）**：① 首页、点播、直播三处公告字号统一（见 §3.3 NoticeBar 行），`duration` 到期后同内容不再重新显示；② 新增顶层 `loadSuccessDuration`：点播接口首次加载成功时在首页顶部显示非模态提示（不抢焦点、带剩余秒数倒计时），到点自动移除，0=不显示（默认 3）；③ 新增顶层 `warningAutoClose`：点播接口 `warningText` 免责声明弹窗支持 N 秒后自动关闭（按钮显示「确定 (Ns)」倒计时），0=保持原行为必须手动确认（默认 0）；④ 新增 `home.recMovies`：首页自定义推荐影片，配置后不再请求豆瓣（见 §3.2）。
+- **主接口「缓存优先」启动（2026-11-07）**：`RemoteConfig.bootstrap()` 启动时先**同步**应用上次成功的主配置缓存并立即置 `PRIMARY_OK`（首页直接用缓存渲染），网络拉取降级为后台刷新——刷新失败只记日志，**绝不再弹「主接口加载失败」**；仅「全新安装且网络失败」才弹错误页。配套不变量：进程内一旦成功应用过任意主配置（网络或缓存，`sHasUsableConfig`），任何迟到/并发失败回调都被忽略。修复「二次打开必弹主接口加载失败、清缓存才好」。
+- **主接口诊断日志文件（2026-11-07）**：新增 `RcLog`——关键事件（启动/缓存命中/每次请求响应码与异常/状态通知决策）同时写 logcat 与 `filesDir/logs/remote-config.log`（>256KB 滚动为 .old），无需 adb 即可用文件管理器查看，解决「开了调试模式仍无任何日志」。
+- **滚动公告系统悬浮窗（2026-11-07）**：新增 `NoticeOverlayService`（前台服务，`foregroundServiceType=specialUse`）把公告条挂到系统 `WindowManager`（`TYPE_APPLICATION_OVERLAY`，不可触摸/聚焦）：公告显示在**所有 App 最顶层**，切换界面甚至切出本 App 滚动不中断不重启（`onAppHidden` 在悬浮窗模式下不再暂停滚动）。需「显示在其他应用上层」权限——首页检测到公告且无权限时一次性弹窗引导开启；无权限自动退化为原界面内置顶模式。
 
 ### 3.9 内置系统桌面（清单声明 HOME）
 
