@@ -55,7 +55,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | 写法 | 示例 | 行为 |
 |------|------|------|
 | 纯字符串 | `"notice": "欢迎使用 TKLauncher"` | 走 Android 系统 marquee；**短于一屏的文本不会滚**（Android 固有行为） |
-| 对象（推荐） | 见下方 | 走客户端自定义滚动，**短文本也会滚** |
+| 对象（推荐） | 见下方 | 走客户端自定义滚动：单份文本从右向左**完整走完**，短文本也会滚且不会追加副本 |
 
 对象写法：
 
@@ -74,15 +74,17 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 ```
 
 - `text`（必填）：公告内容；
-- `speed`（可选，>0）：滚动速度，单位像素/秒；为 0 或缺失时回退系统 marquee；
-- `pause`（可选，>0）：**整条公告完整走完一遍后停顿的秒数**；只配 `pause` 时默认速度 100；
+- `speed`（可选，>0）：滚动速度，单位像素/秒；为 0 或缺失时回退系统 marquee。启用后只保留一份文本，
+  从右侧进入、向左完整走出屏幕后再走下一遍（**短文本不再重复拼接/追加副本**）；
+- `pause`（可选）：**整条公告完整走完一遍后停顿的秒数**，0=立即走下一遍；只配 `pause` 时默认速度 100；
 - `duration`（可选）：自动隐藏秒数，0=常驻；
 - `textColor` / `bgColor` / `alpha` / `fontSize` / `position`（可选）：颜色、透明度、字号、上/下位置；
 - `show`（可选）：按 `home` / `live` / `vod` / `hotel` 分别开关；酒店界面会优先显示 `screens[].ticker`。
 
 > **系统悬浮窗公告（2026-11-07 起）**：客户端持有「显示在其他应用上层」权限时，公告以系统悬浮窗
-> 显示在**所有 App 最顶层**，切换界面甚至切出本 App 滚动都不中断；首次启动有公告且无权限时
-> 客户端会一次性弹窗引导开启，无权限则自动退化为界面内置顶公告，无需服务端改动。
+> 显示在**所有 App 最顶层**，切换界面甚至切出本 App 滚动都不中断；无权限则自动退化为界面内置顶
+> 公告，无需服务端改动。主界面已回退到 `28165ae` 版本，客户端不再自动弹窗引导授权，
+> 可在系统设置中手动开启该权限。
 
 ### 3.1 直播 JSON 格式
 
@@ -217,8 +219,6 @@ A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 J
 | 字段 | 说明 |
 | --- | --- |
 | `placeholderImage` | 图片下载完成前显示的预设占位图 |
-| `loadingImage` | 主界面启动加载画面图片（主接口加载期间显示；空=App 内置图标，支持相对路径） |
-| `loadingText` | 主界面启动加载画面提示文字（空=内置「系统启动中…」） |
 | `forceOverride` | 接口强制覆盖：`false`=用户手动配置优先；`true`=全部覆盖；也可对象逐项控制 |
 | `defaultScreen` | 启动加载的界面 id：`standard` 或 `screens` 中的 id |
 | `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |

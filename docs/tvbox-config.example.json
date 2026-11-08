@@ -8,8 +8,6 @@
   "epg": "epg/epg.json",
   "proxy": "",
   "placeholderImage": "",
-  "loadingImage": "",
-  "loadingText": "系统启动中…",
   "forceOverride": false,
   "defaultScreen": "standard",
   "screens": [],

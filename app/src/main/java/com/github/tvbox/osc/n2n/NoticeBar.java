@@ -14,7 +14,6 @@ import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.animation.LinearInterpolator;
 import android.widget.FrameLayout;
-import android.widget.Scroller;
 import android.widget.TextView;
 
 import androidx.constraintlayout.widget.ConstraintLayout;
@@ -721,10 +720,15 @@ public class NoticeBar {
     // ==================== 自定义速度滚动（由右向左） ====================
 
     /**
-     * 启动「由右向左」的自定义平滑滚动。
+     * 启动「由右向左」的自定义平滑滚动（整条往返模式）。
      *
-     * <p>实现方式：把原文重复拼接若干份（保证任意时刻屏内都有文字），再用 Scroller 平移一个
-     * 周期后归零重来，形成无缝循环。像素速度由 JSON speed 配置（像素/秒）。</p>
+     * <p>实现要点：<b>不再把公告文本重复拼接多份</b>。旧实现为了让任意时刻屏内都有文字，
+     * 会把「文本 + 空格」复制若干份后整体平移，短文本因此在屏内同时出现多份（表现为
+     * 「没走完就追加显示下一份」）。现在改为单份文本：先垫一段宽度 ≥ 屏宽的前导空格，
+     * 让文本从屏幕右侧外进入，完整向左走出一遍（文本右边缘完全离开屏幕）后，
+     * 按 {@code notice.pause} 停顿再开始下一遍。短文本也能完整走完，不再追加副本。</p>
+     *
+     * <p>像素速度由 JSON {@code speed} 配置（像素/秒）。</p>
      */
     private static void startSpeedScroll(final TextView tv, final String text,
                                          final int speedPxPerSec, final int pauseSec, final ScreenState ss) {
@@ -733,76 +737,17 @@ public class NoticeBar {
         tv.scrollTo(0, 0);
         tv.setTranslationX(0f);
         tv.setText(text);
-        if (pauseSec > 0) {
-            startPauseScroll(tv, text, speedPxPerSec, pauseSec, ss);
-            return;
-        }
-        final int token = ++ss.scrollToken;
-        H.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (ss.scrollToken != token) {
-                    return;
-                }
-                // 视图暂时不在窗口上（界面切换中）：稍后重试，保持同一条滚动循环
-                if (!tv.isAttachedToWindow() || tv.getWidth() <= 0) {
-                    H.postDelayed(this, 200);
-                    return;
-                }
-                int viewWidth = tv.getWidth();
-                String unit = text + "        ";
-                float unitWidth = tv.getPaint().measureText(unit);
-                if (unitWidth <= 0) {
-                    return;
-                }
-                int copies = 1;
-                while (unitWidth * copies < viewWidth + unitWidth) {
-                    copies++;
-                }
-                StringBuilder sb = new StringBuilder(unit.length() * copies);
-                for (int i = 0; i < copies; i++) {
-                    sb.append(unit);
-                }
-                tv.setText(sb.toString());
-                final int periodPx = (int) Math.ceil(unitWidth);
-                final int duration = (int) (periodPx / (float) Math.max(1, speedPxPerSec) * 1000f);
-                int startOffset = Math.min(Math.max(ss.savedScroll, 0), Math.max(0, periodPx - 1));
-                ss.savedScroll = 0;
-                final Scroller scroller = new Scroller(tv.getContext(), new LinearInterpolator());
-                tv.setScroller(scroller);
-                tv.scrollTo(startOffset, 0);
-                scroller.startScroll(startOffset, 0, periodPx - startOffset, 0,
-                        Math.max(1, (int) (duration * (periodPx - startOffset) / (float) periodPx)));
-                final Runnable loop = new Runnable() {
-                    @Override
-                    public void run() {
-                        if (ss.speedRun != this) {
-                            return;
-                        }
-                        if (!tv.isAttachedToWindow()) {
-                            // 界面切换的短暂空档：保持循环，不重置位置
-                            H.postDelayed(this, 300);
-                            return;
-                        }
-                        if (scroller.isFinished()) {
-                            tv.scrollTo(0, 0);
-                            scroller.startScroll(0, 0, periodPx, 0, Math.max(1, duration));
-                        }
-                        H.postDelayed(this, 300);
-                    }
-                };
-                ss.speedRun = loop;
-                H.postDelayed(loop, 300);
-            }
-        }, 60);
+        startSinglePassScroll(tv, text, speedPxPerSec, pauseSec, ss);
     }
 
     /**
      * 「整条走完 + 停顿」模式：公告文本从右侧完全进入，向左完整走出一遍后，
-     * 停顿 notice.pause 秒，再重复。
+     * 停顿 notice.pause 秒（0=立即）再重复。
+     *
+     * <p>只保留一份文本，因此不会出现短文本被重复追加、同屏多份的问题。</p>
      */
-    private static void startPauseScroll(final TextView tv, final String text,
-                                         final int speedPxPerSec, final int pauseSec, final ScreenState ss) {
+    private static void startSinglePassScroll(final TextView tv, final String text,
+                                              final int speedPxPerSec, final int pauseSec, final ScreenState ss) {
         final int token = ++ss.scrollToken;
         H.postDelayed(new Runnable() {
             @Override
@@ -828,7 +773,9 @@ public class NoticeBar {
                 }
                 final String padded = lead.toString() + text;
                 final float leadWidth = tv.getPaint().measureText(lead.toString());
-                final int toScroll = (int) Math.ceil(leadWidth + textWidth);
+                // 终点必须把 TextView 的左内边距也算进去，否则文字右边缘会残留一小截在屏幕左侧
+                final int toScroll = (int) Math.ceil(leadWidth + textWidth
+                        + tv.getPaddingLeft() + tv.getPaddingRight());
                 final int duration = (int) (toScroll / (float) Math.max(1, speedPxPerSec) * 1000f);
                 final int[] fromHolder = {
                         Math.min(Math.max(ss.savedScroll, 0), Math.max(0, toScroll - 1))
