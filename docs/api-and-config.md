@@ -51,6 +51,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | 14 | 图片预设占位图 | `placeholderImage` | — | ✅ | 图片 URL |
 | 15 | 界面布局插件 | `screens[].layoutUrl` | ✅ | ✅ | 布局 JSON |
 | 16 | 界面独立接口 | `screens[].api/live/epg` | ✅ | ✅ | 同点播/直播/EPG |
+| 17 | 启动加载画面图片 | `loadingImage` | — | ✅ | 图片 URL（空=App 内置图标） |
 
 > *下载地址建议直接写完整 URL；相对地址支持由服务端/客户端场景决定，**接口数据**字段优先使用完整地址更稳妥。
 
@@ -63,6 +64,8 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "epg": "index.php?r=epg&enc=ke",
   "proxy": "",
   "placeholderImage": "",                 // 图片下载完成前显示的预设占位图
+  "loadingImage": "",                     // 启动加载画面图片（主接口加载期间显示；空=App 内置图标）
+  "loadingText": "系统启动中…",            // 启动加载画面提示文字（空=内置「系统启动中…」）
   "forceOverride": false,                 // false=用户手动配置优先；true=主接口强制覆盖；
                                           // 也可对象逐项控制：{"api":true,"live":true,"epg":false,"proxy":false}
   "defaultScreen": "standard",            // standard=标准首页；其它值必须与下方 screens[].id 精确一致，不存在会自动回退
@@ -302,6 +305,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 - 进入点播界面时先显示启动等待画面（主配置可下发 `vodSplash`，见 §2.9），接口配置与当前源的 jar/js/py 插件就绪后自动加载分类数据并关闭等待画面。
 - 点播界面切换源时，会丢弃该源旧的 Spider 实例并**重新加载新源对应的 jar / js / py 插件**（`type=3` 的 `.jar`、`.js`、`.py`、纯类名站点分别处理），再强制刷新分类列表；不再依赖首页预加载全局 jar。
 - 点播界面的第一个分类固定为「热播推荐」：**只取主配置 `home.recMovies`**（未配置时显示空态，不再回退点播接口 `homeContent` 或豆瓣）；默认选中并自动加载。
+- 主接口（主配置）在 App 启动时后台拉取；加载期间显示启动加载画面（图片 + 「系统启动中…」，见 §2.10），成功后关闭并显示首页。
 - 若主接口（主配置）无法加载/访问且本地无缓存，客户端直接显示全屏报错页（重试/退出），不再进入首页等其它界面。
 
 ### 2.9 点播启动等待画面（`vodSplash`）
@@ -318,6 +322,21 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   }
 }
 ```
+
+### 2.10 主界面启动加载画面（`loadingImage` / `loadingText`）
+
+主配置顶层的可选字段；App 冷启动/主接口重新加载期间，首页全屏显示该画面，主接口加载成功后自动关闭：
+
+```json
+{
+  "loadingImage": "./loading.png",   // 可选：图片地址，相对地址按主配置地址解析；为空=App 内置图标
+  "loadingText": "系统启动中…"       // 可选：提示文字；为空=内置文案
+}
+```
+
+- 仅影响「主接口加载中」的启动画面，不改变任何接口地址与业务字段；
+- `loadingImage` 同时支持 `http(s)` 绝对地址、相对路径与 drawable 资源名（如 `app_icon`）；
+- 主接口加载失败且本地无缓存时仍进入全屏报错页（重试/退出）。
 
 ---
 

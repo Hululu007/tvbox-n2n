@@ -216,4 +216,40 @@
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintLeft_toLeftOf="parent"
         app:layout_constraintRight_toRightOf="parent" />
+
+    <!-- 启动加载画面：主接口（远程配置）加载期间全屏显示图片 + 「系统启动中…」提示，
+         加载成功后在 HomeActivity 中隐藏；图片/文字可由主接口 loadingImage / loadingText 下发 -->
+    <LinearLayout
+        android:id="@+id/loadingLayout"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:background="#FF000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="visible"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toRightOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/ivLoading"
+            android:layout_width="@dimen/vs_240"
+            android:layout_height="@dimen/vs_240"
+            android:adjustViewBounds="true"
+            android:scaleType="fitCenter"
+            android:src="@drawable/app_icon" />
+
+        <TextView
+            android:id="@+id/tvLoading"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/vs_25"
+            android:gravity="center"
+            android:text="@string/loading_starting"
+            android:textColor="#FFFFFFFF"
+            android:textSize="@dimen/ts_30" />
+    </LinearLayout>
 </androidx.constraintlayout.widget.ConstraintLayout>

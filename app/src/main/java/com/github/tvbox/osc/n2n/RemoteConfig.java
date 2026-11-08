@@ -163,6 +163,10 @@ public class RemoteConfig {
     public static final String K_DEFAULT_SCREEN = "rc_default_screen";
     /** 接口强制覆盖策略（json "forceOverride"）："*"=全部覆盖，或 "api,live,epg,proxy" 子集 */
     public static final String K_FORCE_OVERRIDE = "rc_force_override";
+    /** 主界面启动加载画面图片（json "loadingImage"）：主接口加载期间显示，空=App 内置图标 */
+    public static final String K_LOADING_IMAGE = "rc_loading_image";
+    /** 主界面启动加载画面提示文字（json "loadingText"）：空=「系统启动中…」 */
+    public static final String K_LOADING_TEXT = "rc_loading_text";
 
     /** 最近一次加载的主配置 JSON（入口/主题/hin2n 播种等逻辑读取） */
     private static volatile JSONObject sConfig = null;
@@ -223,75 +227,17 @@ public class RemoteConfig {
         bootstrap(ctx);
     }
 
-    /** 本进程内是否已成功应用过任意主配置（网络或缓存）。置 true 后失败通知一律忽略 */
-    private static volatile boolean sHasUsableConfig = false;
-
-    /**
-     * 持久化缓存兜底检查：只要 Hawk 中存在 K_REMOTE_RAW 且内容非空，
-     * 就说明本设备曾经成功保存过主配置。此检查不依赖进程内存状态，
-     * 即使进程被系统杀掉后重启（sHasUsableConfig 重置为 false），
-     * 只要磁盘上有缓存，就绝不允许把主接口状态置为 FAIL。
-     *
-     * @return true=磁盘上有可用的主配置缓存
-     */
-    private static boolean hasPersistentCache() {
-        try {
-            String cached = Hawk.get(K_REMOTE_RAW, "");
-            return cached != null && cached.length() > 2;
-        } catch (Throwable t) {
-            return false;
-        }
-    }
-
-    /**
-     * 对外暴露：当前是否有可用的主配置（内存中已应用 或 磁盘上有缓存）。
-     * 供 UI 层在弹窗报错前做最后一道防线检查，避免任何状态机遗漏导致误报。
-     */
-    public static boolean hasUsableConfig() {
-        return sHasUsableConfig || sPrimaryState == PRIMARY_OK || hasPersistentCache();
-    }
-
     private static void notifyPrimary(int state) {
         List<PrimaryListener> copy;
-        int notifyState;
         synchronized (sPrimaryListeners) {
-            if (state == PRIMARY_OK) {
-                sHasUsableConfig = true;
-                notifyState = PRIMARY_OK;
-            } else if (state != PRIMARY_LOADING) {
-                // 强不变量：只要「内存中曾成功应用过配置」或「磁盘上有缓存」，
-                // 任何迟到/并发失败都不得再触发「主接口加载失败」。
-                // 持久化缓存检查兜底进程重启场景（sHasUsableConfig 会随进程死亡重置）。
-                boolean persistentCache = hasPersistentCache();
-                if (sHasUsableConfig || sPrimaryState == PRIMARY_OK || persistentCache) {
-                    RcLog.w("notifyPrimary: ignore FAIL (hasUsable=" + sHasUsableConfig
-                            + ", stateWasOk=" + (sPrimaryState == PRIMARY_OK)
-                            + ", persistentCache=" + persistentCache + ")");
-                    if (sPrimaryState == PRIMARY_LOADING) {
-                        // 失败被忽略但首页还在等结果：用 OK 通知监听器，让首页继续渲染
-                        sPrimaryState = PRIMARY_OK;
-                        sHasUsableConfig = true;
-                        notifyState = PRIMARY_OK;
-                        RcLog.i("notifyPrimary: promoted LOADING -> OK due to cache fallback");
-                    } else {
-                        // 已有终态（OK/FAIL），直接忽略本次失败，不通知
-                        return;
-                    }
-                } else {
-                    notifyState = PRIMARY_FAIL;
-                }
-            } else {
-                notifyState = PRIMARY_LOADING;
-            }
-            sPrimaryState = notifyState;
+            sPrimaryState = state;
             copy = new ArrayList<>(sPrimaryListeners);
             sPrimaryListeners.clear();
         }
-        RcLog.i("notifyPrimary: state=" + state + " -> notify=" + notifyState
-                + ", listeners=" + copy.size());
+        RcLog.i("notifyPrimary: state=" + state + ", listeners=" + copy.size());
         for (PrimaryListener l : copy) {
             try {
-                l.onPrimaryResult(notifyState);
+                l.onPrimaryResult(state);
             } catch (Throwable ignored) {
             }
         }
@@ -671,39 +617,11 @@ public class RemoteConfig {
         }
         if (src.startsWith("http://") || src.startsWith("https://")) {
             final Context app = ctx.getApplicationContext();
-            // 缓存优先：先同步应用上次成功的主配置，主接口状态立即置 OK，
-            // 首页直接用缓存渲染；网络拉取只在后台做「刷新」，即使失败也绝不
-            // 再弹「主接口加载失败」。只有「从未有过缓存 + 网络失败」才报错。
-            boolean hasCache = false;
-            try {
-                hasCache = restoreCachedRemote(app, false);
-                if (hasCache) {
-                    sConfigBase = src; // 相对接口以主配置地址为基准
-                    RcLog.i("bootstrap: cache applied, primary OK immediately (url=" + src + ")");
-                    notifyPrimary(PRIMARY_OK);
-                } else if (hasPersistentCache()) {
-                    // 磁盘有缓存但 restoreCachedRemote 未成功应用（如 parseLoose 边界问题）：
-                    // 仍立即置 OK，不让首页等网络超时；后台 fetchPrimary 成功后会重新应用正确配置。
-                    sConfigBase = src;
-                    RcLog.w("bootstrap: persistent cache exists but apply failed, "
-                            + "promote to OK anyway (url=" + src + ")");
-                    notifyPrimary(PRIMARY_OK);
-                } else {
-                    RcLog.i("bootstrap: no cache, waiting for network (url=" + src + ")");
-                }
-            } catch (Throwable t) {
-                RcLog.e("bootstrap: cache apply error", t);
-                // 兜底：若异常发生但磁盘有缓存，仍置 OK，避免误报
-                if (hasPersistentCache()) {
-                    sConfigBase = src;
-                    notifyPrimary(PRIMARY_OK);
-                }
-            }
-            final boolean fHasCache = hasCache;
+            RcLog.i("bootstrap: fetch primary in background (url=" + src + ")");
             new Thread(new Runnable() {
                 @Override
                 public void run() {
-                    fetchPrimary(app, src, fHasCache);
+                    fetchPrimary(app, src);
                 }
             }, "rc-primary-fetch").start();
             return;
@@ -780,62 +698,22 @@ public class RemoteConfig {
         }
     }
 
-    /**
-     * 后台线程拉取主远程配置。
-     *
-     * @param hasCache 启动时是否已成功应用了本地缓存。为 true 时，本次拉取只是
-     *                 「后台刷新」：失败只记日志，绝不把主接口状态改成 FAIL，
-     *                 更不会再弹「主接口加载失败」。
-     */
-    private static void fetchPrimary(Context app, String url, boolean hasCache) {
-        // effectiveHasCache：只要有缓存（已应用 或 磁盘存在），本次拉取失败就只记日志，
-        // 绝不把主接口状态改成 FAIL。hasPersistentCache 兜底进程重启后内存标志丢失的场景。
-        final boolean effectiveHasCache = hasCache || hasPersistentCache();
-        String raw = null;
-        Throwable lastErr = null;
-        // 首次失败再试一次，规避瞬时网络抖动/服务端偶发 5xx 导致「二次打开必失败」
-        for (int attempt = 1; attempt <= 2; attempt++) {
-            try {
-                raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
-                if (raw != null && !raw.isEmpty()) {
-                    break;
-                }
-                RcLog.w("fetchPrimary attempt=" + attempt + " empty response, url=" + url);
-            } catch (Throwable t) {
-                lastErr = t;
-                RcLog.w("fetchPrimary attempt=" + attempt + " error: " + t.getMessage() + ", url=" + url);
-            }
-            if (attempt < 2) {
-                try { Thread.sleep(500); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
-            }
-        }
-        if (raw == null || raw.isEmpty()) {
-            RcLog.w("fetchPrimary network failed. hasCache=" + hasCache
-                    + ", effectiveHasCache=" + effectiveHasCache
-                    + ", lastErr=" + (lastErr != null ? String.valueOf(lastErr) : "empty"));
-            if (effectiveHasCache) {
-                // 缓存已在 bootstrap 应用或磁盘存在：仅刷新失败，保持 OK，不通知、不弹窗
+    /** 后台线程拉取主远程配置（单次请求，失败时用上次缓存兜底） */
+    private static void fetchPrimary(Context app, String url) {
+        try {
+            String raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
+            if (raw == null || raw.isEmpty()) {
+                RcLog.w("fetchPrimary: empty response, try cache fallback, url=" + url);
+                boolean restored = restoreCachedRemote(app, false);
+                notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
                 return;
             }
-            boolean restored = restoreCachedRemote(app, false);
-            if (!restored) {
-                RcLog.w("fetchPrimary: no cache to restore, primary FAIL");
-            }
-            notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
-            return;
-        }
-        try {
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject cfg = parseLoose(raw);
             sConfig = cfg;
             sConfigBase = url; // 相对接口地址以主配置所在目录为基准拼接
             String oldRaw = Hawk.get(K_REMOTE_RAW, "");
-            // apply 内部已对各段做 try-catch，但再兜一层，避免任何异常导致主接口被误判失败
-            try {
-                apply(app, cfg, false);
-            } catch (Throwable applyErr) {
-                RcLog.e("fetchPrimary apply error (non-fatal): " + applyErr.getMessage(), applyErr);
-            }
+            apply(app, cfg, false);
             Hawk.put(K_REMOTE_RAW, raw);
             if (!raw.equals(oldRaw)) {
                 bumpConfigVersion();
@@ -847,11 +725,7 @@ public class RemoteConfig {
                 fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
             }
         } catch (Throwable t) {
-            RcLog.e("fetchPrimary parse error. hasCache=" + hasCache
-                    + ", effectiveHasCache=" + effectiveHasCache, t);
-            if (effectiveHasCache) {
-                return;
-            }
+            RcLog.e("fetchPrimary error: " + t.getMessage() + ", url=" + url, t);
             boolean restored = restoreCachedRemote(app, false);
             notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
         }
@@ -862,44 +736,15 @@ public class RemoteConfig {
         try {
             String cached = Hawk.get(K_REMOTE_RAW, "");
             if (cached != null && !cached.isEmpty()) {
-                JSONObject cfg = null;
-                // 先尝试宽松解析（支持注释、尾逗号、BOM），失败再回退标准 JSONObject。
-                // 只要能解析出对象就视为缓存可用，避免因 parseLoose 边界问题导致
-                // 明明有缓存却被判定为无缓存、进而误弹「主接口加载失败」。
-                try {
-                    cfg = parseLoose(cached);
-                } catch (Throwable looseErr) {
-                    RcLog.w("restoreCachedRemote: parseLoose failed, fallback to JSONObject: "
-                            + looseErr.getMessage());
-                    try {
-                        cfg = new JSONObject(cached);
-                    } catch (Throwable stdErr) {
-                        RcLog.e("restoreCachedRemote: JSONObject fallback also failed: "
-                                + stdErr.getMessage(), stdErr);
-                    }
+                JSONObject cfg = parseLoose(cached);
+                if (remoteOnly == false) {
+                    sConfig = cfg;
                 }
-                if (cfg != null) {
-                    if (remoteOnly == false) {
-                        sConfig = cfg;
-                        // 缓存恢复时也要设置基准地址，否则相对接口（live/epg 等）无法正确拼接
-                        if (sConfigBase == null || sConfigBase.isEmpty()) {
-                            sConfigBase = CONFIG_URL != null ? CONFIG_URL.trim() : "";
-                        }
-                    }
-                    // apply 内部各段已有 try-catch，此处再兜一层，确保「能解析就视为恢复成功」
-                    try {
-                        apply(app, cfg, remoteOnly);
-                    } catch (Throwable applyErr) {
-                        RcLog.e("restoreCachedRemote apply error (non-fatal): " + applyErr.getMessage(), applyErr);
-                    }
-                    RcLog.i("restoreCachedRemote: cache restored (len=" + cached.length() + ")");
-                    return true;
-                }
-                // cfg 为 null 说明两次解析都失败：缓存内容损坏，记日志后返回 false
-                RcLog.w("restoreCachedRemote: cached config unparseable, len=" + cached.length());
-            } else {
-                RcLog.w("restoreCachedRemote: no cached remote config");
+                apply(app, cfg, remoteOnly);
+                RcLog.i("restoreCachedRemote: cache restored (len=" + cached.length() + ")");
+                return true;
             }
+            RcLog.w("restoreCachedRemote: no cached remote config");
         } catch (Throwable t) {
             RcLog.e("restoreCachedRemote error: " + t.getMessage(), t);
         }
@@ -1300,6 +1145,17 @@ public class RemoteConfig {
         } else if (!remoteOnly) {
             Hawk.delete(K_PLACEHOLDER);
         }
+        // 主界面启动加载画面：主接口加载期间显示图片 + 提示文字（可选，空=内置图标/默认文案）
+        if (j.has("loadingImage")) {
+            Hawk.put(K_LOADING_IMAGE, resolveInterfaceUrl(j.optString("loadingImage", "").trim()));
+        } else if (!remoteOnly) {
+            Hawk.delete(K_LOADING_IMAGE);
+        }
+        if (j.has("loadingText")) {
+            Hawk.put(K_LOADING_TEXT, j.optString("loadingText", "").trim());
+        } else if (!remoteOnly) {
+            Hawk.delete(K_LOADING_TEXT);
+        }
         // 接口强制覆盖策略：缺省（不配置）时用户手动配置的接口优先；
         // 支持布尔（true=全部接口强制覆盖）或对象 {"api":true,"live":false,...}
         if (j.has("forceOverride")) {
@@ -1484,6 +1340,18 @@ public class RemoteConfig {
     /** 主接口预设占位图（下载完成前先显示；为空=使用内置占位图） */
     public static String placeholderImage() {
         return Hawk.get(K_PLACEHOLDER, "");
+    }
+
+    /** 主界面启动加载画面图片（json "loadingImage"；为空=使用 App 内置图标） */
+    public static String loadingImage() {
+        String v = Hawk.get(K_LOADING_IMAGE, "");
+        return v == null ? "" : v;
+    }
+
+    /** 主界面启动加载画面提示文字（json "loadingText"；为空=使用「系统启动中…」） */
+    public static String loadingText() {
+        String v = Hawk.get(K_LOADING_TEXT, "");
+        return v == null ? "" : v;
     }
 
     /** 桌面/界面（屏幕）配置：id/name/layout/api/live/epg + 外观与入口，见 docs 配置示例 */

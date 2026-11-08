@@ -69,6 +69,10 @@ public class HomeActivity extends BaseActivity {
 
     private LinearLayout topLayout;
     private LinearLayout contentLayout;
+    /** 主接口加载期间的全屏启动画面（图片 + 「系统启动中…」提示） */
+    private View loadingLayout;
+    private ImageView ivLoading;
+    private TextView tvLoading;
     private TextView tvName;
     private ImageView tvWifi;
     private ImageView tvFind;
@@ -109,9 +113,6 @@ public class HomeActivity extends BaseActivity {
         // 否则作为系统桌面时，第二次按 HOME 会停在 standard 首页而不进入酒店桌面。
         screenJumped = false;
 
-        // 先完成视图绑定：后续任何步骤（含 getResources / EventBus 注册）异常，
-        // 也不会导致 tvName/tvDate 为 null，从而避免 onResume 里 NPE 造成「再次启动黑屏」。
-        initView();
         // takagen99: Added to allow read string
         res = getResources();
 
@@ -134,6 +135,7 @@ public class HomeActivity extends BaseActivity {
                 }
             }
         }, "home-servers").start();
+        initView();
         useCacheConfig = false;
         Intent intent = getIntent();
         if (intent != null && intent.getExtras() != null) {
@@ -150,6 +152,10 @@ public class HomeActivity extends BaseActivity {
 
     private void initView() {
         this.topLayout = findViewById(R.id.topLayout);
+        this.loadingLayout = findViewById(R.id.loadingLayout);
+        this.ivLoading = findViewById(R.id.ivLoading);
+        this.tvLoading = findViewById(R.id.tvLoading);
+        applyLoadingScreen();
         this.tvName = findViewById(R.id.tvName);
         this.tvWifi = findViewById(R.id.tvWifi);
         this.tvFind = findViewById(R.id.tvFind);
@@ -264,6 +270,61 @@ public class HomeActivity extends BaseActivity {
         } catch (Throwable th) {
             th.printStackTrace();
         }
+    }
+
+    /**
+     * 启动加载画面内容：图片取主接口「loadingImage」（为空用 App 内置图标），
+     * 文字取主接口「loadingText」（为空用「系统启动中…」）。
+     */
+    private void applyLoadingScreen() {
+        try {
+            if (tvLoading != null) {
+                String text = com.github.tvbox.osc.n2n.RemoteConfig.loadingText();
+                tvLoading.setText(text.isEmpty() ? getString(R.string.loading_starting) : text);
+            }
+            if (ivLoading == null) {
+                return;
+            }
+            String img = com.github.tvbox.osc.n2n.RemoteConfig.loadingImage();
+            if (img.isEmpty()) {
+                ivLoading.setImageResource(R.drawable.app_icon);
+            } else if (img.startsWith("http://") || img.startsWith("https://")) {
+                ivLoading.setImageResource(R.drawable.app_icon);
+                com.bumptech.glide.Glide.with(this).load(img)
+                        .error(R.drawable.app_icon)
+                        .into(ivLoading);
+            } else {
+                int resId = getResources().getIdentifier(img, "drawable", getPackageName());
+                ivLoading.setImageResource(resId != 0 ? resId : R.drawable.app_icon);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 加载画面显示前的焦点视图：关闭加载画面后恢复，避免遥控器焦点丢失 */
+    private View lastLoadingFocus;
+
+    /** 显示启动加载画面：主接口（远程配置）加载期间遮住首页，避免空白/黑屏 */
+    private void showLoadingOverlay() {
+        if (loadingLayout == null) {
+            return;
+        }
+        applyLoadingScreen();
+        lastLoadingFocus = getCurrentFocus();
+        loadingLayout.setVisibility(View.VISIBLE);
+        loadingLayout.bringToFront();
+        loadingLayout.requestFocus();
+    }
+
+    /** 隐藏启动加载画面：主接口成功（或已判定失败准备跳报错页）后显示首页 */
+    private void hideLoadingOverlay() {
+        if (loadingLayout != null) {
+            loadingLayout.setVisibility(View.GONE);
+        }
+        if (lastLoadingFocus != null && lastLoadingFocus.isShown()) {
+            lastLoadingFocus.requestFocus();
+        }
+        lastLoadingFocus = null;
     }
 
     //站点切换
@@ -434,6 +495,7 @@ public class HomeActivity extends BaseActivity {
         if (!dataInitOk) {
             int state = com.github.tvbox.osc.n2n.RemoteConfig.primaryState();
             if (state == com.github.tvbox.osc.n2n.RemoteConfig.PRIMARY_LOADING) {
+                showLoadingOverlay();
                 addPrimaryListenerOnce();
                 return;
             }
@@ -444,6 +506,7 @@ public class HomeActivity extends BaseActivity {
             dataInitOk = true;
             jarInitOk = true;
         }
+        hideLoadingOverlay();
         // 主接口通过 screens/defaultScreen 指定加载的界面（酒店 IPTV 桌面等）
         jumpToScreenIfNeeded();
         jumpToLiveIfNeeded();
@@ -589,8 +652,10 @@ public class HomeActivity extends BaseActivity {
                             return;
                         }
                         if (state == com.github.tvbox.osc.n2n.RemoteConfig.PRIMARY_FAIL) {
+                            hideLoadingOverlay();
                             showPrimaryConfigError();
                         } else {
+                            hideLoadingOverlay();
                             initData();
                         }
                     }
@@ -603,16 +668,6 @@ public class HomeActivity extends BaseActivity {
     private void showPrimaryConfigError() {
         com.github.tvbox.osc.n2n.RcLog.w("HomeActivity: showPrimaryConfigError triggered");
         if (isFinishing() || isDestroyed()) {
-            return;
-        }
-        // 最后一道防线：只要磁盘上有缓存或内存中曾成功应用过配置，就绝不弹报错。
-        // 防止 RemoteConfig 状态机任何边界遗漏导致二次启动误报「主接口加载失败」。
-        if (com.github.tvbox.osc.n2n.RemoteConfig.hasUsableConfig()) {
-            com.github.tvbox.osc.n2n.RcLog.w("HomeActivity: showPrimaryConfigError suppressed, usable config exists");
-            if (!dataInitOk) {
-                dataInitOk = true;
-                jarInitOk = true;
-            }
             return;
         }
         // 保留进程给报错界面（否则 HomeActivity.onDestroy 会直接退出 App，报错页无法展示）

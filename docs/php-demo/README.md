@@ -217,6 +217,8 @@ A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 J
 | 字段 | 说明 |
 | --- | --- |
 | `placeholderImage` | 图片下载完成前显示的预设占位图 |
+| `loadingImage` | 主界面启动加载画面图片（主接口加载期间显示；空=App 内置图标，支持相对路径） |
+| `loadingText` | 主界面启动加载画面提示文字（空=内置「系统启动中…」） |
 | `forceOverride` | 接口强制覆盖：`false`=用户手动配置优先；`true`=全部覆盖；也可对象逐项控制 |
 | `defaultScreen` | 启动加载的界面 id：`standard` 或 `screens` 中的 id |
 | `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |
