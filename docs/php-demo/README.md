@@ -78,6 +78,44 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 **单份文本滚动**：启用 `speed` 后客户端只保留一份文本，先从屏幕右侧外进入，向左完整走出屏幕（含 TextView 内边距）后按 `pause` 停顿，再开始下一遍；短文本不会再重复拼接或同时出现多份副本。
 
+**显示层级（2026-11 起）**：客户端首次运行会引导开启「悬浮窗」权限（`SYSTEM_ALERT_WINDOW`）。授权后公告由前台服务 `NoticeOverlayService` 挂到系统 `WindowManager`（`TYPE_APPLICATION_OVERLAY`）：
+
+- 显示在所有 App 最顶层，切换 TVBox 内部界面或切到其它 App 都不中断；
+- 全局只有一个公告 View，切换界面/应用不会重新创建、不会回到起点、不会重新计时；
+- 未授权时自动退化为「挂在当前窗口 decorView 最顶层」，同一份 View 跨 Activity 搬移，同样保持滚动状态；
+- 公告为空时服务自动停止，不额外占用通知栏。
+
+### 3.0.1 应用推荐（`home.appRecommends`）
+
+`home` 段新增 `appRecommends` 数组：显示在首页推荐影片列表上方，标题固定为「应用推荐」，自动换行，卡片尺寸与推荐海报卡片一致（跟随 `home.recMovies` 使用的 `ImgUtil.Style`）。数组为空/不配置时整块隐藏。
+
+```json
+{
+  "home": {
+    "appRecommends": [
+      {
+        "name": "示例应用",
+        "icon": "https://example.com/icon.png",
+        "pkg": "com.example.app",
+        "url": "https://example.com/app.apk",
+        "desc": "推荐"
+      }
+    ]
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `name` | 显示名称（必填；留空时用 `pkg` 兜底） |
+| `icon` | 图标：`http(s)` 地址或内置 drawable 名（如 `hm_drawer`）；留空用兜底图标 |
+| `pkg` / `packageName` | 应用包名：已安装直接拉起；未安装且配置 `url` 时走后台下载安装 |
+| `url` / `downloadUrl` | APK 下载地址（可选，支持相对地址） |
+| `desc` / `summary` | 副标题（可选，显示在卡片底部名称上方） |
+| `type` / `target` | 可选，兼容 `page`/`feature`/`vod` 入口；留空时按 `app` 处理 |
+
+> demo 的 `r=config` 已把 `ua` 设为非空示例值，需要特定 UA 的源可直接修改该字段。
+
 ### 3.1 直播 JSON 格式
 
 请求：`index.php?r=live`
@@ -217,6 +255,8 @@ A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 J
 | --- | --- |
 | `placeholderImage` | 图片下载完成前显示的预设占位图 |
 | `forceOverride` | 接口强制覆盖：`false`=用户手动配置优先；`true`=全部覆盖；也可对象逐项控制 |
+| `ua` | 全局 UA（demo 已填非空示例值；影响 OkHttp 请求与 webview/tkp2p 直播页） |
+| `home.appRecommends` | 首页「应用推荐」卡片数组（名称/图标/包名/下载地址/副标题），自动换行 |
 | `defaultScreen` | 启动加载的界面 id：`standard` 或 `screens` 中的 id |
 | `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |
 

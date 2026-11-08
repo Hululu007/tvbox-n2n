@@ -85,6 +85,9 @@
 
   // ==================== 公告（首页/直播/点播均可显示） ====================
   // 最简写法："notice": "公告文本"；要自定义样式时写成下面的对象。
+  // 显示层级：客户端首次运行引导开启「悬浮窗」权限；授权后公告由前台服务挂到系统最顶层
+  // （TYPE_APPLICATION_OVERLAY），切换界面/切出本 App 都不中断、不重新加载；
+  // 未授权时退化为当前窗口内公告（同一份 View 跨 Activity 搬移，滚动状态保留）。
   "notice": {
     "text": "",                         // 公告内容，留空不显示
     "position": "bottom",               // 显示位置：bottom（默认，底部） | top（顶部）
@@ -129,6 +132,15 @@
       // { "name": "示例影片A", "pic": "https://example.com/a.jpg", "note": "9.1" },
       // { "name": "示例影片B", "pic": "https://example.com/b.jpg", "note": "2026新片",
       //   "id": "123456", "sourceKey": "csp_xxx" }
+    ],
+    // 首页「应用推荐」：显示在推荐影片列表上方，标题固定「应用推荐」，自动换行；
+    // 卡片尺寸与推荐海报一致（跟随 recMovies 的 ImgUtil.Style）。空数组/不配置=整块隐藏。
+    // 字段：name=显示名（必填） icon=图标（http(s) 或内置 drawable 名）
+    //       pkg/packageName=包名（已安装直接拉起） url=未安装时的 APK 下载地址
+    //       desc=副标题（可选） type/target=可选，兼容 page/feature/vod 入口（留空按 app）
+    "appRecommends": [
+      // { "name": "示例应用", "icon": "https://example.com/icon.png",
+      //   "pkg": "com.example.app", "url": "https://example.com/app.apk", "desc": "推荐" }
     ]
   },
 

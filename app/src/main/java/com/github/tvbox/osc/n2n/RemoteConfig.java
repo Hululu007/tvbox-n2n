@@ -49,10 +49,15 @@ import java.util.List;
  *             "textColor": "...", "alpha": 90, "inputBgColor": "...", "buttonBgColor": "...",
  *             "recMovies": [                       // 首页「豆瓣热播」替换为自定义影片（可选）
  *               {"name":"片名","pic":"封面图","note":"备注","id":"影片ID","sourceKey":"站点key"}
+ *             ],
+ *             "appRecommends": [                    // 首页「应用推荐」（推荐影片上方，自动换行）
+ *               {"name":"应用名","icon":"图标","pkg":"包名","url":"APK下载地址","desc":"副标题"}
  *             ] },
  *             // sourceName=首页左上角默认文字（用户未配置点播接口时显示）
  *             // recMovies 存在且非空时：首页推荐列表不再请求豆瓣，直接显示这里配置的影片；
  *             //   配了 id+sourceKey 点击直接进详情，只配 name 则点击按片名去搜索
+ *             // appRecommends 存在且非空时：推荐影片上方显示「应用推荐」，卡片尺寸与推荐海报一致；
+ *             //   pkg 已安装直接拉起，未安装且配 url 时后台下载安装
  *   "loadSuccessDuration": 3,                         // 点播接口加载成功通知：多少秒后自动关闭
  *                                                     //   （0=不显示该通知；默认 3；范围 0~60）
  *   "warningAutoClose": 0,                            // 点播接口免责声明（warningText）弹窗：
@@ -251,6 +256,21 @@ public class RemoteConfig {
         public String desc;    // 酒店桌面布局用：入口副标题（可选）
     }
 
+    /**
+     * 首页「应用推荐」条目（home.appRecommends 数组元素）。
+     * 与 Entry 分开配置：应用推荐只表示一个可安装/可启动的 App，不参与顶栏/入口行。
+     */
+    public static class AppRecommend {
+        public String name = "";
+        public String icon = "";
+        public String pkg = "";
+        public String url = "";
+        public String desc = "";
+        /** 可选：留空时按 app 处理；也兼容 page/feature/vod 等入口类型 */
+        public String type = "";
+        public String target = "";
+    }
+
     public interface Callback {
         void onDone(boolean success);
     }
@@ -368,6 +388,68 @@ public class RemoteConfig {
             }
         } catch (Throwable ignored) {
             // 配置格式异常时按「未配置」处理，首页仍走豆瓣，不影响启动
+        }
+        return list;
+    }
+
+    /**
+     * 首页「应用推荐」列表（home 段的 "appRecommends" 数组）。
+     *
+     * <p>显示在首页推荐影片列表上方，自动换行，卡片尺寸与推荐海报卡片一致；
+     * 未配置或数组为空时整块隐藏。</p>
+     *
+     * <p>数组元素字段：</p>
+     * <ul>
+     *   <li>name：显示名称（必填；留空时用 pkg 兜底）</li>
+     *   <li>icon：图标，http(s) 地址或内置 drawable 名（如 hm_drawer）</li>
+     *   <li>pkg（兼容 packageName）：应用包名；点击时已安装直接拉起</li>
+     *   <li>url：未安装时的 APK 下载地址（可选）</li>
+     *   <li>desc：副标题（可选，当前仅在无障碍描述中使用）</li>
+     *   <li>type/target：可选，兼容 EntryDispatcher 的 page/feature/vod 入口</li>
+     * </ul>
+     */
+    public static List<AppRecommend> homeAppRecommends() {
+        List<AppRecommend> list = new ArrayList<>();
+        try {
+            JSONArray arr = homeStyle().optJSONArray("appRecommends");
+            if (arr == null) {
+                arr = raw().optJSONArray("appRecommends");
+            }
+            if (arr == null || arr.length() == 0) {
+                return list;
+            }
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject o = arr.optJSONObject(i);
+                if (o == null) {
+                    continue;
+                }
+                AppRecommend app = new AppRecommend();
+                app.name = o.optString("name", o.optString("title", "")).trim();
+                app.icon = o.optString("icon", o.optString("pic", "")).trim();
+                app.pkg = o.optString("pkg", o.optString("packageName", o.optString("package", ""))).trim();
+                app.url = o.optString("url", o.optString("downloadUrl", "")).trim();
+                app.desc = o.optString("desc", o.optString("summary", "")).trim();
+                app.type = o.optString("type", "").trim();
+                app.target = o.optString("target", "").trim();
+                if (app.name.isEmpty()) {
+                    app.name = app.pkg;
+                }
+                if (app.name.isEmpty()) {
+                    continue;
+                }
+                if (!app.url.isEmpty()) {
+                    app.url = resolveInterfaceUrl(app.url);
+                }
+                if (!app.icon.isEmpty()
+                        && !app.icon.startsWith("http://") && !app.icon.startsWith("https://")) {
+                    // 允许图标使用相对地址（如 assets/ 或配置同目录图片）
+                    if (app.icon.contains("/") || app.icon.contains(".")) {
+                        app.icon = resolveInterfaceUrl(app.icon);
+                    }
+                }
+                list.add(app);
+            }
+        } catch (Throwable ignored) {
         }
         return list;
     }

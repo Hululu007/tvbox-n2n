@@ -4,6 +4,9 @@ import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.app.Activity;
+import android.content.Context;
+import android.graphics.PixelFormat;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
@@ -11,6 +14,8 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.view.WindowManager;
 import android.view.animation.LinearInterpolator;
 import android.widget.FrameLayout;
 import android.widget.TextView;
@@ -21,29 +26,53 @@ import com.github.tvbox.osc.R;
 
 import org.json.JSONObject;
 
+import java.lang.ref.WeakReference;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.Locale;
 
 /**
  * 滚动公告：样式（位置/背景色/字号字色/透明度/显示时间段/过期时间/滚动速度）全部来自
  * 远程 JSON 的 notice 段，可按界面（首页 / 直播 / 点播）分别控制是否显示。
  *
- * 滚动方向为「由右向左」（标准跑马灯方向）。
- * 首页复用布局里已有的 tvNotice；直播/点播播放页则在本页内容层动态挂一个公告条。
+ * <p>2026-11 起改为「全局唯一公告条」：整个进程只创建一个 TextView。有悬浮窗权限时
+ * 通过 {@link NoticeOverlayService} 把公告挂到系统 WindowManager
+ * （TYPE_APPLICATION_OVERLAY），显示在所有 App 最顶层；切换界面甚至切出本 App，
+ * 滚动位置与计时都继续沿用，不会重新加载或重新滚动。</p>
+ *
+ * <p>没有悬浮窗权限时退化为「挂当前窗口 decorView 最顶层」：切换 Activity 时只是把
+ * 同一个 View 从旧窗口搬到新窗口，同样不重建、不重置滚动。</p>
+ *
+ * <p>滚动方向为「由右向左」（标准跑马灯方向）。</p>
  */
 public class NoticeBar {
 
     public static final String SCREEN_HOME = "home";
     public static final String SCREEN_LIVE = "live";
     public static final String SCREEN_VOD = "vod";
+    /** 酒店 IPTV 桌面（若使用布局自带 ticker，不参与全局公告） */
+    public static final String SCREEN_HOTEL = "hotel";
 
-    private static final String TAG_PREFIX = "tvbox_notice_bar_";
+    private static final String TAG_OVERLAY = "tvbox_notice_bar_global";
+    private static final String TAG = "NoticeBar";
 
     private static final Handler H = new Handler(Looper.getMainLooper());
-    /** 每屏（home/live/vod）独立状态，避免跨屏互踩和 duration 计时被 ticker 重置 */
-    private static final HashMap<String, ScreenState> STATES = new HashMap<>();
+
+    /** 全局唯一公告 View：跨界面/跨 App 复用（使用 Application Context 创建，避免持有 Activity 泄漏） */
+    private static TextView sView;
+
+    /** 全局公告的滚动/计时状态：与界面无关 */
+    private static final ScreenState GLOBAL = new ScreenState();
+
+    /** 系统悬浮窗模式：公告挂在系统 WindowManager（覆盖所有 App），不跟随 Activity 搬家 */
+    private static volatile boolean sOverlayActive = false;
+    private static WindowManager sOverlayWm = null;
+
+    /** 最近的前台 Activity：悬浮窗渲染时优先用它的（AutoSize 适配后）资源 */
+    private static WeakReference<Activity> sTopAct = null;
+
+    /** 最近一次调用 show() 的界面类型（用于新界面恢复公告时沿用同一套样式） */
+    private static String sLastScreen = SCREEN_HOME;
 
     private static final class ScreenState {
         TextView view;
@@ -65,50 +94,277 @@ public class NoticeBar {
         ValueAnimator scrollAnim;
         /** 滚动代次：每次启动/停止滚动自增，用于让上一次遗留的延时任务失效 */
         int scrollToken;
+        /** 切换到后台时的滚动位置（无悬浮窗权限时回到前台继续） */
+        int savedScroll;
     }
 
-    private static ScreenState getOrCreate(String screen) {
-        ScreenState ss = STATES.get(screen);
-        if (ss == null) {
-            ss = new ScreenState();
-            STATES.put(screen, ss);
+    /** 系统悬浮窗公告是否已生效 */
+    public static boolean isOverlayActive() {
+        return sOverlayActive && sView != null;
+    }
+
+    /** 记录最近前台 Activity（App 生命周期回调中调用） */
+    public static void trackActivity(Activity act) {
+        if (act != null) {
+            sTopAct = new WeakReference<>(act);
         }
-        return ss;
+    }
+
+    private static Activity bestActivity() {
+        Activity a = sTopAct == null ? null : sTopAct.get();
+        if (a != null && !a.isFinishing() && !a.isDestroyed()) {
+            return a;
+        }
+        return null;
     }
 
     /** 在指定界面渲染公告条（幂等，可重复调用） */
     public static void show(Activity act, String screen) {
-        if (act == null) {
+        if (act == null || act.isFinishing() || act.isDestroyed()) {
             return;
         }
-        TextView tv = SCREEN_HOME.equals(screen) ? act.findViewById(R.id.tvNotice) : obtainOverlay(act, screen);
+        sLastScreen = screen;
+        trackActivity(act);
+        // 有悬浮窗权限且有公告 → 拉起前台服务把公告挂到系统最顶层（覆盖所有 App）
+        NoticeOverlayService.sync(act);
+        // 首页布局自带的 tvNotice 不再使用，避免同一条公告显示两份
+        View builtin = act.findViewById(R.id.tvNotice);
+        if (builtin != null) {
+            builtin.setVisibility(View.GONE);
+        }
+        // 系统悬浮窗模式：公告在系统窗口，仅按最新配置重渲染，不往界面窗口挂
+        if (sOverlayActive && sView != null) {
+            render(act, sView, screen);
+            return;
+        }
+        TextView tv = obtainOverlay(act);
         if (tv == null) {
             return;
         }
         render(act, tv, screen);
     }
 
-    /** 主动隐藏（离开播放页时调用） */
-    public static void hide(Activity act, String screen) {
-        if (act == null) {
+    /**
+     * 任意界面 resume 时由 Application 生命周期回调调用：
+     * 把全局公告 View 重新挂到当前窗口最顶层，保证详情/搜索/设置等没有主动调用 show() 的界面
+     * 也能继续显示同一条公告（不重建、不重置滚动）。
+     */
+    public static void onActivityResumed(Activity act) {
+        if (act == null || act.isFinishing() || act.isDestroyed()) {
             return;
         }
-        ScreenState ss = STATES.get(screen);
-        if (ss != null) {
-            hideScreen(ss);
-            STATES.remove(screen);
-        }
-        TextView tv = SCREEN_HOME.equals(screen) ? act.findViewById(R.id.tvNotice) : findOverlay(act, screen);
-        if (tv != null) {
-            tv.setVisibility(View.GONE);
+        trackActivity(act);
+        try {
+            String notice = RemoteConfig.notice();
+            if (notice == null || notice.trim().isEmpty()) {
+                return;
+            }
+            // 确保主配置延迟加载完成后也能拉起悬浮窗服务
+            NoticeOverlayService.sync(act);
+            // 系统悬浮窗模式：公告常驻系统窗口，切换界面无需任何搬动/重渲染
+            if (sOverlayActive) {
+                return;
+            }
+            TextView tv = obtainOverlay(act);
+            if (tv == null) {
+                return;
+            }
+            render(act, tv, sLastScreen);
+        } catch (Throwable ignored) {
         }
     }
 
-    /** 停止自定义滚动（Activity.onDestroy 调用，避免静态泄漏） */
+    /**
+     * 主动隐藏（离开播放页时调用）。
+     *
+     * <p>全局公告条不随界面销毁而停止：同一个 View 会被下一个界面接管并继续滚动，
+     * 所以这里只解除本窗口对 View 的持有（防泄漏），不清空文字/滚动位置。</p>
+     */
+    public static void hide(Activity act, String screen) {
+        detach(act);
+    }
+
+    /**
+     * 应用退到后台（所有界面都已 stop）：暂停滚动循环，避免后台每 300ms 唤醒一次。
+     * 记录当前滚动位置，回到前台后从该位置继续。
+     */
+    public static void onAppHidden() {
+        // 系统悬浮窗模式：切出 App 后公告仍悬浮于屏幕，滚动必须继续，不暂停
+        if (sOverlayActive) {
+            return;
+        }
+        if (sView != null) {
+            GLOBAL.savedScroll = Math.max(0, sView.getScrollX());
+        }
+        stopSpeedScroll(GLOBAL);
+    }
+
+    /**
+     * 首页销毁时调用。系统悬浮窗模式下公告不在这里停止；无悬浮窗权限时清理界面内
+     * View 引用，切换到下一个界面时重建同一份公告（滚动状态仍由 GLOBAL 保留）。
+     */
     public static void stopScroll() {
-        for (ScreenState ss : STATES.values()) {
-            cancelAutoHide(ss);
-            stopSpeedScroll(ss);
+        if (sOverlayActive) {
+            return;
+        }
+        cancelAutoHide(GLOBAL);
+        stopSpeedScroll(GLOBAL);
+        GLOBAL.view = null;
+        if (sView != null) {
+            ViewParent p = sView.getParent();
+            if (p instanceof ViewGroup) {
+                try {
+                    ((ViewGroup) p).removeView(sView);
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+        sView = null;
+    }
+
+    // ==================== 系统悬浮窗 ====================
+
+    /**
+     * 把全局公告 View 挂到系统 WindowManager（TYPE_APPLICATION_OVERLAY）：
+     * 显示在所有 App 最顶层，切换界面甚至切出本 App 滚动都不中断。
+     * 由 NoticeOverlayService 调用；幂等。
+     */
+    public static synchronized void attachSystemOverlay(Context ctx, WindowManager wm) {
+        if (ctx == null || wm == null) {
+            return;
+        }
+        try {
+            if (sView == null) {
+                Activity act = bestActivity();
+                sView = createOverlay(act != null ? act : ctx);
+            }
+            // 从 Activity 窗口摘除（如果之前挂在 decorView）
+            ViewParent p = sView.getParent();
+            if (p instanceof ViewGroup) {
+                try {
+                    ((ViewGroup) p).removeView(sView);
+                } catch (Throwable ignored) {
+                }
+            }
+            if (!sOverlayActive) {
+                try {
+                    wm.addView(sView, createOverlayWmParams(ctx));
+                    sOverlayWm = wm;
+                    sOverlayActive = true;
+                } catch (Throwable t) {
+                    // 权限被撤销/窗口被系统拒绝：退回界面内公告
+                    sOverlayWm = null;
+                    sOverlayActive = false;
+                    Activity act = bestActivity();
+                    if (act != null) {
+                        ViewGroup root = noticeRoot(act);
+                        if (root != null) {
+                            try {
+                                root.addView(sView, createParams(act));
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+                    return;
+                }
+            } else {
+                sOverlayWm = wm;
+            }
+            renderSystemOverlay();
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 移除系统悬浮窗公告 */
+    public static synchronized void detachSystemOverlay() {
+        if (sOverlayActive && sOverlayWm != null && sView != null) {
+            try {
+                sOverlayWm.removeView(sView);
+            } catch (Throwable ignored) {
+            }
+        }
+        sOverlayActive = false;
+        sOverlayWm = null;
+        if (GLOBAL.view == sView) {
+            GLOBAL.view = null;
+        }
+    }
+
+    /** 按最新 notice 配置重渲染系统悬浮窗（文本/样式/显隐/位置）；无前台界面时保持当前滚动 */
+    public static void renderSystemOverlay() {
+        if (!sOverlayActive || sView == null) {
+            return;
+        }
+        Runnable r = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Activity act = bestActivity();
+                    if (act == null) {
+                        // 无前台界面（App 在后台）：保持当前滚动，不重渲染
+                        return;
+                    }
+                    if (sOverlayWm != null && sView.getParent() != null) {
+                        sOverlayWm.updateViewLayout(sView, createOverlayWmParams(act));
+                    }
+                    render(act, sView, sLastScreen);
+                } catch (Throwable ignored) {
+                }
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            r.run();
+        } else {
+            H.post(r);
+        }
+    }
+
+    /** 系统悬浮窗的 WindowManager 参数：整宽、位置随 notice.position、不可触摸不可聚焦 */
+    private static WindowManager.LayoutParams createOverlayWmParams(Context ctx) {
+        int height;
+        int margin;
+        try {
+            height = ctx.getResources().getDimensionPixelSize(R.dimen.vs_40);
+            margin = ctx.getResources().getDimensionPixelSize(R.dimen.vs_10);
+        } catch (Throwable t) {
+            height = 40;
+            margin = 10;
+        }
+        boolean top = false;
+        try {
+            top = "top".equals(RemoteConfig.noticeStyle().optString("position", "bottom").trim());
+        } catch (Throwable ignored) {
+        }
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, height,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                        : WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
+        lp.gravity = (top ? Gravity.TOP : Gravity.BOTTOM) | Gravity.CENTER_HORIZONTAL;
+        lp.y = margin;
+        return lp;
+    }
+
+    /** 界面销毁时调用：只解除该窗口对全局公告 View 的持有，滚动状态保留 */
+    public static void detach(Activity act) {
+        if (act == null || sView == null || sOverlayActive) {
+            return;
+        }
+        try {
+            ViewParent p = sView.getParent();
+            if (p == null) {
+                return;
+            }
+            View decor = act.getWindow() == null ? null : act.getWindow().getDecorView();
+            View content = act.findViewById(android.R.id.content);
+            if (p == decor || p == content) {
+                ((ViewGroup) p).removeView(sView);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -117,23 +373,18 @@ public class NoticeBar {
     /**
      * 渲染公告条（幂等，可反复调用：首帧、onResume、远程配置回调、首页定时 ticker 都会进来）。
      *
-     * <p>2026-10-23 重写要点：</p>
+     * <p>要点：</p>
      * <ol>
-     *   <li><b>统一字号</b>：首页 tvNotice 用的是布局 {@code @dimen/ts_24}（设计稿 mm 单位换算出的
-     *       px），而直播/点播的叠加层以前写死 {@code setTextSize(24)}（sp），同一设备上明显一大一小。
-     *       现在未配置 JSON fontSize 时，三处界面统一使用 ts_24 的像素值；配置了 fontSize 时
-     *       三处统一按 sp 应用，保证视觉完全一致。</li>
-     *   <li><b>duration 到期不消失</b>：旧实现先 {@code setVisibility(VISIBLE)} 再做到期判断，
-     *       而首页 ticker / onResume / 远程配置回调会周期性重新 render；只要有一次 render 在
-     *       hideRun 之后执行，就会把已隐藏的公告重新点亮，表现为「设了 10 秒却一直显示」。
-     *       现在所有「应隐藏」的判断都放在置可见之前，并且同一内容到期后置 expired=true，
-     *       后续 render 直接保持隐藏，只有公告文本变化才重新计时。</li>
+     *   <li><b>统一字号</b>：未配置 JSON fontSize 时，统一使用 ts_24 的像素值；配置了
+     *       fontSize 时统一按 sp 应用。</li>
+     *   <li><b>duration 到期不消失</b>：所有「应隐藏」的判断都放在置可见之前，并且同一内容
+     *       到期后置 expired=true，后续 render 直接保持隐藏，只有公告文本变化才重新计时。</li>
      *   <li><b>滚动不重排</b>：周期 render 时若文本与速度都没变，不重启跑马灯，避免每次刷新
      *       都把滚动位置拉回起点。</li>
      * </ol>
      */
     private static void render(final Activity act, final TextView tv, String screen) {
-        final ScreenState ss = getOrCreate(screen);
+        final ScreenState ss = GLOBAL;
         ss.view = tv;
         String notice = RemoteConfig.notice();
         JSONObject st = RemoteConfig.noticeStyle();
@@ -192,8 +443,7 @@ public class NoticeBar {
                 hideScreen(ss);
                 return;
             } else if (ss.deadline <= 0) {
-                // 之前是常显（duration=0）或配置刚由 0 改为 N 秒：按当前时间重新起算，
-                // 否则 deadline 一直是 0 会导致公告始终判定为「已到期」而再也显示不出来
+                // 之前是常显（duration=0）或配置刚由 0 改为 N 秒：按当前时间重新起算
                 ss.deadline = now + duration * 1000L;
             }
             if (ss.deadline - now <= 0) {
@@ -210,9 +460,15 @@ public class NoticeBar {
             ss.expired = false;
         }
 
-        // ⑤ 应用样式（三处界面共用同一套尺寸/颜色逻辑）
-        // 位置：首页为 ConstraintLayout，直播/点播叠加层为 FrameLayout
-        applyPosition(tv, st.optString("position", "bottom").trim());
+        // ⑤ 应用样式（系统悬浮窗时位置是窗口级属性）
+        if (sOverlayActive && sOverlayWm != null && tv == sView) {
+            try {
+                sOverlayWm.updateViewLayout(tv, createOverlayWmParams(act != null ? act : tv.getContext()));
+            } catch (Throwable ignored) {
+            }
+        } else {
+            applyPosition(act, tv, st.optString("position", "bottom").trim());
+        }
         int bg = HomeEntry.parseColor(st.optString("bgColor", ""));
         if (bg != 0) {
             tv.setBackgroundColor(bg);
@@ -221,7 +477,7 @@ public class NoticeBar {
         if (fontColor != 0) {
             tv.setTextColor(fontColor);
         }
-        applyFontSize(tv, st);
+        applyFontSize(act, tv, st);
         try {
             if (st.has("alpha")) {
                 tv.setAlpha(Math.max(0, Math.min(100, st.optInt("alpha", 100))) / 100f);
@@ -230,7 +486,6 @@ public class NoticeBar {
         }
 
         // ⑥ 滚动：speed>0 用自定义平滑滚动（由右向左）；否则回退系统 marquee。
-        // 周期 render 时若文本、速度与停顿均未变化则保持当前滚动，避免位置被重置。
         int speed = st.optInt("speed", 0);
         int pause = st.optInt("pause", 0);
         if (pause > 0 && speed <= 0) {
@@ -287,17 +542,20 @@ public class NoticeBar {
     }
 
     /**
-     * 应用公告字号：三处界面（首页布局 TextView / 直播与点播动态叠加层）统一规则。
-     * JSON fontSize>0 时按 sp 应用（三处一致）；未配置时使用首页同款 ts_24 像素值，
-     * 修复叠加层写死 24sp 导致与首页文字大小不一致的问题。
+     * 应用公告字号：JSON fontSize>0 时按 sp 应用；未配置时使用首页同款 ts_24 像素值。
+     * 全局 View 用 Application Context 创建，尺寸仍按当前界面资源换算，保证各界面一致。
      */
-    private static void applyFontSize(TextView tv, JSONObject st) {
-        int fontSize = st.optInt("fontSize", 0);
-        if (fontSize > 0) {
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
-        } else {
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                    tv.getResources().getDimensionPixelSize(R.dimen.ts_24));
+    private static void applyFontSize(Activity act, TextView tv, JSONObject st) {
+        try {
+            int fontSize = st.optInt("fontSize", 0);
+            if (fontSize > 0) {
+                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, fontSize);
+            } else {
+                android.content.res.Resources r = act != null ? act.getResources() : tv.getResources();
+                tv.setTextSize(TypedValue.COMPLEX_UNIT_PX,
+                        r.getDimensionPixelSize(R.dimen.ts_24));
+            }
+        } catch (Throwable ignored) {
         }
     }
 
@@ -317,13 +575,14 @@ public class NoticeBar {
         }
     }
 
-    private static void applyPosition(TextView tv, String position) {
+    private static void applyPosition(Activity act, TextView tv, String position) {
         boolean top = "top".equals(position);
         try {
+            android.content.res.Resources r = act != null ? act.getResources() : tv.getResources();
+            int topMargin = r.getDimensionPixelSize(R.dimen.vs_20);
+            int bottomMargin = r.getDimensionPixelSize(R.dimen.vs_10);
             if (tv.getLayoutParams() instanceof ConstraintLayout.LayoutParams) {
                 ConstraintLayout.LayoutParams lp = (ConstraintLayout.LayoutParams) tv.getLayoutParams();
-                int topMargin = tv.getResources().getDimensionPixelSize(R.dimen.vs_20);
-                int bottomMargin = tv.getResources().getDimensionPixelSize(R.dimen.vs_10);
                 if (top) {
                     lp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID;
                     lp.bottomToBottom = ConstraintLayout.LayoutParams.UNSET;
@@ -339,6 +598,8 @@ public class NoticeBar {
             } else if (tv.getLayoutParams() instanceof FrameLayout.LayoutParams) {
                 FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) tv.getLayoutParams();
                 lp.gravity = (top ? Gravity.TOP : Gravity.BOTTOM) | Gravity.CENTER_HORIZONTAL;
+                lp.topMargin = top ? topMargin : 0;
+                lp.bottomMargin = top ? 0 : bottomMargin;
                 tv.setLayoutParams(lp);
             }
         } catch (Throwable ignored) {
@@ -364,53 +625,93 @@ public class NoticeBar {
         return def;
     }
 
-    // ==================== 动态叠加层（直播/点播） ====================
+    // ==================== 全局最顶层叠加层（界面内兜底） ====================
 
-    private static TextView findOverlay(Activity act, String screen) {
-        ViewGroup content = act.findViewById(android.R.id.content);
-        if (content == null) {
+    /** 公告条容器：窗口 decorView（FrameLayout），保证公告位于本窗口所有内容之上 */
+    private static ViewGroup noticeRoot(Activity act) {
+        if (act == null || act.isFinishing() || act.isDestroyed()) {
             return null;
         }
-        View exist = content.findViewWithTag(TAG_PREFIX + screen);
-        return exist instanceof TextView ? (TextView) exist : null;
+        try {
+            View decor = act.getWindow().getDecorView();
+            if (decor instanceof ViewGroup) {
+                return (ViewGroup) decor;
+            }
+        } catch (Throwable ignored) {
+        }
+        return act.findViewById(android.R.id.content);
     }
 
-    private static TextView obtainOverlay(Activity act, String screen) {
-        TextView exist = findOverlay(act, screen);
-        if (exist != null) {
-            return exist;
+    /**
+     * 取得全局公告 View 并挂到当前窗口最顶层。
+     * 同一个 View 在不同界面之间「搬家」，不重建、不重新设置文本，滚动位置保持不变。
+     */
+    private static TextView obtainOverlay(Activity act) {
+        ViewGroup root = noticeRoot(act);
+        if (root == null) {
+            return sView;
         }
-        ViewGroup content = act.findViewById(android.R.id.content);
-        if (content == null) {
-            return null;
+        try {
+            if (sView == null) {
+                sView = createOverlay(act);
+            }
+            if (sView.getParent() != root) {
+                ViewParent p = sView.getParent();
+                if (p instanceof ViewGroup) {
+                    ((ViewGroup) p).removeView(sView);
+                }
+                try {
+                    root.addView(sView, createParams(act));
+                } catch (Throwable th) {
+                    // 个别 ROM 的 decorView 不是 FrameLayout：退回内容容器（FrameLayout）
+                    View content = act.findViewById(android.R.id.content);
+                    if (content instanceof ViewGroup) {
+                        ((ViewGroup) content).addView(sView, createParams(act));
+                    }
+                }
+            }
+            // 尺寸/内边距按当前界面（AutoSize 适配后的资源）重新换算
+            int padH = act.getResources().getDimensionPixelSize(R.dimen.vs_15);
+            sView.setPadding(padH, 0, padH, 0);
+        } catch (Throwable ignored) {
         }
-        TextView tv = new TextView(act);
-        tv.setTag(TAG_PREFIX + screen);
-        // 公告条占满屏幕整宽（无左右边距）
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                act.getResources().getDimensionPixelSize(R.dimen.vs_40));
-        lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        lp.bottomMargin = act.getResources().getDimensionPixelSize(R.dimen.vs_10);
-        tv.setLayoutParams(lp);
-        int padH = act.getResources().getDimensionPixelSize(R.dimen.vs_15);
-        tv.setPadding(padH, 0, padH, 0);
+        return sView;
+    }
+
+    private static TextView createOverlay(Context ctx) {
+        // 用 Application Context：全局静态 View 不持有任何 Activity
+        TextView tv = new TextView(ctx.getApplicationContext());
+        tv.setTag(TAG_OVERLAY);
+        tv.setLayoutParams(createParams(ctx));
         tv.setSingleLine(true);
         tv.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
         tv.setMarqueeRepeatLimit(-1);
         tv.setGravity(Gravity.CENTER_VERTICAL);
         tv.setTextColor(0xFFFFD54F);
         tv.setBackgroundColor(0x66000000);
-        // 默认字号与首页 tvNotice 保持一致（@dimen/ts_24，mm→px）：旧实现写死 24sp，
-        // 与首页布局字体单位不同，导致同一台设备上三处公告文字大小不一致。
-        // render() 中若 JSON 配了 fontSize，会再按 sp 统一覆盖三处界面。
         tv.setTextSize(TypedValue.COMPLEX_UNIT_PX,
-                act.getResources().getDimensionPixelSize(R.dimen.ts_24));
+                ctx.getResources().getDimensionPixelSize(R.dimen.ts_24));
         tv.setFocusable(false);
         tv.setClickable(false);
         tv.setVisibility(View.GONE);
-        content.addView(tv);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                // 抬高 Z 轴：即使后续有其它视图加入同一窗口，公告仍覆盖在最上层
+                tv.setElevation(1000f);
+            }
+        } catch (Throwable ignored) {
+        }
         return tv;
+    }
+
+    private static FrameLayout.LayoutParams createParams(Context ctx) {
+        // 公告条占满屏幕整宽（无左右边距）
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ctx.getResources().getDimensionPixelSize(R.dimen.vs_40));
+        lp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        lp.bottomMargin = ctx.getResources().getDimensionPixelSize(R.dimen.vs_10);
+        return lp;
     }
 
     // ==================== 自定义速度滚动（由右向左） ====================
@@ -418,10 +719,8 @@ public class NoticeBar {
     /**
      * 启动「由右向左」的自定义平滑滚动（单份文本整条走完模式）。
      *
-     * <p>旧实现为了让任意时刻屏内都有文字，会把「文本 + 空格」重复拼接多份后整体平移，
-     * 短文本因此会在屏内同时出现多份，表现为「文字还没走完就追加显示下一份」。现在只保留
-     * 一份文本：先垫一段宽度 ≥ 屏宽的前导空格，让文字从屏幕右侧外进入，完整向左走出屏幕
-     * （文字右边缘完全离开屏幕）后，按 {@code notice.pause} 停顿再走下一遍。</p>
+     * <p>只保留一份文本：先垫一段宽度 ≥ 屏宽的前导空格，让文字从屏幕右侧外进入，完整
+     * 向左走出屏幕（文字右边缘完全离开屏幕）后，按 {@code notice.pause} 停顿再走下一遍。</p>
      *
      * <p>防串扰：每次启动/停止都会让 scrollToken 自增，旧的延时任务与旧的动画
      * （通过 speedRun 身份比对）都会失效，避免快速换内容时出现多条滚动循环叠加。</p>

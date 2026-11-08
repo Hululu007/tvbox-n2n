@@ -86,6 +86,12 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 > **滚动公告**：`notice` 用对象写法时支持 `text` / `speed`（像素/秒）/ `pause`（整条走完后的停顿秒数）/
 > `duration` / `fontSize` / `textColor` / `bgColor` / `alpha` / `position` / `show`（按首页、直播、点播分别开关）。
 > `speed > 0` 时只保留一份文本，从右侧进入、向左完整走出一遍后再走下一遍，**短文本不会重复追加副本**。
+>
+> **公告层级**：首次运行会引导开启「悬浮窗」权限。授权后公告由前台服务挂到系统最顶层（`TYPE_APPLICATION_OVERLAY`），
+> 显示在所有应用之上，切换界面或切出本 App 都不会中断/重新加载；未授权时自动退化为当前窗口内公告。
+
+> **应用推荐**：主接口 `home.appRecommends` 配置后，首页推荐影片上方会显示「应用推荐」区块，自动换行，
+> 卡片尺寸与推荐海报一致；每项支持 `name` / `icon` / `pkg` / `url` / `desc`。数组为空/不配置时整块隐藏。
 
 > **相对地址规则**：`live`、`epg`、`proxy`、`upgrade.checkUrl`、`appMarket.url/detailUrl`、自定义点播入口等，未写 `http://` 或 `https://` 时，**优先拼接主配置来源地址**（`CONFIG_URL` / `remoteConfigUrl`）的协议 + 域名/IP + 所在目录；配置来自本地文件/assets 时回退拼接主接口 `api` 的域名/IP。例如主配置地址为 `http://1.2.3.4:8080/php-demo/index.php?r=config`，`live = index.php?r=live` → `http://1.2.3.4:8080/php-demo/index.php?r=live`。
 
@@ -100,6 +106,7 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 │ 顶栏：日期/WiFi/搜索/显示方式/主题/收藏…           │
 ├──────────────────────────────────────────────────┤
 │ 历史 点播 直播 搜索 收藏 推送 文件 组网 系统 捐助  │
+│  ── 应用推荐（home.appRecommends，自动换行） ──    │
 │  ── 影视推荐内容（默认多行网格） ──                │
 └──────────────────────────────────────────────────┘
 ```
@@ -113,6 +120,7 @@ TKLauncher 是电视端影视聚合 + 桌面应用。安装后：
 - **捐助**：项目介绍与收款二维码（由 JSON 配置）；
 - 首页入口行与顶栏可由 JSON 的 `homeEntries` / `topEntries` 整体替换；
 - 首页推荐默认**多行**；可用 JSON `settings.homeRecStyle = false` 改为单行；
+- 主接口 `home.appRecommends` 非空时，推荐影片上方显示「应用推荐」区块（自动换行，卡片尺寸与推荐海报一致）；
 - 未配置点播接口时也可把本机当作纯直播盒子使用。
 
 ---

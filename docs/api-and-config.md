@@ -70,6 +70,8 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "bootStart": true,
   "notice": {                             // 滚动公告：纯字符串=系统 marquee（短文本不滚）；对象=自定义滚动（推荐）
                                           // 对象写法只保留一份文本：从右向左完整走一遍，短文本也不会追加副本
+                                          // 首次运行会引导开启「悬浮窗」权限；授权后公告挂到系统最顶层，
+                                          // 切换界面/切出本 App 不中断、不重新加载；未授权时退化为窗口内公告
     "text": "欢迎使用 TKLauncher",
     "speed": 50,                          // 像素/秒，>0 启用自定义滚动（单遍走完，不重复拼接）
     "pause": 8,                           // 整条公告完整走完后停顿的秒数（0=立即走下一遍；只配 pause 时默认速度 100）
@@ -88,6 +90,12 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
       { "name": "演示影片一", "pic": "https://placehold.co/300x400/png", "note": "9.0" }
       // 首页推荐与点播界面「热播推荐」共用；未配置时回退豆瓣热播
       // （settings.homeRec=2 时使用观看历史）
+    ],
+    "appRecommends": [                    // 首页「应用推荐」（推荐影片上方，自动换行，卡片尺寸与推荐海报一致）
+      { "name": "演示应用", "icon": "https://placehold.co/180x180/png",
+        "pkg": "com.example.app", "url": "https://example.com/app.apk", "desc": "推荐" }
+      // name 必填；icon 支持 http(s) 或内置 drawable 名；pkg 已安装直接拉起，
+      // 未安装且配置 url 时后台下载安装；desc 为卡片副标题；数组为空/不配置=整块隐藏
     ]
   },
   "appMarket": {

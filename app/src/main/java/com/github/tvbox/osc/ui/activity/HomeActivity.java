@@ -411,6 +411,8 @@ public class HomeActivity extends BaseActivity {
         jumpToScreenIfNeeded();
         jumpToLiveIfNeeded();
         upgradeCheckOnce();
+        // 主接口就绪后（首次启动配置为异步加载）也能及时弹出悬浮窗权限引导
+        promptNoticeOverlayOnce();
     }
 
     /** 非 standard 默认界面只跳转一次，避免主接口回调重复进入 */
@@ -701,8 +703,88 @@ public class HomeActivity extends BaseActivity {
         }
         mHandler.post(mRunnable);
 
+        // 滚动公告：首次运行时引导开启「悬浮窗」权限，使公告能显示在所有 App 最顶层。
+        promptNoticeOverlayOnce();
+
         // 桌面模式在清单中直接声明 HOME（参考 MQLauncher），不再在应用内引导选择桌面
 
+    }
+
+    /**
+     * 滚动公告悬浮窗权限引导（每次安装只弹一次）。
+     *
+     * <p>有 {@code SYSTEM_ALERT_WINDOW} 权限时公告由 {@code NoticeOverlayService} 挂到系统
+     * 最顶层，切换界面/切出本 App 都不中断；无权限时退化为当前窗口内公告。授权后无需重启，
+     * 下次界面 resume 时服务会自动接管。</p>
+     */
+    private void promptNoticeOverlayOnce() {
+        try {
+            if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) {
+                return;
+            }
+            if (Settings.canDrawOverlays(this)) {
+                return;
+            }
+            String notice = com.github.tvbox.osc.n2n.RemoteConfig.notice();
+            if (notice == null || notice.trim().isEmpty()) {
+                return;
+            }
+            if (Hawk.get("notice_overlay_prompted", false)) {
+                return;
+            }
+            Hawk.put("notice_overlay_prompted", true);
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+                    try {
+                        final TipDialog[] holder = new TipDialog[1];
+                        holder[0] = new TipDialog(HomeActivity.this,
+                                "开启「悬浮窗」权限后，滚动公告可显示在所有应用最顶层，切换界面或应用时不会中断。",
+                                "去开启", "暂不", new TipDialog.OnListener() {
+                            @Override
+                            public void left() {
+                                if (holder[0] != null) {
+                                    holder[0].dismiss();
+                                }
+                                openNoticeOverlaySettings();
+                            }
+
+                            @Override
+                            public void right() {
+                                if (holder[0] != null) {
+                                    holder[0].dismiss();
+                                }
+                            }
+
+                            @Override
+                            public void cancel() {
+                            }
+                        });
+                        holder[0].show();
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }, 1500);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /** 打开本应用的「显示在其他应用上层」系统设置页；厂商 ROM 无此页面时回退应用详情页 */
+    private void openNoticeOverlaySettings() {
+        try {
+            Intent it = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:" + getPackageName()));
+            startActivity(it);
+        } catch (Throwable th) {
+            try {
+                startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        android.net.Uri.parse("package:" + getPackageName())));
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     @Override

@@ -88,7 +88,6 @@ public class CustomVodActivity extends BaseActivity {
     private View currentView = null;
     private final Handler mHandler = new Handler();
     private long mExitTime = 0;
-    private boolean restartPending = false;
 
     /** 入口传入：显示名称 / 数据接口地址 */
     private String entryName = "";
@@ -399,15 +398,28 @@ public class CustomVodActivity extends BaseActivity {
         }
         // 是 json 直接解析，不是 json 先解密后加载（ke 前缀/固定密钥两种模式自动识别）
         json = com.github.tvbox.osc.n2n.ConfigCrypto.maybeDecrypt(json);
+        // 记录注入前的当前源 key：若已经是本界面的 cv_ 源（重复解析/切换后重新加载），
+        // 优先沿用该源，而不是无脑回到第一个可用源。
+        String selectedKey = "";
+        SourceBean selectedBefore = ApiConfig.get().getHomeSourceBean();
+        if (selectedBefore != null && selectedBefore.getKey() != null) {
+            selectedKey = selectedBefore.getKey();
+        }
         customSources.clear();
         // 传入接口地址：配置内的 "./" 相对地址（spider/api/jar/playUrl/ext）按接口所在目录解析，
         // type=0/1/3/4 各类源都能在独立点播界面正常加载
         customSources.addAll(ApiConfig.get().injectCustomSources(json, entryUrl));
         SourceBean first = null;
+        SourceBean preferred = null;
         for (SourceBean sb : customSources) {
-            if (isUsableSource(sb)) {
+            if (!isUsableSource(sb)) {
+                continue;
+            }
+            if (first == null) {
                 first = sb;
-                break;
+            }
+            if (!selectedKey.isEmpty() && selectedKey.equals(sb.getKey())) {
+                preferred = sb;
             }
         }
         if (first == null) {
@@ -415,14 +427,20 @@ public class CustomVodActivity extends BaseActivity {
             showEmpty();
             return;
         }
+        if (preferred != null) {
+            first = preferred;
+        }
         // 保存原当前源，仅内存切换（不写 Hawk，退出本界面即恢复）。
-        // 切源重启界面时通过 prevHomeKey 透传原始源 key，避免把 cv_ 临时源误存为「原当前源」。
-        if (prevHomeKey != null && !prevHomeKey.isEmpty()) {
-            prevHome = ApiConfig.get().getSource(prevHomeKey);
-        } else {
-            prevHome = ApiConfig.get().getHomeSourceBean();
-            if (prevHome != null) {
-                prevHomeKey = prevHome.getKey();
+        // 已经是 cv_ 临时源时不覆盖首次进入前保存的原当前源。
+        if (prevHome == null) {
+            if (prevHomeKey != null && !prevHomeKey.isEmpty() && !prevHomeKey.startsWith("cv_")) {
+                prevHome = ApiConfig.get().getSource(prevHomeKey);
+            } else {
+                SourceBean current = ApiConfig.get().getHomeSourceBean();
+                if (current != null && current.getKey() != null && !current.getKey().startsWith("cv_")) {
+                    prevHome = current;
+                    prevHomeKey = current.getKey();
+                }
             }
         }
         ApiConfig.get().setHomeSourceTemp(first);
@@ -594,11 +612,12 @@ public class CustomVodActivity extends BaseActivity {
                         fDialog.dismiss();
                         return;
                     }
-                    // 与默认点播模块一致：切源后重启本界面，重新加载所选源的分类与推荐
-                    ApiConfig.get().setHomeSourceTemp(value);
+                    // 与默认点播模块一致：在本界面内原地切换源，重新加载所选源的分类与推荐。
+                    // 不再 finish() 后重启 Activity：旧实现会与 onPause 的 restoreHomeSource()
+                    // 抢占当前源，导致切源后仍显示第一个源（或直接失败）。
                     fDialog.dismiss();
-                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」，正在重启点播界面", Toast.LENGTH_SHORT).show();
-                    restartCustomVod();
+                    Toast.makeText(mContext, "已切换到「" + value.getName() + "」", Toast.LENGTH_SHORT).show();
+                    switchToSource(value);
                 }
 
                 @Override
@@ -634,32 +653,45 @@ public class CustomVodActivity extends BaseActivity {
     }
 
     /**
-     * 切源后重启本界面（与默认点播 VodActivity.restartVod 行为一致）。
-     * ApiConfig 单例仍持有注入的 cv_ 源与已切换的当前源，重启后 loadCustomConfig 会
-     * 重新解析注入并加载所选源分类；prevHomeKey 透传保证退出时恢复到进入本界面前的源。
+     * 在本界面内原地切换到指定的 cv_ 源（不重启 Activity）。
+     *
+     * <p>旧实现 finish() 后重新 startActivity：旧界面 onPause 会执行
+     * {@link #restoreHomeSource()}（移除 cv_ 源并恢复原当前源），而新界面加载时
+     * {@link #applyCustomJson(String)} 又总是选择第一个可用源，导致「切源失败/跳回第一个源」。
+     * 现在只切内存源、清空旧源在途请求，再重新拉取所选源的分类。</p>
      */
-    private void restartCustomVod() {
-        if (restartPending) {
+    private void switchToSource(final SourceBean target) {
+        if (target == null || target.getKey() == null) {
             return;
         }
-        restartPending = true;
-        mHandler.postDelayed(new Runnable() {
+        final String key = target.getKey();
+        // 取消其它 cv_ 源仍在途的 homeContent 请求；type=3 的 Spider 请求无法中断，
+        // 靠 pendingSortKey 在结果回调处丢弃旧源数据
+        try {
+            for (SourceBean sb : customSources) {
+                if (sb.getKey() != null && !key.equals(sb.getKey())) {
+                    OkGo.getInstance().cancelTag(sb.getKey() + "_sort");
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        ApiConfig.get().setHomeSourceTemp(target);
+        pendingSortKey = key;
+        currentSelected = 0;
+        sortFocused = 0;
+        if (mViewPager != null) {
+            mViewPager.setCurrentItem(0, false);
+        }
+        showLoading();
+        ApiConfig.get().prepareSource(target, new Runnable() {
             @Override
             public void run() {
                 if (isFinishing() || isDestroyed()) {
                     return;
                 }
-                Intent intent = new Intent(CustomVodActivity.this, CustomVodActivity.class);
-                intent.putExtra("name", entryName);
-                intent.putExtra("url", entryUrl);
-                if (prevHomeKey != null && !prevHomeKey.isEmpty()) {
-                    intent.putExtra("prevHomeKey", prevHomeKey);
-                }
-                finish();
-                startActivity(intent);
-                overridePendingTransition(0, 0);
+                sourceViewModel.getSort(key, true);
             }
-        }, 200);
+        });
     }
 
     /** 重新加载当前 cv_ 源分类（强制绕过 homeContent 缓存） */

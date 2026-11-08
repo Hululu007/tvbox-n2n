@@ -279,6 +279,9 @@ switch ($route) {
             //                'show'      = 按界面开关：['home'=>true,'live'=>true,'vod'=>true]
             //   客户端表现：只保留一份文本，从右侧进入、向左完整走出屏幕后再走下一遍，
             //   短文本不会重复拼接/追加副本；pause 控制两遍之间的停顿。
+            //   显示层级：首次运行会引导开启「悬浮窗」权限；授权后公告由前台服务挂到
+            //   系统最顶层（TYPE_APPLICATION_OVERLAY），切换界面/切出本 App 都不会中断或重新加载；
+            //   未授权时退化为当前窗口内公告（同样跨 Activity 保持同一份滚动状态）。
             'notice' => [
                 'text' => '欢迎使用 TKLauncher · 如有问题请联系前台 xxx-xxxxxxx',
                 'speed' => 50,
@@ -289,7 +292,7 @@ switch ($route) {
             'checkInterval'        => 30,            // 配置检查间隔（分钟）
             'loadSuccessDuration'  => 3,             // 点播界面接口加载成功通知自动关闭秒数（0~60；首页不提示）
             'warningAutoClose'     => 0,             // 免责声明弹窗自动关闭秒数（0=需手动点确定）
-            'ua'                   => '',            // 全局 UA（空=内置浏览器 UA）
+            'ua'                   => 'Mozilla/5.0 (Linux; Android 13; TV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', // 全局 UA（空=内置浏览器 UA）
             'aliLicenseKey'        => '',            // 阿里云播放器 SDK License Key（5.5+ 必配，否则弹提示）
             'hin2nEntry'           => true,          // 首页是否显示组网固定入口
             'theme'                => '',            // 默认主题（索引/中文名/英文 alias，空=跟随用户选择）
@@ -312,6 +315,15 @@ switch ($route) {
                 //  配了 id+sourceKey 点击进详情；仅 name 时点击按片名搜索
                 'recMovies'     => [
                     // ['name' => '示例影片', 'pic' => 'https://example.com/pic.jpg', 'note' => '9.0'],
+                ],
+                // 首页「应用推荐」：显示在推荐影片列表上方，自动换行，卡片尺寸与推荐海报一致。
+                //  name=显示名（必填） icon=图标（http(s) 或内置 drawable 名）
+                //  pkg/packageName=应用包名（已安装直接拉起） url=未安装时的 APK 下载地址
+                //  desc=副标题（可选，显示在卡片底部名称上方）
+                //  type/target：可选，兼容 page/feature/vod 入口；留空时按 app 处理
+                'appRecommends' => [
+                    // ['name' => '示例应用', 'icon' => 'https://example.com/icon.png',
+                    //  'pkg' => 'com.example.app', 'url' => 'https://example.com/app.apk', 'desc' => '推荐'],
                 ],
             ],
             // ==================================================================

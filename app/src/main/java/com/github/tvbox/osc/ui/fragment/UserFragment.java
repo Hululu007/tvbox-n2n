@@ -19,6 +19,7 @@ import com.github.tvbox.osc.bean.VodInfo;
 import com.github.tvbox.osc.cache.RoomDataManger;
 import com.github.tvbox.osc.event.ServerEvent;
 import com.github.tvbox.osc.ui.activity.*;
+import com.github.tvbox.osc.ui.adapter.HomeAppRecommendAdapter;
 import com.github.tvbox.osc.ui.adapter.HomeHotVodAdapter;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
 import com.github.tvbox.osc.util.HawkConfig;
@@ -61,6 +62,7 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
     /** hin2n 组网内置模块入口（随入口行一起滚动） */
     private LinearLayout tvHin2nHome;
     public static HomeHotVodAdapter homeHotVodAdapter;
+    private HomeAppRecommendAdapter appRecommendAdapter;
     public static TvRecyclerView tvHotListForGrid;
     public static TvRecyclerView tvHotListForLine;
 
@@ -357,6 +359,64 @@ public class UserFragment extends BaseLazyFragment implements View.OnClickListen
             tvHotListForGrid.setVisibility(View.GONE);
             tvHotListForLine.setVisibility(View.VISIBLE);
         }
+
+        // 应用推荐（主接口 home.appRecommends）：位于推荐列表上方，自动换行，
+        // spanCount / 卡片尺寸与推荐列表一致；未配置时整块隐藏。
+        initAppRecommends(spanCount);
+    }
+
+    /**
+     * 初始化首页「应用推荐」区块（home.appRecommends）。
+     *
+     * <p>使用与推荐影片网格相同的 spanCount 与 ImgUtil.Style，卡片尺寸保持一致；
+     * 网格嵌在外层 ScrollView 中，必须关闭内部滚动并允许 wrap_content 重新测量，
+     * 否则首帧 adapter 为空会把高度固定为极小值。</p>
+     */
+    private void initAppRecommends(int spanCount) {
+        View section = findViewById(R.id.appRecommendSection);
+        TvRecyclerView list = findViewById(R.id.tvAppRecommendList);
+        if (section == null || list == null) {
+            return;
+        }
+        List<RemoteConfig.AppRecommend> apps = RemoteConfig.homeAppRecommends();
+        if (apps == null || apps.isEmpty()) {
+            section.setVisibility(View.GONE);
+            return;
+        }
+        section.setVisibility(View.VISIBLE);
+        list.setHasFixedSize(false);
+        list.setLayoutManager(new V7GridLayoutManager(this.mContext, spanCount));
+        list.setNestedScrollingEnabled(false);
+        appRecommendAdapter = new HomeAppRecommendAdapter(style);
+        appRecommendAdapter.setOnItemClickListener(new BaseQuickAdapter.OnItemClickListener() {
+            @Override
+            public void onItemClick(BaseQuickAdapter adapter, View view, int position) {
+                RemoteConfig.AppRecommend app = (RemoteConfig.AppRecommend) adapter.getItem(position);
+                if (app == null) {
+                    return;
+                }
+                FastClickCheckUtil.check(view);
+                RemoteConfig.Entry e = HomeAppRecommendAdapter.toEntry(app);
+                com.github.tvbox.osc.n2n.EntryDispatcher.open(mActivity, e);
+            }
+        });
+        list.setOnItemListener(new TvRecyclerView.OnItemListener() {
+            @Override
+            public void onItemPreSelected(TvRecyclerView parent, View itemView, int position) {
+                itemView.animate().scaleX(1.0f).scaleY(1.0f).setDuration(300).setInterpolator(new BounceInterpolator()).start();
+            }
+
+            @Override
+            public void onItemSelected(TvRecyclerView parent, View itemView, int position) {
+                itemView.animate().scaleX(1.2f).scaleY(1.2f).setDuration(300).setInterpolator(new BounceInterpolator()).start();
+            }
+
+            @Override
+            public void onItemClick(TvRecyclerView parent, View itemView, int position) {
+            }
+        });
+        list.setAdapter(appRecommendAdapter);
+        appRecommendAdapter.setNewData(apps);
     }
 
     /**

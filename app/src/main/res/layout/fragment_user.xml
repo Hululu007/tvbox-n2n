@@ -390,6 +390,45 @@
     </LinearLayout>
 
     </HorizontalScrollView>
+
+<!-- 应用推荐（主接口 home.appRecommends；自动换行，卡片尺寸与推荐列表一致） -->
+    <LinearLayout
+        android:id="@+id/appRecommendSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:orientation="vertical"
+        android:paddingLeft="@dimen/vs_20"
+        android:paddingTop="@dimen/vs_30"
+        android:paddingRight="@dimen/vs_20"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvAppRecommendTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-black"
+            android:paddingLeft="@dimen/vs_10"
+            android:paddingBottom="@dimen/vs_10"
+            android:text="应用推荐"
+            android:textColor="@color/color_FFFFFF"
+            android:textSize="@dimen/ts_28" />
+        <!-- 自动换行网格：spanCount 与推荐列表一致，卡片尺寸同样由 ImgUtil.Style 控制 -->
+        <com.owen.tvrecyclerview.widget.TvRecyclerView
+            android:id="@+id/tvAppRecommendList"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:clipChildren="false"
+            android:clipToPadding="false"
+            android:descendantFocusability="afterDescendants"
+            app:tv_horizontalSpacingWithMargins="@dimen/vs_20"
+            app:tv_layoutManager="V7GridLayoutManager"
+            app:tv_selectedItemIsCentered="true"
+            app:tv_verticalSpacingWithMargins="@dimen/vs_20" />
+
+    </LinearLayout>
+
 <!-- 首页多行排版 -->
     <com.owen.tvrecyclerview.widget.TvRecyclerView
         android:id="@+id/tvHotListForGrid"
