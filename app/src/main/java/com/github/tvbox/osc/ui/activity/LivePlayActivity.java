@@ -2102,8 +2102,8 @@ public class LivePlayActivity extends BaseActivity {
                         toggleCurrentChannelFavorite();
                         break;
                     case 6:
-                        select = !Hawk.get(HawkConfig.LIVE_BOOT_START, false);
-                        Hawk.put(HawkConfig.LIVE_BOOT_START, select);
+                        select = !Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false);
+                        Hawk.put(HawkConfig.HOME_DEFAULT_SHOW, select);
                         Toast.makeText(App.getInstance(), select ? "已开启：下次打开 App 直接进入直播" : "已关闭直播开机启动", Toast.LENGTH_SHORT).show();
                         break;
                 }
@@ -2592,7 +2592,7 @@ public class LivePlayActivity extends BaseActivity {
         liveSettingGroupList.get(5).getLiveSettingItems().get(2).setItemSelected(Hawk.get(HawkConfig.LIVE_CHANNEL_REVERSE, false));
         liveSettingGroupList.get(5).getLiveSettingItems().get(3).setItemSelected(Hawk.get(HawkConfig.LIVE_CROSS_GROUP, false));
         liveSettingGroupList.get(5).getLiveSettingItems().get(4).setItemSelected(Hawk.get(HawkConfig.LIVE_SKIP_PASSWORD, false));
-        liveSettingGroupList.get(5).getLiveSettingItems().get(6).setItemSelected(Hawk.get(HawkConfig.LIVE_BOOT_START, false));
+        liveSettingGroupList.get(5).getLiveSettingItems().get(6).setItemSelected(Hawk.get(HawkConfig.HOME_DEFAULT_SHOW, false));
         // 渲染方式默认选中：0=TextureView, 2=SurfaceView
         int renderIdx = Hawk.get(HawkConfig.PLAY_RENDER, 0) == 2 ? 1 : 0;
         liveSettingGroupList.get(3).getLiveSettingItems().get(renderIdx).setItemSelected(true);

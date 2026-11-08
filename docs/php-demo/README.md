@@ -6,7 +6,7 @@
 
 - PHP 7.4+（7.4 / 8.x 均可）
 - 开启 `openssl` 扩展（`php -m | grep openssl`）
-- `mbstring` 可选：未开启时演示搜索会自动使用 UTF-8 首字节截取与非 ASCII 单字节小写回退（接口输出不受影响）
+- `mbstring` 可选：未安装时 demo 自动退化为字节级小写/UTF-8 首字符截取，应用市场首字母搜索仍可使用
 
 ## 2. 部署
 
@@ -37,7 +37,6 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | `index.php?r=live` | `live` | 直播源 JSON（可选 `format=txt`；客户端兼容 txt/m3u） |
 | `index.php?r=live&format=txt` | `live` | 直播源传统 txt 文本（`分组,#genre#` / `频道,url#url2`） |
 | `index.php?r=epg&ch={频道名}&date={yyyy-MM-dd}&days={天数}` | `epg` | 节目单 JSON（支持一次返回多天） |
-| `index.php?r=hotel_layout&id=grid\|list\|showcase` | `screens[].layoutUrl` | 酒店桌面布局插件 demo（纯 JSON，不需要加密） |
 | `index.php?r=market&category={category}&sort={sort}&page={page}&pageSize={pageSize}&keyword={keyword}` | `appMarket.url` | 应用市场列表 |
 | `index.php?r=detail&pkg={packageName}` | `appMarket.detailUrl` | 应用详情 |
 | `index.php?r=upgrade` | `upgrade.checkUrl` | 升级检查 |
@@ -46,7 +45,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 主配置里的接口地址使用**相对地址**（如 `index.php?r=api&enc=ke`），客户端会自动以**主配置 URL 的域名/IP + 所在目录**拼接（配置来自本地文件时回退拼接主接口 api 域名），无需写死域名。
 
-`r=config` 返回完整系统配置：接口地址、`epgDays`、`settings` 全量设置项、首页 `home`、`themes`、`tkp2p`、`topEntries`/`homeEntries`/`quickEntries`（推荐下方图片入口行）、应用市场、升级与捐助等，字段含义与 [配置示例](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 一致。
+`r=config` 返回完整系统配置：接口地址、`epgDays`、`settings` 全量设置项、首页 `home`、`themes`、`tkp2p`、`topEntries`/`homeEntries`、应用市场、升级与捐助等，字段含义与 [配置示例](file:///f:/tvbox-n2n/docs/tvbox-config.example.jsonc) 一致。
 
 ### 3.0 滚动公告（`notice`）
 
@@ -55,7 +54,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 | 写法 | 示例 | 行为 |
 |------|------|------|
 | 纯字符串 | `"notice": "欢迎使用 TKLauncher"` | 走 Android 系统 marquee；**短于一屏的文本不会滚**（Android 固有行为） |
-| 对象（推荐） | 见下方 | 走客户端自定义滚动：单份文本从右向左**完整走完**，短文本也会滚且不会追加副本 |
+| 对象（推荐） | 见下方 | 走客户端自定义滚动，**短文本也会滚** |
 
 对象写法：
 
@@ -65,26 +64,19 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
     "text": "欢迎使用 TKLauncher · 前台电话 xxx-xxxxxxx",
     "speed": 50,
     "pause": 8,
-    "duration": 0,
     "textColor": "#FFFFFFFF",
-    "bgColor": "#FF000000",
-    "show": { "home": true, "live": true, "vod": true, "hotel": true }
+    "bgColor": "#FF000000"
   }
 }
 ```
 
 - `text`（必填）：公告内容；
-- `speed`（可选，>0）：滚动速度，单位像素/秒；为 0 或缺失时回退系统 marquee。启用后只保留一份文本，
-  从右侧进入、向左完整走出屏幕后再走下一遍（**短文本不再重复拼接/追加副本**）；
-- `pause`（可选）：**整条公告完整走完一遍后停顿的秒数**，0=立即走下一遍；只配 `pause` 时默认速度 100；
-- `duration`（可选）：自动隐藏秒数，0=常驻；
-- `textColor` / `bgColor` / `alpha` / `fontSize` / `position`（可选）：颜色、透明度、字号、上/下位置；
-- `show`（可选）：按 `home` / `live` / `vod` / `hotel` 分别开关；酒店界面会优先显示 `screens[].ticker`。
+- `speed`（>0）：滚动速度，单位像素/秒；为 0 或缺失时回退系统 marquee；
+- `pause`：整条公告完整走完后停顿的秒数（0=立即走下一遍；只配 `pause` 不配 `speed` 时默认速度 100）；
+- `duration` / `fontSize` / `alpha` / `position` / `show`（可选）：自动隐藏秒数、字号、透明度、位置、按首页/直播/点播分别开关；
+- `textColor` / `bgColor`（可选）：颜色 `#RRGGBB` 或 `#AARRGGBB`。
 
-> **系统悬浮窗公告（2026-11-07 起）**：客户端持有「显示在其他应用上层」权限时，公告以系统悬浮窗
-> 显示在**所有 App 最顶层**，切换界面甚至切出本 App 滚动都不中断；无权限则自动退化为界面内置顶
-> 公告，无需服务端改动。主界面已回退到 `28165ae` 版本，客户端不再自动弹窗引导授权，
-> 可在系统设置中手动开启该权限。
+**单份文本滚动**：启用 `speed` 后客户端只保留一份文本，先从屏幕右侧外进入，向左完整走出屏幕（含 TextView 内边距）后按 `pause` 停顿，再开始下一遍；短文本不会再重复拼接或同时出现多份副本。
 
 ### 3.1 直播 JSON 格式
 
@@ -115,7 +107,6 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   - 也兼容 `playerType`（-1/0/1/2/3）与平行数组 `decodes`；
   - 客户端仅在用户未手动设置该线路解码时采用，用户播放中调整后以用户设置为准；
 - **支持的节目类型（播放地址协议）**：`http(s)` 直链（m3u8/flv/mp4 等）、`rtmp://`、`rtsp://`、`webview://`（WebView 直接播网页）、`video://`（WebView 嗅探网页视频）、`tkp2p://`（内置 P2P，引擎见主配置 `tkp2p` 段）；
-- **点播同样支持**：点播源返回的播放地址若是 `webview://` / `video://` / `tkp2p://`，播放页会自动切换到 WebView 播放层；
 - 请求 `index.php?r=live&format=txt` 返回传统 txt（`分组,#genre#` / `频道,url#url2`），客户端同样兼容；txt 不携带 `decode`；
 - 客户端同时兼容传统 txt（`分组,#genre#` / `频道,url#url2`）与 m3u（`#EXTM3U`/`#EXTINF`）文本源，按内容自动识别。
 
@@ -136,6 +127,12 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 - 每条节目必填 `start` / `end`（`HH:mm`）与 `title`；
 - 单日格式可不写 `date`，客户端全部归到请求日期；
 - 写了 `date`（`yyyy-MM-dd`）即按天拆分缓存，配合 `days` 一次下发多天，减少请求量。
+
+### 3.3 点播网页源与接口热更新
+
+- 点播源返回的播放地址若为 `webview://` / `video://` / `tkp2p://`，播放页会自动切换到 WebView 播放层；`tkp2p://` 的引擎参数由主配置 `tkp2p` 段控制；
+- 点播 / 直播 / EPG 接口地址变更后，客户端会立即删除点播接口磁盘缓存、清空 EPG 缓存并通知正在显示的界面重载，**无需重启 App**；
+- 自定义点播（入口 `type=vod`）的搜索只查该界面注入的源，与默认点播搜索互不影响。
 
 ## 4. 加密格式（与客户端 ConfigCrypto.java 一致）
 
@@ -222,9 +219,6 @@ A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 J
 | `forceOverride` | 接口强制覆盖：`false`=用户手动配置优先；`true`=全部覆盖；也可对象逐项控制 |
 | `defaultScreen` | 启动加载的界面 id：`standard` 或 `screens` 中的 id |
 | `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |
-| `screens[].layoutUrl` | 布局插件 JSON 地址，demo 为 `index.php?r=hotel_layout&id=grid`；只覆盖外观/入口，接口请写在本屏 `api/live/epg` |
-| `notice.pause` | 整条滚动公告走完后的停顿秒数 |
-| `loadSuccessDuration` | 点播接口首次加载成功后，点播界面顶部提示的自动关闭秒数（0=不显示，默认 3，范围 0~60） |
 
 按 MAC 返回不同酒店桌面的示例：
 
@@ -240,7 +234,6 @@ $config['screens'] = [[
     'api'      => 'http://hotel-a.example.com/vod.json',
     'live'     => 'http://hotel-a.example.com/live.json',
     'epg'      => 'http://hotel-a.example.com/epg.json',
-    'layoutUrl' => 'index.php?r=hotel_layout&id=grid',   // 纯 JSON，不要带 enc 加密参数
     'columns'  => 3,
     'rows'     => 2,
     'entries'  => [
@@ -251,7 +244,4 @@ $config['screens'] = [[
 ]];
 ```
 
-- 接口地址变更后客户端会立即清空点播/EPG 缓存并重载界面，**无需重启 App**。
-- 从零教程：[酒店界面与布局插件完整开发指南](../hotel-dev-guide.md)、[系统从零开发制作完整指南](../system-dev-guide.md)。
-- 完整可运行 demo：[docs/demo/hotel](../demo/hotel/)。
-- 更多小白步骤：[tvbox-dev.md](../tvbox-dev.md) 第 11 章。
+完整教程（含布局插件与小白步骤）见 [../tvbox-dev.md](../tvbox-dev.md) 第 11 章。

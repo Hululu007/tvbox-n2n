@@ -39,8 +39,6 @@
   "bootStart": true,
   "hin2nEntry": true,
   "checkInterval": 30,
-  "loadSuccessDuration": 3,
-  "warningAutoClose": 0,
   "epgDays": 3,
   "aliLicenseKey": "",
 

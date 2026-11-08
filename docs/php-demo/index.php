@@ -12,7 +12,6 @@
  *   index.php?r=live                   直播源（JSON，支持密文；可选 format=txt 输出传统文本源）
  *   index.php?r=live&format=txt        直播源（传统 txt 文本，分组,#genre# / 频道,url#url2）
  *   index.php?r=epg                    节目单（JSON，支持密文，可多天）
- *   index.php?r=hotel_layout&id=grid   酒店布局插件 demo（grid/list/showcase，纯 JSON）
  *   index.php?r=market                 应用市场列表（模板占位符）
  *   index.php?r=detail&pkg=xxx         应用市场详情
  *   index.php?r=upgrade                升级检查
@@ -26,7 +25,7 @@ require_once __DIR__ . '/tvbox_crypto.php';
 $route = isset($_GET['r']) ? strtolower(trim((string)$_GET['r'])) : '';
 $dev = tk_device();
 
-/** mbstring 为可选扩展：未安装时退化为 UTF-8 首字节截取/单字节小写，中文首字符匹配仍可用 */
+/** mbstring 为可选扩展：未安装时退化为字节级小写/UTF-8 首字符截取 */
 function tk_lower(string $s): string
 {
     return function_exists('mb_strtolower') ? mb_strtolower($s, 'UTF-8') : strtolower($s);
@@ -271,26 +270,24 @@ switch ($route) {
             'bootStart'            => true,          // TVBox 开机自启
             // 滚动公告：支持两种写法
             //   纯字符串 —— 走 Android 系统 marquee（短于一屏的文本不会滚，是系统固有行为）
-            //   对象     —— 走客户端自定义滚动，短文本也会滚（推荐）：
+            //   对象     —— 走客户端自定义滚动（推荐）：
             //                'text'      = 公告内容（必填）
             //                'speed'     = 滚动速度，像素/秒（>0 启用自定义滚动）
-            //                'pause'     = 整条公告完整走完后停顿的秒数（0=立即走下一遍；只配 pause 时默认速度 100）
-            //                'textColor' / 'bgColor' / 'alpha' / 'fontSize' / 'position' / 'duration'
-            //                'show'      = 按界面开关：['home'=>true,'live'=>true,'vod'=>true,'hotel'=>true]
-            //   客户端表现：启用 speed 后只保留一份文本，从右侧进入、向左完整走出屏幕后再走下一遍，
+            //                'pause'     = 整条完整走完后停顿秒数（0=立即走下一遍；只配 pause 时默认速度 100）
+            //                'duration'  = 自动隐藏秒数（0=常驻）
+            //                'fontSize' / 'textColor' / 'bgColor' / 'alpha' / 'position'
+            //                'show'      = 按界面开关：['home'=>true,'live'=>true,'vod'=>true]
+            //   客户端表现：只保留一份文本，从右侧进入、向左完整走出屏幕后再走下一遍，
             //   短文本不会重复拼接/追加副本；pause 控制两遍之间的停顿。
-            //   公告条以「系统悬浮窗」显示在所有 App 最顶层（需授予「显示在其他应用上层」权限；
-            //   无权限时退化为界面内置顶），滚动时背景固定、仅文字移动；切换界面甚至切出本 App
-            //   滚动都不中断、不重新加载。
             'notice' => [
-                'text' => '欢迎使用 TKLauncher · 前台 8888',
+                'text' => '欢迎使用 TKLauncher · 如有问题请联系前台 xxx-xxxxxxx',
                 'speed' => 50,
-                'pause' => 8,          // 整条走完后停顿 8 秒再走下一遍（0=立即走下一遍）
-                'show' => ['home' => true, 'live' => true, 'vod' => true, 'hotel' => true],
+                'pause' => 8,
+                'show' => ['home' => true, 'live' => true, 'vod' => true],
             ],
             'epgDays'              => 3,             // EPG 显示天数（1~9，默认3=昨天/今天/明天）
             'checkInterval'        => 30,            // 配置检查间隔（分钟）
-            'loadSuccessDuration'  => 3,             // 点播接口加载成功通知自动关闭秒数（0~60）
+            'loadSuccessDuration'  => 3,             // 点播界面接口加载成功通知自动关闭秒数（0~60；首页不提示）
             'warningAutoClose'     => 0,             // 免责声明弹窗自动关闭秒数（0=需手动点确定）
             'ua'                   => '',            // 全局 UA（空=内置浏览器 UA）
             'aliLicenseKey'        => '',            // 阿里云播放器 SDK License Key（5.5+ 必配，否则弹提示）
@@ -349,7 +346,7 @@ switch ($route) {
                 // ---- 首页 ----
                 'homeShowSource'     => true,    // 显示当前源名称
                 'homeSearchPosition' => false,   // 搜索按钮位置：true=上方顶栏 false=下方历史行
-                'homeRec'            => 1,       // 首页推荐：0/1=主接口 home.recMovies（首页未配置回退豆瓣；点播首屏固定显示该字段，未配置为空态） 2=观看历史
+                'homeRec'            => 1,       // 首页推荐：0/1=主接口 home.recMovies（未配置回退豆瓣；点播首屏同规则） 2=观看历史
                 'homeNum'            => 4,       // 历史条数档位：0=20 1=40 2=60 3=80 4=100
                 'homeRecStyle'       => true,    // true=多行网格 false=单行横滑
                 'homeDefaultShow'    => false,   // true=启动直接进直播
@@ -370,7 +367,7 @@ switch ($route) {
                 'themeSelect'        => 0,       // 默认主题序号（0~13，对应 themes 清单）
                 'searchView'         => 1,       // 搜索展示：0=文字列表 1=缩略图
                 'parseWebview'       => true,    // 嗅探内核：true=系统 WebView false=XWalkView
-                'dohUrl'             => 2,       // 安全 DNS：0=关闭 1=腾讯 2=阿里 3=360 4=Google 5=AdGuard 6=Quad9
+                'dohUrl'             => 0,       // 安全 DNS：0=关闭 1=腾讯 2=阿里 3=360 4=Google 5=AdGuard 6=Quad9
                 'fastSearchMode'     => false,   // 聚合搜索（快搜）
                 'debugOpen'          => false,   // 调试模式
             ],
@@ -391,45 +388,29 @@ switch ($route) {
                 ['name' => '主题', 'type' => 'feature', 'target' => 'themeSwitch', 'icon' => 'ic_theme'],
                 ['name' => '应用', 'type' => 'page',    'target' => 'apps',        'icon' => 'hm_drawer'],
                 ['name' => '组网', 'type' => 'page',    'target' => 'hin2n',       'icon' => 'ic_n2n'],
-                ['name' => '历史', 'type' => 'page', 'target' => 'history', 'icon' => 'hm_history'],
             ],
             // ==================================================================
 
             // ==================================================================
             // 【首页历史一行入口】（非空数组会覆盖内置默认；空数组/删除则回退内置）
             'homeEntries' => [
+                ['name' => '历史', 'type' => 'page', 'target' => 'history', 'icon' => 'hm_history'],
                 ['name' => '点播', 'type' => 'page', 'target' => 'vod',     'icon' => 'hm_vod'],
-                // 自定义点播界面（影院）：type=vod，target 填点播接口 JSON 地址（不要带反引号/引号），
-                // theme 指定该界面独立主题，留空则跟随全局主题
-                ['name' => '我的影院', 'type' => 'vod', 'target' => 'http://tianku.net/tvzy/tv/1.json', 'icon' => 'hm_vod', 'theme' => '1'],
                 ['name' => '直播', 'type' => 'page', 'target' => 'live',    'icon' => 'hm_live'],
                 ['name' => '搜索', 'type' => 'page', 'target' => 'search',  'icon' => 'hm_search'],
                 ['name' => '收藏', 'type' => 'page', 'target' => 'collect', 'icon' => 'hm_fav'],
                 ['name' => '推送', 'type' => 'page', 'target' => 'push',    'icon' => 'hm_push'],
                 ['name' => '文件', 'type' => 'page', 'target' => 'drive',   'icon' => 'hm_folder'],
                 ['name' => '组网', 'type' => 'page', 'target' => 'hin2n',   'icon' => 'ic_hin2n'],
-                //['name' => '系统', 'type' => 'page', 'target' => 'system',  'icon' => 'hm_settings'],
+                ['name' => '系统', 'type' => 'page', 'target' => 'system',  'icon' => 'hm_settings'],
                 ['name' => '捐助', 'type' => 'page', 'target' => 'donate',  'icon' => 'hm_fav'],
-            ],
-            // ==================================================================
-
-            // ==================================================================
-            // 【推荐下方快捷入口行】（空数组/删除=隐藏整行）
-            //   与历史一行一样可混合多种类型（page/feature/app/vod），但卡片支持自定义图片：
-            //   pic=图片地址（http(s) URL 或内置 drawable 名，留空则按 icon/类型回退），
-            //   文字显示在图片上方的半透明条内。点击行为与 homeEntries 完全一致。
-            'quickEntries' => [
-                ['name' => '我的影院', 'type' => 'vod',  'target' => 'http://tianku.net/tvzy/tv/1.json', 'pic' => ''],
-                ['name' => '直播',     'type' => 'page', 'target' => 'live',    'pic' => ''],
-                ['name' => '应用',     'type' => 'page', 'target' => 'apps',    'pic' => ''],
             ],
             // ==================================================================
 
             // ==================================================================
             // 【界面（屏幕）/ 酒店 IPTV 桌面】
             //  每个界面可单独配置接口；layout 支持 hotel_grid / hotel_list / hotel_showcase
-            //  layoutUrl=布局插件 JSON 地址（按需下载缓存本地，便于只改 JSON 开发新界面；
-            //            插件只覆盖外观/入口，api/live/epg 请写在本 screens 项里）
+            //  layoutUrl=布局插件 JSON 地址（按需下载缓存本地，便于只改 JSON 开发新界面）
             //  entries 非空时覆盖默认入口（name/type/target/icon/pic/desc）
             //  启用：把上方 defaultScreen 改成这里的某个 id；defaultScreen 填不存在的 id 会自动回退 standard
             'screens' => [
@@ -440,45 +421,17 @@ switch ($route) {
                     'api' => '',                    // 留空=沿用主接口 api；填完整 URL=本界面独立接口
                     'live' => '',                   // 留空=沿用主接口 live；支持相对地址
                     'epg' => '',                    // 留空=沿用主接口 epg
+                    'proxy' => '',
                     'title' => '欢迎入住',
+                    'subtitle' => '',
                     'logo' => '',
                     'background' => '',
-                    'ticker' => '',                 // 留空=回退全局 notice；填写则优先显示本屏 ticker
+                    'ticker' => '前台电话 8888    祝您入住愉快',    // 顶栏跑马灯（纯字符串，Android marquee）
                     'columns' => 3,
                     'rows' => 2,
+                    'itemRatio' => 0,               // 0=默认 16:9；>0=宽高比（如 1.77 即 16:9，1.33 即 4:3）
                     'showClock' => true,
-                    // 布局插件示例：只改 JSON 即可换肤/换入口，无需改主配置
-                    'layoutUrl' => 'index.php?r=hotel_layout&id=grid',
-                    'entries' => [
-                        ['name' => '点播',     'type' => 'page',    'target' => 'vod',           'icon' => 'hm_vod'],
-                        ['name' => '直播',     'type' => 'page',    'target' => 'live',          'icon' => 'hm_live'],
-                        ['name' => '切换界面', 'type' => 'feature', 'target' => 'screenSwitch',  'icon' => 'hm_settings'],
-                    ],
-                ],
-                [
-                    'id' => 'hotel_list_demo',
-                    'name' => '酒店竖排桌面',
-                    'layout' => 'hotel_list',
-                    'title' => 'XX 酒店',
-                    'columns' => 1,
-                    'rows' => 4,
-                    'showClock' => true,
-                    'layoutUrl' => 'index.php?r=hotel_layout&id=list',
-                    'entries' => [
-                        ['name' => '点播',     'type' => 'page',    'target' => 'vod',           'icon' => 'hm_vod'],
-                        ['name' => '直播',     'type' => 'page',    'target' => 'live',          'icon' => 'hm_live'],
-                        ['name' => '切换界面', 'type' => 'feature', 'target' => 'screenSwitch',  'icon' => 'hm_settings'],
-                    ],
-                ],
-                [
-                    'id' => 'hotel_showcase_demo',
-                    'name' => '酒店品牌桌面',
-                    'layout' => 'hotel_showcase',
-                    'title' => '欢迎光临',
-                    'columns' => 4,
-                    'rows' => 1,
-                    'showClock' => true,
-                    'layoutUrl' => 'index.php?r=hotel_layout&id=showcase',
+                    'layoutUrl' => '',              // 可选：布局插件 JSON 地址，按需下载并缓存本地
                     'entries' => [
                         ['name' => '点播',     'type' => 'page',    'target' => 'vod',           'icon' => 'hm_vod'],
                         ['name' => '直播',     'type' => 'page',    'target' => 'live',          'icon' => 'hm_live'],
@@ -545,6 +498,9 @@ switch ($route) {
          *     type=0/1：填接口 URL，支持 ac=class（分类）、ac=list（列表）、
          *               ac=search（搜索）、ac=detail（详情）、ac=videolist（详情别名）等
          *     type=3  ：填 Spider 文件路径（.jar/.js/.py）或类名（需 spider 字段指向 jar）
+         *
+         *   点播播放地址同样支持 webview:// / video:// / tkp2p://，
+         *   客户端播放页会自动切换到 WebView 播放层。
          *
          *   其他字段：
          *   searchable=1  可搜索（0=不可搜索）
@@ -754,48 +710,6 @@ switch ($route) {
             }
         }
         tk_output(json_encode(['epg_data' => $epgData], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'application/json; charset=utf-8');
-        break;
-
-    case 'hotel_layout':
-        /**
-         * 酒店桌面布局插件 demo（不需要加密，客户端按纯 JSON 解析）
-         *   ?id=grid     宫格大卡片（默认）
-         *   ?id=list     左侧竖排菜单
-         *   ?id=showcase 顶部大图 + 底部入口
-         * 该 JSON 由主配置 screens[].layoutUrl 下发；修改这里即可远程换肤。
-         */
-        $lid = strtolower(trim((string)($_GET['id'] ?? 'grid')));
-        $commonEntries = [
-            ['name' => '点播',     'type' => 'page',    'target' => 'vod',          'icon' => 'hm_vod',      'desc' => '海量影视'],
-            ['name' => '直播',     'type' => 'page',    'target' => 'live',         'icon' => 'hm_live',     'desc' => '电视直播'],
-            ['name' => '搜索',     'type' => 'page',    'target' => 'search',       'icon' => 'hm_search',   'desc' => '找片更快'],
-            ['name' => '切换界面', 'type' => 'feature', 'target' => 'screenSwitch', 'icon' => 'hm_settings', 'desc' => '桌面切换'],
-        ];
-        $layouts = [
-            'grid' => [
-                'id' => 'hotel_demo', 'name' => '酒店桌面', 'layout' => 'hotel_grid',
-                'title' => '欢迎入住', 'ticker' => '前台电话 8888 · 祝您入住愉快',
-                'columns' => 3, 'rows' => 2, 'showClock' => true,
-                'entries' => array_merge($commonEntries, [
-                    ['name' => '收藏', 'type' => 'page', 'target' => 'collect', 'icon' => 'hm_fav',     'desc' => '我的收藏'],
-                    ['name' => '历史', 'type' => 'page', 'target' => 'history', 'icon' => 'hm_history', 'desc' => '继续观看'],
-                ]),
-            ],
-            'list' => [
-                'id' => 'hotel_list_demo', 'name' => '酒店竖排桌面', 'layout' => 'hotel_list',
-                'title' => 'XX 酒店', 'ticker' => '如需帮助请拨打前台 8000',
-                'columns' => 1, 'rows' => 4, 'showClock' => true,
-                'entries' => $commonEntries,
-            ],
-            'showcase' => [
-                'id' => 'hotel_showcase_demo', 'name' => '酒店品牌桌面', 'layout' => 'hotel_showcase',
-                'title' => '欢迎光临', 'ticker' => '欢迎光临，祝您入住愉快',
-                'columns' => 4, 'rows' => 1, 'showClock' => true,
-                'entries' => array_slice($commonEntries, 0, 3),
-            ],
-        ];
-        $layout = $layouts[$lid] ?? $layouts['grid'];
-        tk_output(json_encode($layout, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'application/json; charset=utf-8');
         break;
 
     case 'market':

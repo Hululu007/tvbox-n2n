@@ -74,8 +74,6 @@ public class HawkConfig {
     public static final String LIVE_SHOW_NET_SPEED = "live_show_net_speed";
     public static final String LIVE_SHOW_TIME = "live_show_time";
     public static final String LIVE_SKIP_PASSWORD = "live_skip_password";
-    /** 直播开机启动：开启后打开 App 直接进入直播模块，否则进入主界面 */
-    public static final String LIVE_BOOT_START = "live_boot_start";
     public static final String LIVE_PLAYER_TYPE = "live_player_type"; // 0 系统 1 ijk 2 exo
 
     public static boolean isDebug() {

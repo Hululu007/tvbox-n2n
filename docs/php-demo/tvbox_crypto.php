@@ -85,7 +85,8 @@ function tk_output(string $plain, string $contentType = 'application/json; chars
 /** 采集客户端本机参数（URL 参数优先，其次请求头），可用于按 MAC 下发不同配置 */
 function tk_device(): array
 {
-    // 请求参数可能是数组（如 ?mac[]=x），统一归一化为去空格字符串，避免 json_encode 输出非字符串
+    // 请求参数可能是数组（如 ?mac[]=x），统一归一化为去空格字符串，
+    // 避免 json_encode 输出非字符串或触发 PHP 8 的数组转字符串警告。
     $s = function ($v) {
         return is_scalar($v) ? trim((string)$v) : '';
     };

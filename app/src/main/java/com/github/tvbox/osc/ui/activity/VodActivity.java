@@ -98,7 +98,7 @@ public class VodActivity extends BaseActivity {
     private boolean splashShowing = false;
     private long splashShowTime = 0;
 
-    /** 点播首分类「热播推荐」数据（只使用主接口 home.recMovies，不再回退点播源首页/豆瓣） */
+    /** 点播首分类「热播推荐」数据（RecommendLoader：home.recMovies / 豆瓣热播 / 观看历史，与首页一致） */
     private final List<Movie.Video> recommendVideos = new ArrayList<>();
 
     /** 防止重复触发接口加载 */

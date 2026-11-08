@@ -118,19 +118,10 @@ public abstract class BaseActivity extends AppCompatActivity implements CustomAd
             setContentView(getLayoutResID());
         } catch (Throwable th) {
             th.printStackTrace();
-            // 主题资源异常会导致布局 inflate 失败。先换回系统默认主题重试一次，
-            // 避免直接退回空容器——那样页面所有 findViewById 都是 null，
-            // 后续 onResume 里对控件的操作会抛 NPE，表现为「再次启动黑屏」且反复崩溃。
-            try {
-                setTheme(android.R.style.Theme_DeviceDefault_NoActionBar_Fullscreen);
-                setContentView(getLayoutResID());
-            } catch (Throwable th2) {
-                th2.printStackTrace();
-                // 两次都失败：给个纯灰背景，至少不是黑屏看起来像死机
-                android.widget.FrameLayout fallback = new android.widget.FrameLayout(this);
-                fallback.setBackgroundColor(0xFF1A1A1A);
-                setContentView(fallback);
-            }
+            // 布局 inflate 都崩了（主题资源缺失等），退而求其次给个纯灰背景，避免「黑屏看起来像死机」
+            android.widget.FrameLayout fallback = new android.widget.FrameLayout(this);
+            fallback.setBackgroundColor(0xFF1A1A1A);
+            setContentView(fallback);
         }
         mContext = this;
         try {

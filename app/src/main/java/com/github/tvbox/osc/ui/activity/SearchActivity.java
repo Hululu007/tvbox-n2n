@@ -120,7 +120,7 @@ public class SearchActivity extends BaseActivity {
     private static ArrayList<String> hots = new ArrayList<>();
     private HashMap<String, String> mCheckSources = null;
     private SearchCheckboxDialog mSearchCheckboxDialog = null;
-    /** 搜索范围：default=仅默认源（非 cv_ 前缀）；custom=仅自定义点播注入的 cv_ 源；空=全部 */
+    /** 搜索范围：default/空=仅默认源（非 cv_ 前缀）；custom=仅自定义点播注入的 cv_ 源 */
     private String searchScope = "";
 
     @Override

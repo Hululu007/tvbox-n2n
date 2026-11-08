@@ -69,9 +69,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
   "screens": [],                          // 酒店 IPTV 等桌面布局（见 2.1.1）
   "bootStart": true,
   "notice": {                             // 滚动公告：纯字符串=系统 marquee（短文本不滚）；对象=自定义滚动（推荐）
-                                          // 对象写法：单份文本从右向左完整走一遍，短文本也不会追加副本
-                                          // 全局唯一公告条：固定在当前窗口最顶层（decorView 最后一个子 View），
-                                          // 切换首页/直播/点播/酒店等界面时复用同一个 View，继续滚动，不会重新加载/回到开头
+                                          // 对象写法只保留一份文本：从右向左完整走一遍，短文本也不会追加副本
     "text": "欢迎使用 TKLauncher",
     "speed": 50,                          // 像素/秒，>0 启用自定义滚动（单遍走完，不重复拼接）
     "pause": 8,                           // 整条公告完整走完后停顿的秒数（0=立即走下一遍；只配 pause 时默认速度 100）
@@ -80,15 +78,16 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
     "textColor": "#FFFFFFFF",
     "bgColor": "#FF000000",
     "alpha": 100,
-    "position": "bottom",                 // top / bottom（酒店 ticker 固定在布局内，不受此字段影响）
-    "show": { "home": true, "live": true, "vod": true, "hotel": true }
+    "position": "bottom",                 // top / bottom
+    "show": { "home": true, "live": true, "vod": true }
   },
   "settings": { "homeRecStyle": true },
   "home": {
     "sourceName": "TKLauncher",          // 左上角显示的名称（主接口统一定义；空=显示 App 名称）
     "recMovies": [                        // 推荐影片（主接口提供）：首页推荐 + 点播界面「热播推荐」共用；
       { "name": "演示影片一", "pic": "https://placehold.co/300x400/png", "note": "9.0" }
-      // 未配置时回退豆瓣热播；settings.homeRec=2 时使用观看历史
+      // 首页推荐与点播界面「热播推荐」共用；未配置时回退豆瓣热播
+      // （settings.homeRec=2 时使用观看历史）
     ]
   },
   "appMarket": {
@@ -134,15 +133,8 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 ```
 
 - `defaultScreen` 填不存在的 id 会自动回退 `standard`。
-- `hotel_grid` 的 `columns×rows` 不足以容纳全部入口时会自动增加行，入口不会被丢弃。
 - `screens[].api/live/epg` 在该界面启动时应用；用户手动配置过且 `forceOverride=false` 时保留用户配置。
-- **接口立即生效**：接口地址变化会立即删除点播接口磁盘缓存、清空 EPG 缓存并把 `ApiConfig` 标记为未加载，
-  同时广播 `TYPE_ENDPOINT_CHANGE`，点播/直播/酒店界面立即重载，无需重启 App。
-- `layoutUrl` 是布局插件 JSON 地址：仅覆盖外观与入口（`layout/title/logo/background/ticker/columns/rows/showClock/entries`），
-  **接口地址请写在 `screens[]` 中**（插件加载时接口已应用）。
 - `layoutUrl` 下载失败回退上次缓存，首次无缓存回退主接口内联配置。
-- 滚动通知：`screens[].ticker` 优先；为空时回退顶层 `notice`（`notice.show.hotel` 控制是否显示）。
-- 从零教程与完整 demo：[hotel-dev-guide.md](file:///f:/tvbox-n2n/docs/hotel-dev-guide.md)、`docs/demo/hotel/`。
 - 更多示例（含“小白教程”）见 [tvbox-dev.md](file:///f:/tvbox-n2n/docs/tvbox-dev.md#11-小白教程新增一个界面--酒店-iptv-桌面布局)。
 
 ### 2.2 点播源（`api`）示例
@@ -205,6 +197,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 - 顶层为分组数组（或 `{"groups":[...]}` 对象形式）；每个频道含 `name` 与 `urls`，`地址$线路名` 可为地址命名；
 - **支持的节目类型（播放地址协议）**：`http(s)` 直链（m3u8/flv/mp4 等）、`rtmp://`、`rtsp://`、`webview://`（WebView 直接播网页）、`video://`（WebView 嗅探网页视频）、`tkp2p://`（内置 P2P）；
+- **点播同样支持**：点播源返回的播放地址若是 `webview://` / `video://` / `tkp2p://`，播放页会自动切换到 WebView 播放层；
 - 兼容的文本格式：`分组,#genre#` + `频道,url#url2`（txt）、`#EXTM3U` + `#EXTINF`（m3u）；`live` 直接填 `.txt` / `.m3u` 地址同样可用；
 - **每频道/线路解码 `decode`（可选）**：取值 `soft`（软解）、`hard`（硬解）、`system`（系统）、`exo`、`ali`、`auto`（跟随全局）。
   - 写在频道对象上：该频道所有线路默认使用；
@@ -303,8 +296,9 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 - 点播接口（主配置 `api` 指向的 TVBox 标准 JSON / 自定义 `target`）只在**点播界面**加载；首页不再加载点播接口字段。所有点播相关提示（加载成功 `loadSuccessDuration`、免责声明、切源提示、加载失败等）仅在点播界面出现。
 - 进入点播界面时先显示启动等待画面（主配置可下发 `vodSplash`，见 §2.9），接口配置与当前源的 jar/js/py 插件就绪后自动加载分类数据并关闭等待画面。
 - 点播界面切换源时，会丢弃该源旧的 Spider 实例并**重新加载新源对应的 jar / js / py 插件**（`type=3` 的 `.jar`、`.js`、`.py`、纯类名站点分别处理），再强制刷新分类列表；不再依赖首页预加载全局 jar。
-- 点播界面的第一个分类固定为「热播推荐」：**只取主配置 `home.recMovies`**（未配置时显示空态，不再回退点播接口 `homeContent` 或豆瓣）；默认选中并自动加载。
-- 主接口（主配置）在 App 启动时后台拉取；加载成功后显示首页（主界面已回退到 `28165ae` 版本的加载方式，不再显示全屏启动画面）。
+- 自定义点播界面（`type=vod`）与默认点播行为一致：切源后重启本界面并按新源重新加载；退出时恢复到进入该界面前的源；界面内搜索只查本界面注入的 `cv_` 源，与默认点播搜索互不影响。
+- 点播界面的第一个分类固定为「热播推荐」：数据与主界面一致——主配置 `home.recMovies` 优先，未配置时回退豆瓣热播（按天缓存），`settings.homeRec=2` 时使用观看历史；不再回退点播接口 `homeContent`；默认选中并自动加载。
+- 点播 / 直播 / EPG 接口地址变更后，客户端会立即删除点播接口磁盘缓存、清空 EPG 缓存并把 `ApiConfig` 标记为未加载，同时广播 `TYPE_ENDPOINT_CHANGE`，正在显示的界面立即重载，**无需重启 App**。
 - 若主接口（主配置）无法加载/访问且本地无缓存，客户端直接显示全屏报错页（重试/退出），不再进入首页等其它界面。
 
 ### 2.9 点播启动等待画面（`vodSplash`）

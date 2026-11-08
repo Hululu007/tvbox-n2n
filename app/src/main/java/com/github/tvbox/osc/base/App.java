@@ -54,8 +54,6 @@ public class App extends MultiDexApplication {
     public static ViewPump viewPump = null;
     private static Server server = null;
     private final Handler handler;
-    /** 当前处于 started 状态的 Activity 数量（用于判断应用是否退到后台） */
-    private int startedActivities;
 
     public App() {
         instance = this;
@@ -67,57 +65,6 @@ public class App extends MultiDexApplication {
         super.onCreate();
         // 全局异常捕获：任何线程未捕获异常写 crash.log 并安静重启进程，避免系统弹「tvbox结束运行」
         initCrashHandler();
-        // 滚动公告条：任意界面 resume 时把同一个 View 重新挂到该窗口最顶层，
-        // 保证详情/搜索/设置等界面也能继续显示，且切换界面不重建、不重置滚动位置。
-        registerActivityLifecycleCallbacks(new android.app.Application.ActivityLifecycleCallbacks() {
-            @Override
-            public void onActivityCreated(android.app.Activity activity, android.os.Bundle savedInstanceState) {
-            }
-
-            @Override
-            public void onActivityStarted(android.app.Activity activity) {
-                startedActivities++;
-            }
-
-            @Override
-            public void onActivityResumed(android.app.Activity activity) {
-                try {
-                    com.github.tvbox.osc.n2n.NoticeBar.onActivityResumed(activity);
-                } catch (Throwable ignored) {
-                }
-            }
-
-            @Override
-            public void onActivityPaused(android.app.Activity activity) {
-            }
-
-            @Override
-            public void onActivityStopped(android.app.Activity activity) {
-                if (startedActivities > 0) {
-                    startedActivities--;
-                }
-                if (startedActivities == 0) {
-                    // 全部界面退到后台：暂停公告滚动，避免后台定时唤醒
-                    try {
-                        com.github.tvbox.osc.n2n.NoticeBar.onAppHidden();
-                    } catch (Throwable ignored) {
-                    }
-                }
-            }
-
-            @Override
-            public void onActivitySaveInstanceState(android.app.Activity activity, android.os.Bundle outState) {
-            }
-
-            @Override
-            public void onActivityDestroyed(android.app.Activity activity) {
-                try {
-                    // 解除该窗口对全局公告 View 的持有，防止静态 View 反向持有已销毁的 Activity
-                    com.github.tvbox.osc.n2n.NoticeBar.detach(activity);
-                } catch (Throwable ignored) {
-                }
-            }
-        });
         // 必须在任何可能使用 Path/Util 的代码之前调用 Init.set(context)：
         // Path.files()/Path.cache()/Util.md5() 等大量静态方法都依赖 Init.context()，
         // 如果为 null 会直接 NPE。parent project 中由 spider jar 自己调，这里主动调用保证安全。
@@ -130,12 +77,7 @@ public class App extends MultiDexApplication {
                 .setStorage(new com.github.tvbox.osc.n2n.LocalJsonStorage(this))
                 .setEncryption(new com.orhanobut.hawk.PlainEncryption())
                 .build();
-        // 不要每次启动都强制把 DEBUG_OPEN 置 false：否则「调试模式已开但无日志」。
-        // 仅在 Hawk 中不存在该键时写默认值 false；后续 RemoteConfig.bootstrap 的 settings
-        // 段会按 json 里的 debugOpen 覆盖（true/false），用户设置得以保留。
-        if (!Hawk.contains(HawkConfig.DEBUG_OPEN)) {
-            Hawk.put(HawkConfig.DEBUG_OPEN, false);
-        }
+        Hawk.put(HawkConfig.DEBUG_OPEN, false);
         // 上次启动若在点播配置加载中途异常退出，这里自动清理坏配置，避免「一开就崩」的死循环
         com.github.tvbox.osc.n2n.ConfigGuard.recoverIfNeeded(this);
         // 加载主配置：地址由 RemoteConfig.CONFIG_URL 在代码中手动指定，支持远程 URL

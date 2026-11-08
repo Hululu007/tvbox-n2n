@@ -7,8 +7,6 @@
     // Home Page //
     <string name="hm_ok">Load Complete</string>
     <string name="hm_notok">Load Fail</string>
-    <!-- 主界面启动加载画面提示（主接口加载期间显示，可由 json loadingText 覆盖） -->
-    <string name="loading_starting">Starting system…</string>
     <!-- 点播接口加载成功通知（%1$d=剩余秒数，到点自动关闭；秒数由 json loadSuccessDuration 配置） -->
     <string name="load_success_notice">VOD API loaded · %1$ds</string>
     <string name="hm_retry">Retry</string>
