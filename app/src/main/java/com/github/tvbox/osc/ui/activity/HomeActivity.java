@@ -13,7 +13,6 @@ import android.provider.Settings;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -32,7 +31,6 @@ import com.github.tvbox.osc.event.RefreshEvent;
 import com.github.tvbox.osc.server.ControlManager;
 import com.github.tvbox.osc.ui.adapter.SelectDialogAdapter;
 import com.github.tvbox.osc.ui.dialog.SelectDialog;
-import com.github.tvbox.osc.ui.dialog.TipDialog;
 import com.github.tvbox.osc.ui.fragment.UserFragment;
 import com.github.tvbox.osc.util.AppManager;
 import com.github.tvbox.osc.util.FastClickCheckUtil;
@@ -112,6 +110,8 @@ public class HomeActivity extends BaseActivity {
         // screenJumped 仅用于避免同一实例内主接口回调重复跳转，不能跨实例持久化——
         // 否则作为系统桌面时，第二次按 HOME 会停在 standard 首页而不进入酒店桌面。
         screenJumped = false;
+        // 直播开机跳转同样每次实例/回到前台重新评估
+        liveModeJumped = false;
 
         // takagen99: Added to allow read string
         res = getResources();
@@ -507,8 +507,11 @@ public class HomeActivity extends BaseActivity {
             jarInitOk = true;
         }
         hideLoadingOverlay();
-        // 主接口通过 screens/defaultScreen 指定加载的界面（酒店 IPTV 桌面等）
-        jumpToScreenIfNeeded();
+        // 主接口通过 screens/defaultScreen 指定加载的界面（酒店 IPTV 桌面等）。
+        // 若已经跳转到独立界面，则本次不再继续判断「启动进直播」，避免同时打开两个 Activity。
+        if (jumpToScreenIfNeeded()) {
+            return;
+        }
         jumpToLiveIfNeeded();
         upgradeCheckOnce();
         promptOverlayPermissionOnce();
@@ -557,18 +560,23 @@ public class HomeActivity extends BaseActivity {
     /** 非 standard 默认界面只跳转一次，避免主接口回调重复进入 */
     private static boolean screenJumped = false;
 
-    private void jumpToScreenIfNeeded() {
+    /**
+     * 若主接口要求默认加载非 standard 界面，则打开对应 Activity 并结束当前首页。
+     *
+     * @return true=已跳转（调用方不要再执行「启动进直播」等其它跳转）
+     */
+    private boolean jumpToScreenIfNeeded() {
         if (screenJumped) {
-            return;
+            return false;
         }
         screenJumped = true;
         String id = com.github.tvbox.osc.n2n.RemoteConfig.defaultScreenId();
         if (id == null || id.isEmpty() || "standard".equals(id)) {
-            return;
+            return false;
         }
         com.github.tvbox.osc.n2n.RemoteConfig.Screen s = com.github.tvbox.osc.n2n.RemoteConfig.findScreen(id);
         if (s == null || "standard".equalsIgnoreCase(s.layout)) {
-            return;
+            return false;
         }
         com.github.tvbox.osc.n2n.RemoteConfig.applyScreenEndpoints(s);
         sSkipAppExit = true;
@@ -577,6 +585,7 @@ public class HomeActivity extends BaseActivity {
         startActivity(intent);
         finish();
         overridePendingTransition(0, 0);
+        return true;
     }
 
     /** 界面（屏幕）切换：列出主接口 screens 配置的多个界面 */
@@ -697,95 +706,6 @@ public class HomeActivity extends BaseActivity {
     }
 
 
-    /** 免责声明是否已在本进程内弹过（每次启动只弹一次） */
-    private static boolean sWarningShown = false;
-
-    /** 免责声明弹窗自动关闭倒计时任务（null=当前没有进行中的倒计时） */
-    private Runnable mWarningTick;
-
-    /**
-     * 点播接口配置的 warningText 生效：配置加载成功后弹一次免责声明。
-     *
-     * <p>2026-10-23 需求 6：弹窗支持「自定义秒数后自动关闭」——秒数取自 json 顶层
-     * {@code warningAutoClose}（RemoteConfig.warningAutoClose）：</p>
-     * <ul>
-     *   <li>0（默认）：保持原行为，必须点「确定」才关闭；</li>
-     *   <li>N&gt;0：确定按钮显示「确定 (Ns)」并每秒递减，到点自动关闭，不需要任何按键；
-     *       适合无人值守的电视/机顶盒，避免免责声明长期挡住首页。</li>
-     * </ul>
-     */
-    private void showWarningTextOnce() {
-        if (sWarningShown || isFinishing() || isDestroyed()) return;
-        String warningText = Hawk.get(HawkConfig.WARNING_TEXT, "");
-        if (warningText == null || warningText.trim().isEmpty()) return;
-        sWarningShown = true;
-        try {
-            final TipDialog[] holder = new TipDialog[1];
-            holder[0] = new TipDialog(HomeActivity.this, warningText, getString(R.string.hm_ok), "", new TipDialog.OnListener() {
-                @Override
-                public void left() {
-                    if (holder[0] != null) holder[0].dismiss();
-                }
-
-                @Override
-                public void right() {
-                }
-
-                @Override
-                public void cancel() {
-                }
-            });
-            // 弹窗被手动确认/取消/系统关闭时，立即停止倒计时，避免残留任务继续跑
-            holder[0].setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
-                @Override
-                public void onDismiss(android.content.DialogInterface dialog) {
-                    stopWarningCountdown();
-                }
-            });
-            holder[0].show();
-            // 自定义秒数自动关闭：倒计时显示在「确定」按钮上，到点自动 dismiss
-            final int autoClose = com.github.tvbox.osc.n2n.RemoteConfig.warningAutoClose();
-            if (autoClose > 0) {
-                final android.widget.TextView leftBtn = holder[0].findViewById(R.id.leftBtn);
-                final int[] leftSec = {autoClose};
-                updateWarningButton(leftBtn, autoClose);
-                mWarningTick = new Runnable() {
-                    @Override
-                    public void run() {
-                        if (isFinishing() || isDestroyed() || !holder[0].isShowing()) {
-                            return;
-                        }
-                        leftSec[0]--;
-                        if (leftSec[0] <= 0) {
-                            holder[0].dismiss();
-                            return;
-                        }
-                        updateWarningButton(leftBtn, leftSec[0]);
-                        mHandler.postDelayed(this, 1000);
-                    }
-                };
-                mHandler.postDelayed(mWarningTick, 1000);
-            }
-        } catch (Throwable th) {
-            th.printStackTrace();
-        }
-    }
-
-    /** 刷新免责声明「确定」按钮上的剩余秒数：确定 (Ns) */
-    private void updateWarningButton(android.widget.TextView btn, int seconds) {
-        if (btn != null) {
-            btn.setText(getString(R.string.hm_ok) + " (" + seconds + "s)");
-        }
-    }
-
-    /** 停止免责声明倒计时（幂等） */
-    private void stopWarningCountdown() {
-        if (mWarningTick != null) {
-            mHandler.removeCallbacks(mWarningTick);
-            mWarningTick = null;
-        }
-    }
-
     @Override
     public void onBackPressed() {
         //打断加载
@@ -834,8 +754,11 @@ public class HomeActivity extends BaseActivity {
         super.onNewIntent(intent);
         setIntent(intent);
         screenJumped = false;
+        liveModeJumped = false;
         if (dataInitOk) {
-            jumpToScreenIfNeeded();
+            if (jumpToScreenIfNeeded()) {
+                return;
+            }
             jumpToLiveIfNeeded();
         }
     }
@@ -877,10 +800,6 @@ public class HomeActivity extends BaseActivity {
     @Override
     protected void onPause() {
         super.onPause();
-        // 页面不可见时先移除浮层通知与倒计时：onPause 会清空 Handler 队列，
-        // 若只清队列不移除视图，返回首页后顶部提示会残留不再消失。
-        hideLoadSuccessNotice();
-        stopWarningCountdown();
         mHandler.removeCallbacksAndMessages(null);
     }
 
@@ -909,10 +828,6 @@ public class HomeActivity extends BaseActivity {
 
     @Override
     protected void onDestroy() {
-        // 先移除未执行完的加载成功通知倒计时，避免 Activity 销毁后 Runnable 仍持有引用
-        hideLoadSuccessNotice();
-        // 免责声明自动关闭倒计时同样需要停止
-        stopWarningCountdown();
         // 解除本窗口对全局公告 View 的持有（避免静态 View 反向持有已销毁的 Activity）
         com.github.tvbox.osc.n2n.NoticeBar.detach(this);
         super.onDestroy();
@@ -994,97 +909,6 @@ public class HomeActivity extends BaseActivity {
         showSuccess();
         if (tvName != null) {
             tvName.clearAnimation();
-        }
-    }
-
-    // ==================== 点播接口加载成功通知（可配置自动关闭秒数） ====================
-
-    /** 当前显示中的「点播接口加载成功」通知，null 表示未显示 */
-    private TextView mLoadSuccessTip;
-    /** 通知剩余显示秒数：每秒递减，减到 0 自动从界面上移除 */
-    private int mLoadSuccessLeft = 0;
-
-    /**
-     * 显示点播接口加载成功通知（2026-10-23 需求 6）。
-     *
-     * <p>行为：</p>
-     * <ul>
-     *   <li>秒数取自 json 顶层 {@code loadSuccessDuration}（RemoteConfig.loadSuccessDuration）：
-     *       0=不显示，默认 3 秒，最大 60 秒；</li>
-     *   <li>通知为非模态浮层，{@code focusable=false / clickable=false}，不抢遥控器焦点，
-     *       到点自动移除，不需要用户按键确认（替代原来的系统 Toast 与转圈提示）；</li>
-     *   <li>文本每秒刷新为「点播接口加载成功 · Ns」，让用户明确知道何时自动关闭；</li>
-     *   <li>重复调用会先移除旧通知再重新计时，避免多层叠加。</li>
-     * </ul>
-     */
-    private void showLoadSuccessNotice() {
-        final int seconds = com.github.tvbox.osc.n2n.RemoteConfig.loadSuccessDuration();
-        if (seconds <= 0 || isFinishing() || isDestroyed()) {
-            return;
-        }
-        hideLoadSuccessNotice();
-        ViewGroup root = findViewById(android.R.id.content);
-        if (root == null) {
-            return;
-        }
-        TextView tip = new TextView(this);
-        tip.setTextColor(0xFFFFFFFF);
-        tip.setBackgroundColor(0xCC1A1A1A);
-        tip.setGravity(android.view.Gravity.CENTER);
-        tip.setFocusable(false);
-        tip.setClickable(false);
-        tip.setPadding(res.getDimensionPixelSize(R.dimen.vs_25), res.getDimensionPixelSize(R.dimen.vs_12),
-                res.getDimensionPixelSize(R.dimen.vs_25), res.getDimensionPixelSize(R.dimen.vs_12));
-        tip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
-                res.getDimensionPixelSize(R.dimen.ts_20));
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        // 顶部居中、位于标题栏下方，避免遮挡左上角标题与右上角图标
-        lp.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
-        lp.topMargin = res.getDimensionPixelSize(R.dimen.vs_90);
-        tip.setLayoutParams(lp);
-        root.addView(tip);
-        mLoadSuccessTip = tip;
-        mLoadSuccessLeft = seconds;
-        updateLoadSuccessNoticeText(seconds);
-        // 先显示完整秒数，1 秒后再开始递减
-        mHandler.postDelayed(mLoadSuccessTick, 1000);
-    }
-
-    /** 通知倒计时任务：每秒刷新文本，归零时移除通知 */
-    private final Runnable mLoadSuccessTick = new Runnable() {
-        @Override
-        public void run() {
-            if (mLoadSuccessTip == null) {
-                return;
-            }
-            mLoadSuccessLeft--;
-            if (mLoadSuccessLeft <= 0) {
-                hideLoadSuccessNotice();
-                return;
-            }
-            updateLoadSuccessNoticeText(mLoadSuccessLeft);
-            mHandler.postDelayed(this, 1000);
-        }
-    };
-
-    /** 刷新通知文本：「点播接口加载成功 · Ns」 */
-    private void updateLoadSuccessNoticeText(int seconds) {
-        if (mLoadSuccessTip != null) {
-            mLoadSuccessTip.setText(getString(R.string.load_success_notice, seconds));
-        }
-    }
-
-    /** 立即移除通知并取消倒计时（幂等） */
-    private void hideLoadSuccessNotice() {
-        mHandler.removeCallbacks(mLoadSuccessTick);
-        mLoadSuccessLeft = 0;
-        if (mLoadSuccessTip != null) {
-            ViewGroup parent = (ViewGroup) mLoadSuccessTip.getParent();
-            if (parent != null) {
-                parent.removeView(mLoadSuccessTip);
-            }
-            mLoadSuccessTip = null;
         }
     }
 

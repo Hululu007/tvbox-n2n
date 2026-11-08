@@ -323,6 +323,7 @@ public class VodActivity extends BaseActivity {
                     }
                     // 分类/推荐结果已返回：关闭启动等待画面（数据已自动加载）
                     hideSplash();
+                    showLoadSuccessNoticeOnce();
                 } catch (Throwable th) {
                     th.printStackTrace();
                     hideSplash();
@@ -370,6 +371,13 @@ public class VodActivity extends BaseActivity {
     /** 点播接口免责声明：仅在点播界面展示一次（主界面不再提示点播接口相关信息） */
     private static boolean sWarningShown = false;
 
+    /** 点播接口加载成功提示：本进程首次加载成功只提示一次 */
+    private static boolean sLoadSuccessShown = false;
+
+    /** 「点播接口加载成功」非模态提示浮层 */
+    private TextView loadSuccessTip;
+    private int loadSuccessLeft = 0;
+
     private void showWarningOnce() {
         if (sWarningShown || isFinishing() || isDestroyed()) {
             return;
@@ -413,6 +421,83 @@ public class VodActivity extends BaseActivity {
     }
 
     /**
+     * 点播接口加载成功提示（顶层 json "loadSuccessDuration"）。
+     * 非模态浮层、不抢焦点，按秒倒计时后自动移除；0=不显示；本进程只提示一次。
+     */
+    private void showLoadSuccessNoticeOnce() {
+        if (sLoadSuccessShown || isFinishing() || isDestroyed()) {
+            return;
+        }
+        final int seconds = com.github.tvbox.osc.n2n.RemoteConfig.loadSuccessDuration();
+        if (seconds <= 0) {
+            return;
+        }
+        sLoadSuccessShown = true;
+        hideLoadSuccessNotice();
+        ViewGroup root = findViewById(android.R.id.content);
+        if (root == null) {
+            return;
+        }
+        TextView tip = new TextView(this);
+        tip.setTextColor(0xFFFFFFFF);
+        tip.setBackgroundColor(0xCC1A1A1A);
+        tip.setGravity(android.view.Gravity.CENTER);
+        tip.setFocusable(false);
+        tip.setClickable(false);
+        tip.setPadding(dp(R.dimen.vs_25), dp(R.dimen.vs_12), dp(R.dimen.vs_25), dp(R.dimen.vs_12));
+        tip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, dp(R.dimen.ts_20));
+        android.widget.FrameLayout.LayoutParams lp = new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.gravity = android.view.Gravity.TOP | android.view.Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = dp(R.dimen.vs_90);
+        tip.setLayoutParams(lp);
+        root.addView(tip);
+        loadSuccessTip = tip;
+        loadSuccessLeft = seconds;
+        updateLoadSuccessNoticeText(seconds);
+        mHandler.postDelayed(loadSuccessTick, 1000);
+    }
+
+    private int dp(int dimenRes) {
+        return getResources().getDimensionPixelSize(dimenRes);
+    }
+
+    private final Runnable loadSuccessTick = new Runnable() {
+        @Override
+        public void run() {
+            if (loadSuccessTip == null) {
+                return;
+            }
+            loadSuccessLeft--;
+            if (loadSuccessLeft <= 0) {
+                hideLoadSuccessNotice();
+                return;
+            }
+            updateLoadSuccessNoticeText(loadSuccessLeft);
+            mHandler.postDelayed(this, 1000);
+        }
+    };
+
+    private void updateLoadSuccessNoticeText(int seconds) {
+        if (loadSuccessTip != null) {
+            loadSuccessTip.setText(getString(R.string.load_success_notice, seconds));
+        }
+    }
+
+    /** 立即移除提示并取消倒计时（幂等） */
+    private void hideLoadSuccessNotice() {
+        mHandler.removeCallbacks(loadSuccessTick);
+        loadSuccessLeft = 0;
+        if (loadSuccessTip != null) {
+            ViewGroup parent = (ViewGroup) loadSuccessTip.getParent();
+            if (parent != null) {
+                parent.removeView(loadSuccessTip);
+            }
+            loadSuccessTip = null;
+        }
+    }
+
+    /**
      * 进入点播：先加载点播接口配置（主界面不再加载点播接口字段），
      * 再预加载当前源对应的 jar/js/py 插件，最后自动拉取分类数据。
      */
@@ -422,6 +507,8 @@ public class VodActivity extends BaseActivity {
         }
         showSplash("正在加载点播接口…");
         if (ApiConfig.get().isConfigLoaded()) {
+            // 配置已加载（返回点播界面/切源后重进）也要补弹一次免责声明
+            showWarningOnce();
             afterConfigLoaded();
             return;
         }
@@ -757,10 +844,12 @@ public class VodActivity extends BaseActivity {
         // 只停计时/滚动任务；保留启动等待画面的关闭回调，避免返回页面时等待层卡住
         mHandler.removeCallbacks(mRunnable);
         mHandler.removeCallbacks(mDataRunnable);
+        hideLoadSuccessNotice();
     }
 
     @Override
     protected void onDestroy() {
+        hideLoadSuccessNotice();
         mHandler.removeCallbacksAndMessages(null);
         try {
             EventBus.getDefault().unregister(this);

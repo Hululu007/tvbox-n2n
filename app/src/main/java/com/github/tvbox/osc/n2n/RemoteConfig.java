@@ -151,8 +151,14 @@ public class RemoteConfig {
     public static final String K_ALI_LICENSE = "rc_ali_license";
     /** 应用市场配置（json "appMarket" 段原文；列表/详情接口模板 + 请求头 + 内置兜底 apps） */
     public static final String K_APP_MARKET = "rc_app_market";
-    /** 最近一次成功拉取的远程配置原文（断网/下次启动兜底；存解密后的明文） */
+    /** 最近一次成功拉取的远程主配置原文（断网/下次启动兜底；存解密后的明文） */
     public static final String K_REMOTE_RAW = "rc_remote_raw";
+    /** 最近一次成功拉取的远程主配置来源地址（用于恢复相对接口地址的拼接基准） */
+    public static final String K_REMOTE_BASE = "rc_remote_base";
+    /** 最近一次成功应用的二次远程覆盖配置原文（remoteConfigUrl；可选） */
+    public static final String K_REMOTE_OVERLAY_RAW = "rc_remote_overlay_raw";
+    /** 二次远程覆盖配置来源地址（相对接口地址拼接基准） */
+    public static final String K_REMOTE_OVERLAY_BASE = "rc_remote_overlay_base";
     /** 点播启动等待画面配置（主接口下发，点播界面加载接口/切源时展示） */
     public static final String K_VOD_SPLASH = "rc_vod_splash";
     /** 主接口预设占位图（json "placeholderImage"）：图片下载完成前先显示该图 */
@@ -700,13 +706,28 @@ public class RemoteConfig {
 
     /** 后台线程拉取主远程配置（单次请求，失败时用上次缓存兜底） */
     private static void fetchPrimary(Context app, String url) {
+        fetchPrimary(app, url, null);
+    }
+
+    /**
+     * 拉取主远程配置并应用。
+     *
+     * @param cb 可选回调：为空表示启动加载（结果通过 {@link PrimaryListener} 通知）；
+     *           非空表示定时/回前台刷新（失败不回退主接口状态，避免把已成功的首页改成报错页）
+     * @return 是否成功应用（含缓存兜底）
+     */
+    private static boolean fetchPrimary(Context app, String url, Callback cb) {
+        boolean startup = cb == null;
         try {
             String raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
             if (raw == null || raw.isEmpty()) {
                 RcLog.w("fetchPrimary: empty response, try cache fallback, url=" + url);
                 boolean restored = restoreCachedRemote(app, false);
-                notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
-                return;
+                if (startup) {
+                    notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
+                }
+                if (cb != null) cb.onDone(restored);
+                return restored;
             }
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject cfg = parseLoose(raw);
@@ -715,19 +736,28 @@ public class RemoteConfig {
             String oldRaw = Hawk.get(K_REMOTE_RAW, "");
             apply(app, cfg, false);
             Hawk.put(K_REMOTE_RAW, raw);
+            Hawk.put(K_REMOTE_BASE, url);
             if (!raw.equals(oldRaw)) {
                 bumpConfigVersion();
             }
             RcLog.i("fetchPrimary success, config applied & cached (len=" + raw.length() + ")");
-            notifyPrimary(PRIMARY_OK);
+            if (startup) {
+                notifyPrimary(PRIMARY_OK);
+            }
+            if (cb != null) cb.onDone(true);
             String secondary = cfg.optString("remoteConfigUrl", "").trim();
             if (!secondary.isEmpty()) {
                 fetchRemoteAsync(app, resolveInterfaceUrl(secondary));
             }
+            return true;
         } catch (Throwable t) {
             RcLog.e("fetchPrimary error: " + t.getMessage() + ", url=" + url, t);
             boolean restored = restoreCachedRemote(app, false);
-            notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
+            if (startup) {
+                notifyPrimary(restored ? PRIMARY_OK : PRIMARY_FAIL);
+            }
+            if (cb != null) cb.onDone(false);
+            return restored;
         }
     }
 
@@ -739,6 +769,9 @@ public class RemoteConfig {
                 JSONObject cfg = parseLoose(cached);
                 if (remoteOnly == false) {
                     sConfig = cfg;
+                    // 恢复来源地址：否则缓存兜底后相对接口地址会错误地拼接主接口 api 域名
+                    String base = Hawk.get(K_REMOTE_BASE, "");
+                    sConfigBase = base == null ? "" : base;
                 }
                 apply(app, cfg, remoteOnly);
                 RcLog.i("restoreCachedRemote: cache restored (len=" + cached.length() + ")");
@@ -751,6 +784,22 @@ public class RemoteConfig {
         return false;
     }
 
+    /** 二次远程覆盖配置失败时用上次缓存兜底（不修改主配置 sConfig） */
+    private static void restoreCachedOverlay(Context app) {
+        try {
+            String cached = Hawk.get(K_REMOTE_OVERLAY_RAW, "");
+            if (cached == null || cached.isEmpty()) {
+                return;
+            }
+            String base = Hawk.get(K_REMOTE_OVERLAY_BASE, "");
+            if (base != null && !base.isEmpty()) {
+                sConfigBase = base;
+            }
+            apply(app, parseLoose(cached), true);
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 后台线程拉取远程 json 并应用（非 settings/hin2n 段） */
     private static void fetchRemoteAsync(final Context app, final String url) {
         new Thread(new Runnable() {
@@ -761,12 +810,13 @@ public class RemoteConfig {
         }, "rc-remote-fetch").start();
     }
 
-    /** 同步拉取远程 json 并应用；cb 可为空 */
+    /** 同步拉取远程 json 并应用；cb 可为空（二次远程覆盖，不修改主配置 sConfig） */
     private static boolean fetchAndApply(Context app, String url, Callback cb) {
         try {
             // 请求附加本机参数（mac/ip/机型/系统版本等），服务端可按机下发
             String raw = httpGet(DeviceParams.append(url), RemoteConfig.ua());
             if (raw == null || raw.isEmpty()) {
+                restoreCachedOverlay(app);
                 if (cb != null) cb.onDone(false);
                 return false;
             }
@@ -774,25 +824,19 @@ public class RemoteConfig {
             raw = ConfigCrypto.maybeDecrypt(raw);
             JSONObject remote = parseLoose(raw);
             sConfigBase = url; // 相对接口地址以本次远程配置所在目录为基准拼接
-            String oldRaw = Hawk.get(K_REMOTE_RAW, "");
+            String oldRaw = Hawk.get(K_REMOTE_OVERLAY_RAW, "");
             apply(app, remote, true);
             // 缓存存解密后的明文：断网兜底无需再解密，与旧版本明文缓存格式兼容
-            Hawk.put(K_REMOTE_RAW, raw);
+            Hawk.put(K_REMOTE_OVERLAY_RAW, raw);
+            Hawk.put(K_REMOTE_OVERLAY_BASE, url);
             if (!raw.equals(oldRaw)) {
                 bumpConfigVersion();
             }
             if (cb != null) cb.onDone(true);
             return true;
         } catch (Throwable t) {
-            // 网络失败/解析失败：用上次缓存的远程配置兜底（若有）
-            try {
-                String cached = Hawk.get(K_REMOTE_RAW, "");
-                if (cached != null && !cached.isEmpty()) {
-                    JSONObject remote = parseLoose(cached);
-                    apply(app, remote, true);
-                }
-            } catch (Throwable ignored) {
-            }
+            // 网络失败/解析失败：用上次缓存的二次远程配置兜底（若有）
+            restoreCachedOverlay(app);
             if (cb != null) cb.onDone(false);
             return false;
         }
@@ -840,23 +884,41 @@ public class RemoteConfig {
     }
 
     /**
-     * 远程拉取入口：从内置配置的 remoteConfigUrl 拉取并应用（非 settings/hin2n 段）。
-     * 未配置 remoteConfigUrl 时直接回调成功（保持内置）。
+     * 定时/回前台刷新配置：优先拉取二次远程覆盖（remoteConfigUrl）；
+     * 未配置时重新拉取主配置（必须按主配置方式应用 settings/bootStart，不能走 remoteOnly）。
+     * 主配置尚在首次加载中时等待其结果，避免重复请求和两套配置互相覆盖。
      */
     public static void fetchAuto(Context ctx, Callback cb) {
-        String url = remoteConfigUrl(ctx);
-        if (url.isEmpty()) {
-            // 主配置本身就是远程时，刷新/重载直接重新拉取主配置
-            String primary = CONFIG_URL == null ? "" : CONFIG_URL.trim();
-            if (primary.startsWith("http://") || primary.startsWith("https://")) {
-                url = primary;
-            }
-        }
-        if (url.isEmpty()) {
-            if (cb != null) cb.onDone(true);
+        if (ctx == null) {
+            if (cb != null) cb.onDone(false);
             return;
         }
-        fetchAndApply(ctx.getApplicationContext(), resolveInterfaceUrl(url), cb);
+        final Context app = ctx.getApplicationContext();
+        String url = remoteConfigUrl(app);
+        if (!url.isEmpty()) {
+            fetchAndApply(app, resolveInterfaceUrl(url), cb);
+            return;
+        }
+        // 主配置本身就是远程时，刷新/重载直接重新拉取主配置
+        String primary = CONFIG_URL == null ? "" : CONFIG_URL.trim();
+        if (primary.startsWith("http://") || primary.startsWith("https://")) {
+            final Callback callback = cb;
+            if (sPrimaryState == PRIMARY_LOADING) {
+                // 首次加载尚未完成：结果出来后回调（addPrimaryListener 对已完成状态会立即回调）
+                addPrimaryListener(new PrimaryListener() {
+                    @Override
+                    public void onPrimaryResult(int state) {
+                        if (callback != null) {
+                            callback.onDone(state == PRIMARY_OK);
+                        }
+                    }
+                });
+                return;
+            }
+            fetchPrimary(app, primary, cb);
+            return;
+        }
+        if (cb != null) cb.onDone(true);
     }
 
     /** 同步拉取指定远程地址并应用 */
@@ -994,8 +1056,8 @@ public class RemoteConfig {
         if (splash != null) {
             Hawk.put(K_VOD_SPLASH, splash.toString());
         }
-        // 点播接口加载成功通知：多少秒后自动关闭（0=不显示）。本地/远程均可下发，每次启动应用，
-        // 写入前做 0~60 范围保护，避免异常配置导致通知长期遮挡首页。
+        // 点播接口加载成功通知：多少秒后自动关闭（0=不显示）。本地/远程均可下发，
+        // 提示只在点播界面展示；写入前做 0~60 范围保护，避免异常配置导致通知长期遮挡界面。
         if (j.has("loadSuccessDuration")) {
             int dur = j.optInt("loadSuccessDuration", 3);
             if (dur < 0) {
@@ -1377,17 +1439,17 @@ public class RemoteConfig {
             if (o == null) {
                 return s;
             }
-            s.id = o.optString("id", "");
-            s.name = o.optString("name", s.id);
-            s.layout = o.optString("layout", "standard");
-            s.api = o.optString("api", "");
-            s.live = o.optString("live", "");
-            s.epg = o.optString("epg", "");
-            s.title = o.optString("title", "");
-            s.logo = o.optString("logo", "");
-            s.background = o.optString("background", "");
-            s.ticker = o.optString("ticker", "");
-            s.layoutUrl = o.optString("layoutUrl", "");
+            s.id = o.optString("id", "").trim();
+            s.name = o.optString("name", s.id).trim();
+            s.layout = o.optString("layout", "standard").trim();
+            s.api = normalizeEntryUrl(o.optString("api", ""));
+            s.live = normalizeEntryUrl(o.optString("live", ""));
+            s.epg = normalizeEntryUrl(o.optString("epg", ""));
+            s.title = o.optString("title", "").trim();
+            s.logo = o.optString("logo", "").trim();
+            s.background = o.optString("background", "").trim();
+            s.ticker = o.optString("ticker", "").trim();
+            s.layoutUrl = normalizeEntryUrl(o.optString("layoutUrl", ""));
             s.columns = Math.max(1, Math.min(6, o.optInt("columns", 3)));
             s.rows = Math.max(1, Math.min(4, o.optInt("rows", 2)));
             s.showClock = o.optBoolean("showClock", true);
@@ -1398,15 +1460,22 @@ public class RemoteConfig {
                     JSONObject e = arr.optJSONObject(i);
                     if (e == null) continue;
                     Entry entry = new Entry();
-                    entry.name = e.optString("name", "");
-                    entry.type = e.optString("type", "page");
-                    entry.target = e.optString("target", "");
-                    entry.icon = e.optString("icon", "");
-                    entry.pkg = e.optString("pkg", "");
-                    entry.url = e.optString("url", "");
-                    entry.theme = e.optString("theme", "");
-                    entry.pic = e.optString("pic", "");
-                    entry.desc = e.optString("desc", "");
+                    entry.name = e.optString("name", "").trim();
+                    entry.type = e.optString("type", "").trim();
+                    // 与 parseEntries 保持一致：去掉从文档复制时带入的反引号/成对引号
+                    entry.target = normalizeEntryUrl(e.optString("target", ""));
+                    entry.icon = e.optString("icon", "").trim();
+                    entry.pkg = e.optString("pkg", "").trim();
+                    entry.url = normalizeEntryUrl(e.optString("url", ""));
+                    entry.theme = e.optString("theme", "").trim();
+                    entry.pic = normalizeEntryUrl(e.optString("pic", ""));
+                    entry.desc = e.optString("desc", "").trim();
+                    if (entry.type.isEmpty()) {
+                        entry.type = entry.pkg.isEmpty() ? "page" : "app";
+                    }
+                    if (entry.name.isEmpty()) {
+                        entry.name = entry.pkg;
+                    }
                     s.entries.add(entry);
                 }
             }
@@ -1464,8 +1533,10 @@ public class RemoteConfig {
         }
         if (!s.api.isEmpty() && (forceOverrideFor("api") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.API_URL + "_manual", false)))) {
             String old = Hawk.get(HawkConfig.API_URL, "");
-            Hawk.put(HawkConfig.API_URL, s.api);
-            EndpointCache.onEndpointChanged(App.getInstance(), EndpointCache.KEY_API, old, s.api);
+            // screens[].api 与主配置 api 一样支持相对地址（相对配置来源目录）
+            String v = resolveInterfaceUrl(s.api);
+            Hawk.put(HawkConfig.API_URL, v);
+            EndpointCache.onEndpointChanged(App.getInstance(), EndpointCache.KEY_API, old, v);
         }
         if (!s.live.isEmpty() && (forceOverrideFor("live") || !Boolean.TRUE.equals(Hawk.get(HawkConfig.LIVE_URL + "_manual", false)))) {
             String old = Hawk.get(HawkConfig.LIVE_URL, "");

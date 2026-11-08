@@ -136,6 +136,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 ```
 
 - `defaultScreen` 填不存在的 id 会自动回退 `standard`。
+- `hotel_grid` 的 `columns×rows` 不足以容纳全部入口时会自动增加行，入口不会被丢弃。
 - `screens[].api/live/epg` 在该界面启动时应用；用户手动配置过且 `forceOverride=false` 时保留用户配置。
 - **接口立即生效**：接口地址变化会立即删除点播接口磁盘缓存、清空 EPG 缓存并把 `ApiConfig` 标记为未加载，
   同时广播 `TYPE_ENDPOINT_CHANGE`，点播/直播/酒店界面立即重载，无需重启 App。
@@ -301,7 +302,7 @@ public static final String CONFIG_URL = "http://your-domain/php-demo/index.php?r
 
 **点播接口加载与切源行为**（主点播界面与自定义点播界面一致）：
 
-- 点播接口（主配置 `api` 指向的 TVBox 标准 JSON / 自定义 `target`）只在**点播界面**加载；首页不再加载点播接口字段，也不提示「点播接口加载成功」，所有点播相关提示（免责声明、切源提示、加载失败等）仅在点播界面出现。
+- 点播接口（主配置 `api` 指向的 TVBox 标准 JSON / 自定义 `target`）只在**点播界面**加载；首页不再加载点播接口字段。所有点播相关提示（加载成功 `loadSuccessDuration`、免责声明、切源提示、加载失败等）仅在点播界面出现。
 - 进入点播界面时先显示启动等待画面（主配置可下发 `vodSplash`，见 §2.9），接口配置与当前源的 jar/js/py 插件就绪后自动加载分类数据并关闭等待画面。
 - 点播界面切换源时，会丢弃该源旧的 Spider 实例并**重新加载新源对应的 jar / js / py 插件**（`type=3` 的 `.jar`、`.js`、`.py`、纯类名站点分别处理），再强制刷新分类列表；不再依赖首页预加载全局 jar。
 - 点播界面的第一个分类固定为「热播推荐」：**只取主配置 `home.recMovies`**（未配置时显示空态，不再回退点播接口 `homeContent` 或豆瓣）；默认选中并自动加载。

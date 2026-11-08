@@ -16,6 +16,8 @@ import com.bumptech.glide.Glide;
 import com.bumptech.glide.request.target.SimpleTarget;
 import com.bumptech.glide.request.transition.Transition;
 import com.github.tvbox.osc.R;
+import com.github.tvbox.osc.util.HawkConfig;
+import com.orhanobut.hawk.Hawk;
 
 import org.json.JSONObject;
 
@@ -109,12 +111,6 @@ public class HomeEntry {
         applyBackground(act);
         applyHomeStyle(act);
         NoticeBar.show(act, NoticeBar.SCREEN_HOME);
-        // 自定义入口栏：按远程 JSON 动态生成图标
-        LinearLayout bar = act.findViewById(R.id.entryBar);
-        if (bar == null) {
-            return;
-        }
-        bar.removeAllViews();
         // topEntries 配置存在时整体替换顶栏：隐藏全部内置固定图标，顺序/内容/图标全按 JSON
         List<RemoteConfig.Entry> top = RemoteConfig.topEntries();
         if (top != null) {
@@ -126,15 +122,41 @@ public class HomeEntry {
                     v.setVisibility(View.GONE);
                 }
             }
-            buildTopEntries(act, bar, top);
-            applyHomeStyleToEntries(act);
-            return;
+        } else {
+            // 远程配置移除 topEntries 后恢复内置固定图标，避免沿用上一次整体替换时的隐藏状态
+            restoreFixedIcons(act);
         }
-        // 旧版 "entries"：仅 app 类型，点击拉起对应 App（未安装且配 url 时后台下载安装）
-        List<RemoteConfig.Entry> entries = RemoteConfig.entries();
-        buildTopEntries(act, bar, entries);
+        // 自定义入口栏：按远程 JSON 动态生成图标
+        LinearLayout bar = act.findViewById(R.id.entryBar);
+        if (bar != null) {
+            bar.removeAllViews();
+            if (top != null) {
+                buildTopEntries(act, bar, top);
+            } else {
+                // 旧版 "entries"：仅 app 类型，点击拉起对应 App（未安装且配 url 时后台下载安装）
+                buildTopEntries(act, bar, RemoteConfig.entries());
+            }
+        }
         // 外观：入口配色对动态生成的图标同样生效
         applyHomeStyleToEntries(act);
+    }
+
+    /** 未配置 topEntries 时恢复内置固定图标的显隐（tvN2n 旧设置入口已停用，保持隐藏） */
+    private static void restoreFixedIcons(Activity act) {
+        showFixed(act, R.id.tvWifi, true);
+        showFixed(act, R.id.tvStyle, true);
+        showFixed(act, R.id.tvTheme, true);
+        showFixed(act, R.id.tvDrawer, true);
+        showFixed(act, R.id.tvFind, Hawk.get(HawkConfig.HOME_SEARCH_POSITION, true));
+        showFixed(act, R.id.tvHin2n, RemoteConfig.hin2nEntryEnabled());
+        showFixed(act, R.id.tvN2n, false);
+    }
+
+    private static void showFixed(Activity act, int id, boolean visible) {
+        View v = act.findViewById(id);
+        if (v != null) {
+            v.setVisibility(visible ? View.VISIBLE : View.GONE);
+        }
     }
 
     /** 顶栏动态入口渲染：图标按钮（vs_50），点击统一走 EntryDispatcher */

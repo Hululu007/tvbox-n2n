@@ -2,7 +2,7 @@
 /**
  * TKLauncher 服务端接口 demo（单文件路由）
  *
- * 部署：把 docs/php-demo/ 整个目录上传到 Web 服务器（需 PHP 7.4+、openssl 扩展）。
+ * 部署：把 docs/php-demo/ 整个目录上传到 Web 服务器（需 PHP 7.4+、openssl 扩展；mbstring 可选）。
  * 然后在 App 源码 RemoteConfig.CONFIG_URL 中填写：
  *   http://your-domain/php-demo/index.php?r=config&enc=ke
  *
@@ -25,6 +25,26 @@ require_once __DIR__ . '/tvbox_crypto.php';
 
 $route = isset($_GET['r']) ? strtolower(trim((string)$_GET['r'])) : '';
 $dev = tk_device();
+
+/** mbstring 为可选扩展：未安装时退化为 UTF-8 首字节截取/单字节小写，中文首字符匹配仍可用 */
+function tk_lower(string $s): string
+{
+    return function_exists('mb_strtolower') ? mb_strtolower($s, 'UTF-8') : strtolower($s);
+}
+
+/** 取 UTF-8 首字符（无 mbstring 时按首字节长度截取） */
+function tk_first_char(string $s): string
+{
+    if ($s === '') {
+        return '';
+    }
+    if (function_exists('mb_substr')) {
+        return mb_substr($s, 0, 1, 'UTF-8');
+    }
+    $b = ord($s[0]);
+    $n = $b >= 0xF0 ? 4 : ($b >= 0xE0 ? 3 : ($b >= 0xC0 ? 2 : 1));
+    return substr($s, 0, $n);
+}
 
 /** 生成带当前加密方式的相对接口地址（未带协议，客户端自动以主配置地址所在目录拼接） */
 function tk_rel_url(string $query, string $enc): string
@@ -154,14 +174,14 @@ function tk_market_list(array $dev): array
         }));
     }
     if ($keyword !== '') {
-        $kw = mb_strtolower($keyword, 'UTF-8');
+        $kw = tk_lower($keyword);
         $apps = array_values(array_filter($apps, function ($a) use ($kw) {
-            $name = mb_strtolower($a['name'], 'UTF-8');
-            $pkg = mb_strtolower($a['packageName'], 'UTF-8');
+            $name = tk_lower($a['name']);
+            $pkg = tk_lower($a['packageName']);
             // 演示用简单匹配：首字符相等或包含关键词。
             // 生产环境建议接入拼音库（如 overtrue/pinyin），把 name 转成首字母串（微信→WX）后再匹配。
-            return mb_substr($name, 0, 1, 'UTF-8') === $kw
-                || mb_substr($pkg, 0, 1, 'UTF-8') === $kw
+            return tk_first_char($name) === $kw
+                || tk_first_char($pkg) === $kw
                 || strpos($name, $kw) !== false
                 || strpos($pkg, $kw) !== false;
         }));
@@ -372,7 +392,6 @@ switch ($route) {
                 ['name' => '单双排', 'type' => 'feature', 'target' => 'styleSwitch', 'icon' => ''],
                 ['name' => '主题', 'type' => 'feature', 'target' => 'themeSwitch', 'icon' => 'ic_theme'],
                 ['name' => '应用', 'type' => 'page',    'target' => 'apps',        'icon' => 'hm_drawer'],
-                ['name' => '设置', 'type' => 'page',    'target' => 'setting',     'icon' => 'hm_settings'],
                 ['name' => '组网', 'type' => 'page',    'target' => 'hin2n',       'icon' => 'ic_n2n'],
                 ['name' => '历史', 'type' => 'page', 'target' => 'history', 'icon' => 'hm_history'],
             ],
@@ -390,7 +409,6 @@ switch ($route) {
                 ['name' => '收藏', 'type' => 'page', 'target' => 'collect', 'icon' => 'hm_fav'],
                 ['name' => '推送', 'type' => 'page', 'target' => 'push',    'icon' => 'hm_push'],
                 ['name' => '文件', 'type' => 'page', 'target' => 'drive',   'icon' => 'hm_folder'],
-                ['name' => '设置', 'type' => 'page', 'target' => 'setting', 'icon' => 'hm_settings'],
                 ['name' => '组网', 'type' => 'page', 'target' => 'hin2n',   'icon' => 'ic_hin2n'],
                 //['name' => '系统', 'type' => 'page', 'target' => 'system',  'icon' => 'hm_settings'],
                 ['name' => '捐助', 'type' => 'page', 'target' => 'donate',  'icon' => 'hm_fav'],
@@ -406,7 +424,6 @@ switch ($route) {
                 ['name' => '我的影院', 'type' => 'vod',  'target' => 'http://tianku.net/tvzy/tv/1.json', 'pic' => ''],
                 ['name' => '直播',     'type' => 'page', 'target' => 'live',    'pic' => ''],
                 ['name' => '应用',     'type' => 'page', 'target' => 'apps',    'pic' => ''],
-                ['name' => '设置',     'type' => 'page', 'target' => 'setting', 'pic' => ''],
             ],
             // ==================================================================
 

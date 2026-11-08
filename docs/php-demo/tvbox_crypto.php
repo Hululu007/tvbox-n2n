@@ -85,20 +85,27 @@ function tk_output(string $plain, string $contentType = 'application/json; chars
 /** 采集客户端本机参数（URL 参数优先，其次请求头），可用于按 MAC 下发不同配置 */
 function tk_device(): array
 {
-    $h = function ($name) {
-        $v = isset($_SERVER[$name]) ? $_SERVER[$name] : '';
-        return is_string($v) ? trim($v) : '';
+    // 请求参数可能是数组（如 ?mac[]=x），统一归一化为去空格字符串，避免 json_encode 输出非字符串
+    $s = function ($v) {
+        return is_scalar($v) ? trim((string)$v) : '';
+    };
+    $h = function ($name) use ($s) {
+        return $s(isset($_SERVER[$name]) ? $_SERVER[$name] : '');
+    };
+    $param = function ($name, $header = '') use ($s, $h) {
+        $v = isset($_GET[$name]) ? $s($_GET[$name]) : '';
+        return $v !== '' ? $v : $h($header);
     };
     return [
-        'mac' => $_GET['mac'] ?? $h('HTTP_X_DEVICE_MAC'),
-        'ip' => $_GET['ip'] ?? $h('HTTP_X_DEVICE_IP'),
-        'model' => $_GET['model'] ?? '',
-        'brand' => $_GET['brand'] ?? '',
-        'device' => $_GET['device'] ?? '',
-        'sdk' => $_GET['sdk'] ?? '',
-        'release' => $_GET['release'] ?? '',
+        'mac' => $param('mac', 'HTTP_X_DEVICE_MAC'),
+        'ip' => $param('ip', 'HTTP_X_DEVICE_IP'),
+        'model' => $param('model'),
+        'brand' => $param('brand'),
+        'device' => $param('device'),
+        'sdk' => $param('sdk'),
+        'release' => $param('release'),
         'os' => $h('HTTP_X_OS_VERSION'),
-        'app' => $_GET['app'] ?? $h('HTTP_X_APP_VERSION'),
+        'app' => $param('app', 'HTTP_X_APP_VERSION'),
     ];
 }
 

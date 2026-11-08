@@ -98,7 +98,7 @@ http://你的服务器/demo/hotel/config.json
 | `background` | string | 空 | 全屏背景图 http(s) 地址 |
 | `ticker` | string | 空 | 本屏滚动通知；为空时回退全局 `notice` |
 | `columns` | int | 3 | 宫格列数，1~6 |
-| `rows` | int | 2 | 宫格行数，1~4 |
+| `rows` | int | 2 | 宫格行数，1~4；入口数超过 `columns×rows` 时自动增加行，不会丢弃入口 |
 | `showClock` | bool | true | 是否显示右上角时钟 |
 | `api` | string | 空 | 本屏点播接口；支持相对地址 |
 | `live` | string | 空 | 本屏直播源；支持相对地址 |
@@ -246,7 +246,7 @@ adb logcat | grep -i hotel_layout
 | `hotel_list` | 入口 3~6 个 | 左侧竖排菜单，右侧大图预览，适合品牌展示 |
 | `hotel_showcase` | 入口 3~5 个 | 顶部大图 + 底部一排入口，适合开机欢迎页 |
 
-`columns` / `rows` 只对 `hotel_grid` 生效（列 1~6、行 1~4）。
+`columns` / `rows` 只对 `hotel_grid` 生效（列 1~6、行 1~4）；当入口数量超过 `columns×rows` 时会自动增加行以完整显示，不会丢弃多余入口。
 
 ### 5.5 插件调试清单
 

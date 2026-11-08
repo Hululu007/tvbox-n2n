@@ -6,7 +6,7 @@
 
 - PHP 7.4+（7.4 / 8.x 均可）
 - 开启 `openssl` 扩展（`php -m | grep openssl`）
-- 建议开启 `mbstring`（应用市场按首字母搜索演示用到）
+- `mbstring` 可选：未开启时演示搜索会自动使用 UTF-8 首字节截取与非 ASCII 单字节小写回退（接口输出不受影响）
 
 ## 2. 部署
 
@@ -224,6 +224,7 @@ A：在 `r=config` 分支里读取 `tk_device()['mac']`，按 MAC 返回不同 J
 | `screens[]` | 界面列表：`layout`（hotel_grid/hotel_list/hotel_showcase）、独立 `api/live/epg`、标题/背景/公告、`layoutUrl` 布局插件、`entries` 入口 |
 | `screens[].layoutUrl` | 布局插件 JSON 地址，demo 为 `index.php?r=hotel_layout&id=grid`；只覆盖外观/入口，接口请写在本屏 `api/live/epg` |
 | `notice.pause` | 整条滚动公告走完后的停顿秒数 |
+| `loadSuccessDuration` | 点播接口首次加载成功后，点播界面顶部提示的自动关闭秒数（0=不显示，默认 3，范围 0~60） |
 
 按 MAC 返回不同酒店桌面的示例：
 

@@ -68,10 +68,15 @@ public class HotelActivity extends BaseActivity {
     private final Runnable clockTask = new Runnable() {
         @Override
         public void run() {
+            if (!clockRunning) {
+                return;
+            }
             if (tvClock != null) {
                 tvClock.setText(new SimpleDateFormat("HH:mm  MM月dd日", Locale.CHINA).format(new Date()));
             }
-            handler.postDelayed(this, 1000);
+            if (clockRunning) {
+                handler.postDelayed(this, 1000);
+            }
         }
     };
 
@@ -136,6 +141,8 @@ public class HotelActivity extends BaseActivity {
         if (latest != null) {
             screen = latest;
         }
+        // 主接口中的接口地址可能已更新：重新应用当前屏幕自带的 api/live/epg
+        RemoteConfig.applyScreenEndpoints(screen);
         render();
         loadRemoteLayoutIfNeeded();
     }
@@ -147,20 +154,32 @@ public class HotelActivity extends BaseActivity {
         String title = screen.title != null && !screen.title.isEmpty() ? screen.title : screen.name;
         tvTitle.setText(title == null ? "" : title);
         tvClock.setVisibility(screen.showClock ? View.VISIBLE : View.GONE);
-        if (screen.showClock && !clockRunning) {
-            clockRunning = true;
-            clockTask.run();
+        if (screen.showClock) {
+            if (!clockRunning) {
+                clockRunning = true;
+                clockTask.run();
+            }
+        } else {
+            clockRunning = false;
+            handler.removeCallbacks(clockTask);
         }
         // 滚动通知：屏幕自带 ticker 优先；未配置时回退主接口 notice 全局公告。
         // 支持 notice.speed / notice.pause（整条走完后的停顿秒数）。
         NoticeBar.showOn(this, tvTicker, NoticeBar.SCREEN_HOTEL, screen.ticker);
         if (screen.background != null && !screen.background.isEmpty()) {
             ivBg.setVisibility(View.VISIBLE);
-            ImgUtil.load(screen.background, ivBg, 0, 1920, 1080);
+            loadImage(ivBg, screen.background, 0);
+        } else {
+            // 配置清空背景图后必须隐藏，否则会残留上一个界面的背景
+            ivBg.setVisibility(View.GONE);
+            ivBg.setImageDrawable(null);
         }
         if (screen.logo != null && !screen.logo.isEmpty()) {
             ivLogo.setVisibility(View.VISIBLE);
-            EntryDispatcher.loadIcon(this, ivLogo, screen.logo);
+            loadImage(ivLogo, screen.logo, 0);
+        } else {
+            ivLogo.setVisibility(View.GONE);
+            ivLogo.setImageDrawable(null);
         }
         body.removeAllViews();
         String layout = screen.layout == null ? "" : screen.layout.toLowerCase(Locale.ROOT);
@@ -198,13 +217,14 @@ public class HotelActivity extends BaseActivity {
         return e;
     }
 
-    /** 宫格布局：columns × rows 大卡片 */
+    /** 宫格布局：columns × rows 大卡片（入口超过 columns×rows 时自动增加行，避免入口被丢弃） */
     private void buildGridLayout() {
         int columns = Math.max(1, screen.columns);
         int rows = Math.max(1, screen.rows);
         List<RemoteConfig.Entry> list = entries();
-        if (rows <= 0) {
-            rows = (list.size() + columns - 1) / columns;
+        int neededRows = (list.size() + columns - 1) / columns;
+        if (neededRows > rows) {
+            rows = neededRows;
         }
         LinearLayout columnLayout = new LinearLayout(this);
         columnLayout.setOrientation(LinearLayout.VERTICAL);
@@ -296,7 +316,7 @@ public class HotelActivity extends BaseActivity {
     private void showPreview(ImageView preview, TextView name, RemoteConfig.Entry e) {
         String pic = e.pic != null && !e.pic.isEmpty() ? e.pic : e.icon;
         if (pic != null && !pic.isEmpty()) {
-            ImgUtil.load(pic, preview, dp(8));
+            loadImage(preview, pic, dp(8));
         } else {
             preview.setImageResource(R.drawable.img_loading_placeholder);
         }
@@ -323,7 +343,7 @@ public class HotelActivity extends BaseActivity {
                 ? screen.background
                 : (list.isEmpty() ? "" : (list.get(0).pic != null ? list.get(0).pic : list.get(0).icon));
         if (!bannerPic.isEmpty()) {
-            ImgUtil.load(bannerPic, banner, dp(10));
+            loadImage(banner, bannerPic, dp(10));
         } else {
             banner.setImageResource(R.drawable.img_loading_placeholder);
         }
@@ -360,7 +380,7 @@ public class HotelActivity extends BaseActivity {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, 0, 1);
             icon.setLayoutParams(lp);
-            ImgUtil.load(entry.pic, icon, dp(8));
+            loadImage(icon, entry.pic, dp(8));
         } else {
             icon.setScaleType(ImageView.ScaleType.CENTER_INSIDE);
             int size = horizontal ? dp(48) : dp(72);
@@ -445,6 +465,26 @@ public class HotelActivity extends BaseActivity {
         return me.jessyan.autosize.utils.AutoSizeUtils.mm2px(this, mm);
     }
 
+    /**
+     * 统一图片加载：http(s)/相对地址走 ImgUtil；内置 drawable 名（如 hm_vod）走 EntryDispatcher。
+     * 之前背景/logo/预览直接交给 ImgUtil，drawable 名会被当成 URL 导致图片显示不出来。
+     */
+    private void loadImage(ImageView iv, String src, int radius) {
+        if (iv == null) {
+            return;
+        }
+        String u = RemoteConfig.normalizeEntryUrl(src);
+        if (u.isEmpty()) {
+            return;
+        }
+        boolean drawableName = u.indexOf('/') < 0 && u.indexOf('.') < 0 && !u.contains("://");
+        if (drawableName) {
+            EntryDispatcher.loadIcon(this, iv, u);
+        } else {
+            ImgUtil.load(RemoteConfig.resolveInterfaceUrl(u), iv, radius);
+        }
+    }
+
     // ================= 布局插件下载 / 缓存 =================
 
     private void loadRemoteLayoutIfNeeded() {
@@ -508,6 +548,9 @@ public class HotelActivity extends BaseActivity {
             if (s.logo.isEmpty()) s.logo = screen.logo;
             if (s.background.isEmpty()) s.background = screen.background;
             if (s.ticker.isEmpty()) s.ticker = screen.ticker;
+            if (!obj.has("columns")) s.columns = screen.columns;
+            if (!obj.has("rows")) s.rows = screen.rows;
+            if (!obj.has("showClock")) s.showClock = screen.showClock;
             if (s.entries == null || s.entries.isEmpty()) s.entries = screen.entries;
             return s;
         } catch (Throwable ignored) {

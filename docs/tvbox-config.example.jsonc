@@ -239,7 +239,8 @@
 
   // ==================== 全局 ====================
   "checkInterval": 30,                 // 界面定时刷新间隔（分钟，最小 1）
-  "loadSuccessDuration": 0,            // 已废弃：首页不再提示点播接口加载成功，保留字段但不再生效
+  "loadSuccessDuration": 3,            // 点播接口首次加载成功后，在点播界面顶部显示非模态提示并倒计时关闭
+                                       //   （0=不显示；范围 0~60；每个进程只提示一次）
   "warningAutoClose": 0,               // 点播接口免责声明（warningText）弹窗：只在点播界面显示，
                                        //   多少秒后自动关闭（0=不自动关闭，必须手动点确定；范围 0~120）
   "ua": "",                            // 全局 UA（OkHttp 请求 + webview/tkp2p 直播页）；空=内置浏览器 UA
@@ -349,7 +350,7 @@
   //   name   显示名称（顶栏仅作 contentDescription，历史一行显示在图标右侧）
   //   type   page=打开 TVBox 界面 | feature=内置功能 | app=打开其他 App | vod=自定义点播界面
   //   target type=page   : vod（点播）| live（直播）| search（搜索）| fastsearch（聚合搜索）|
-  //                        history（历史）| collect（收藏）| push（推送）| setting（设置）|
+  //                        history（历史）| collect（收藏）| push（推送）|
   //                        drive（文件）| apps（应用）| hin2n（组网）|
   //                        system（安卓系统设置，固件裁掉时提示无入口）|
   //                        donate（捐助界面，内容见上方 donate 段）
@@ -362,7 +363,7 @@
   //   pkg    type=app 时的包名；未安装且配 url 时后台下载安装（顶部进度条）
   //   icon   http(s) 图片地址或内置 drawable 名。全部可用内置图标：
   //          hm_search(搜索) hm_vod(点播) hm_live(直播) hm_history(历史) hm_fav(收藏)
-  //          hm_push(推送) hm_folder(文件) hm_settings(设置) hm_drawer(抽屉/应用)
+  //          hm_push(推送) hm_folder(文件) hm_settings(设置/界面切换) hm_drawer(抽屉/应用)
   //          hm_home(首页) hm_wifi(无线) hm_wifi_no(无网络) hm_lan(有线) hm_mobile(移动网络)
   //          hm_left_right(单行) hm_up_down(多行) ic_theme(主题) ic_hin2n(组网) ic_n2n(组网)
   //          icon 留空时：wifi 入口按当前网络类型自动选图（hm_wifi/hm_lan/hm_mobile/hm_wifi_no），
@@ -377,7 +378,6 @@
     { "name": "单双排", "type": "feature", "target": "styleSwitch", "icon": "" },
     { "name": "主题",   "type": "feature", "target": "themeSwitch", "icon": "ic_theme" },
     { "name": "应用",   "type": "page",    "target": "apps",        "icon": "hm_drawer" },
-    { "name": "设置",   "type": "page",    "target": "setting",     "icon": "hm_settings" },
     { "name": "组网",   "type": "page",    "target": "hin2n",       "icon": "ic_n2n" }
     // 追加示例：
     // ,{ "name": "切源",   "type": "feature", "target": "siteSwitch", "icon": "hm_drawer" }
@@ -387,7 +387,7 @@
   ],
 
   // ==================== 首页历史一行入口（homeEntries） ====================
-  // 首页「历史/点播/直播/搜索/收藏/推送/文件/设置/组网/系统/捐助」一行的内容/顺序/图标
+  // 首页「历史/点播/直播/搜索/收藏/推送/文件/组网/系统/捐助」一行的内容/顺序/图标
   // 全部由本数组决定；默认列出全部内置入口（全部显示）。关闭某个入口 = 删除（或注释掉）该条；
   // 字段与 topEntries 相同。把本字段整个删除或改成空数组 []（里面只有注释也算空）=
   // 回退到代码内置默认一行。该行入口过多超出屏幕时可左右滑动；
@@ -400,7 +400,6 @@
     { "name": "收藏", "type": "page", "target": "collect", "icon": "hm_fav" },
     { "name": "推送", "type": "page", "target": "push",    "icon": "hm_push" },
     { "name": "文件", "type": "page", "target": "drive",   "icon": "hm_folder" },
-    { "name": "设置", "type": "page", "target": "setting", "icon": "hm_settings" },
     { "name": "组网", "type": "page", "target": "hin2n",   "icon": "ic_hin2n" },
     { "name": "系统", "type": "page", "target": "system",  "icon": "hm_settings" },
     { "name": "捐助", "type": "page", "target": "donate",  "icon": "hm_fav" }
@@ -417,8 +416,7 @@
   "quickEntries": [
     { "name": "我的影院", "type": "vod",  "target": "https://example.com/vod.json", "pic": "" },
     { "name": "直播",     "type": "page", "target": "live",    "pic": "" },
-    { "name": "应用",     "type": "page", "target": "apps",    "pic": "" },
-    { "name": "设置",     "type": "page", "target": "setting", "pic": "" }
+    { "name": "应用",     "type": "page", "target": "apps",    "pic": "" }
   ],
 
   // ==================== 界面（屏幕）/ 酒店 IPTV 桌面 ====================
